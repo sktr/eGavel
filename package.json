@@ -1,0 +1,32 @@
+{
+  "name": "cashu-auction",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --recursive --parallel run dev",
+    "dev:server": "pnpm --filter @cashu-auction/server run dev",
+    "dev:web": "pnpm --filter @cashu-auction/web run dev",
+    "build": "pnpm --recursive run build",
+    "lint": "pnpm --recursive run lint",
+    "typecheck": "pnpm --recursive run typecheck",
+    "test": "pnpm --filter @cashu-auction/server run test",
+    "clean": "pnpm --recursive exec rm -rf dist .next node_modules"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.21.0",
+      "onFail": "download"
+    },
+    "runtime": {
+      "name": "node",
+      "version": "24.19.0",
+      "onFail": "download"
+    }
+  },
+  "devDependencies": {
+    "vite-plus": "^0.2.8"
+  }
+}

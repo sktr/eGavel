@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+*.db
+*.db-journal
+data/
+.env
+.env.local
+.env.production
+coverage/
+exports/
