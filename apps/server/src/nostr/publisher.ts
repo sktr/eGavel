@@ -13,6 +13,7 @@ export interface Publisher {
     winnerNpub: string | null,
     amount: number,
     bidsChecked: number,
+    result?: "sold" | "reserve_not_met" | "no_bids",
   ): void
   publishBid(
     auctionId: string,
@@ -61,9 +62,10 @@ export function createPublisher(): Publisher {
       winnerNpub: string | null,
       amount: number,
       bidsChecked: number,
+      result: "sold" | "reserve_not_met" | "no_bids" = "sold",
     ) {
       const aTag = `39000:${sellerPubkey}:${auctionId}`
-      const tags: string[][] = [["a", aTag]]
+      const tags: string[][] = [["a", aTag], ["result", result]]
       if (winnerNpub) {
         tags.push(["p", winnerNpub])
       }

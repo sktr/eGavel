@@ -2,9 +2,12 @@ import type { Auction } from "@cashu-auction/shared"
 import type { Db } from "../db/index.js"
 import type { Publisher } from "../nostr/publisher.js"
 import { createPublisher } from "../nostr/publisher.js"
+import { withAuctionLock } from "../lib/auction-lock.js"
 
 const POLL_INTERVAL = 60_000
 const EXTEND_BY = 5 * 60_000
+const GRACE_MS = 30_000
+const ANTI_SNIPING_WINDOW = 5 * 60_000
 
 export function createScheduler(
   db: Db,
@@ -13,43 +16,61 @@ export function createScheduler(
   let timer: ReturnType<typeof setInterval> | null = null
   const pub = publisher ?? createPublisher()
 
-  function tick() {
+  async function tick() {
     const now = Date.now()
 
     const needingCheck = db.getActiveAuctions()
 
     for (const auction of needingCheck) {
-      // Only process auctions past their end_time
-      if (now < auction.end_time) continue
+      await withAuctionLock(auction.id, async () => {
+        const current = db.getAuction(auction.id)
+        if (!current) return
+        if (current.state !== "ACTIVE" && current.state !== "EXTENDED") return
 
-      const bids = db.getVerifiedBids(auction.id)
-      const hasRecentBid = bids.some(
-        (b) => b.received_at > auction.end_time - EXTEND_BY,
-      )
+        const bids = db.getVerifiedBids(current.id)
+        const e = current.end_time
 
-      if (hasRecentBid) {
-        auction.state = "EXTENDED"
-        auction.end_time = now + EXTEND_BY
-        auction.last_extended_at = now
-      } else {
-        settle(auction)
-      }
+        // Only consider bids that arrived before E for extension (spec §5.2)
+        const hasSnipingBid = bids.some(
+          (b) => b.received_at <= e && b.received_at > e - ANTI_SNIPING_WINDOW,
+        )
 
-      db.saveAuction(auction)
+        if (hasSnipingBid) {
+          // Anti-sniping: extend by a full 5 minutes from the original end (spec §5.1)
+          current.state = "EXTENDED"
+          current.end_time = e + EXTEND_BY
+          current.last_extended_at = now
+          db.saveAuction(current)
+          return
+        }
+
+        if (now < e + GRACE_MS) {
+          // still inside grace with no sniping bid: wait
+          return
+        }
+
+        settle(current, bids, db, pub)
+      })
     }
   }
 
-  function settle(auction: Auction) {
-    const bids = db.getVerifiedBids(auction.id)
+  function settle(auction: Auction, bids: ReturnType<Db["getVerifiedBids"]>, db: Db, pub: Publisher) {
     const bidsChecked = bids.length
 
-    if (bidsChecked === 0 || bids[0]!.amount < auction.start_price) {
+    const threshold = Math.max(
+      auction.start_price,
+      auction.reserve_price ?? auction.start_price,
+    )
+
+    if (bidsChecked === 0 || bids[0]!.amount < threshold) {
+      const result = bidsChecked === 0 ? "no_bids" : "reserve_not_met"
       pub.publishSettlement(
         auction.id,
         auction.seller_pubkey,
         null,
         0,
         bidsChecked,
+        result,
       )
       auction.winner_npub = null
       auction.winning_amount = 0
@@ -61,17 +82,21 @@ export function createScheduler(
         winner.bidder_npub,
         winner.amount,
         bidsChecked,
+        "sold",
       )
       auction.winner_npub = winner.bidder_npub
       auction.winning_amount = winner.amount
     }
 
     auction.state = "SETTLED"
+    db.saveAuction(auction)
   }
 
   return {
     start() {
-      timer = setInterval(tick, POLL_INTERVAL)
+      timer = setInterval(() => {
+        tick().catch((err) => console.error("scheduler tick failed", err))
+      }, POLL_INTERVAL)
       console.log("scheduler started (interval: 60s)")
     },
     stop() {

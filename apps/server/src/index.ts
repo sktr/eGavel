@@ -10,10 +10,17 @@ import { createAuctionRoutes } from "./routes/auctions.js"
 import { createScheduler } from "./scheduler/index.js"
 import { createNostrListener } from "./nostr/listener.js"
 import { createPublisher } from "./nostr/publisher.js"
+import { rateLimit } from "./lib/rate-limit.js"
 
 const app = new Hono()
 
 app.use("*", cors())
+
+app.use("/api/bids", rateLimit({ windowMs: 60_000, max: 30 }))
+app.use("/api/auctions/*/co-sign", rateLimit({ windowMs: 60_000, max: 20 }))
+app.use("/api/auctions/*/claim-data", rateLimit({ windowMs: 60_000, max: 30 }))
+app.use("/api/auctions/*/shipping", rateLimit({ windowMs: 60_000, max: 30 }))
+app.use("/api/bids/*/refund-data", rateLimit({ windowMs: 60_000, max: 30 }))
 
 // Derive server pubkey from env (if NOSTR_PRIVATE_KEY is set)
 function getServerPubkey(): string | null {

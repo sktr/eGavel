@@ -30,6 +30,14 @@ export function parseAuctionEvent(event: Event): Auction | null {
     item: String(content.item ?? ""),
     description: String(content.description ?? ""),
     start_price: Number(content.start_price ?? 0),
+    reserve_price:
+      content.reserve_price !== undefined && content.reserve_price !== null
+        ? Number(content.reserve_price)
+        : null,
+    buy_now_price:
+      content.buy_now_price !== undefined && content.buy_now_price !== null
+        ? Number(content.buy_now_price)
+        : null,
     end_time: Number(content.end_time ?? 0),
     seller_pubkey: event.pubkey,
     state: "ACTIVE",
@@ -37,6 +45,11 @@ export function parseAuctionEvent(event: Event): Auction | null {
     last_extended_at: null,
     winner_npub: null,
     winning_amount: null,
+    mint_url: String(content.mint_url ?? ""),
+    ...(content.category ? { category: String(content.category) } : {}),
+    ...(content.condition ? { condition: String(content.condition) } : {}),
+    ...(content.shipping ? { shipping: String(content.shipping) } : {}),
+    ...(content.image ? { image: String(content.image) } : {}),
   }
 }
 
@@ -92,7 +105,7 @@ export function createNostrListener(
 
       if (!payload.auction_id || !payload.amount) return
 
-      const result = await processBid(payload, db, pub)
+      const result = await processBid(payload, db, pub, serverPubkey)
       if (result.ok) {
         console.log("verified bid for", payload.auction_id)
       } else {

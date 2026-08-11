@@ -19,9 +19,11 @@ const DEFAULT_MINT = "https://testnut.cashu.space"
 export function BidForm({
   auction,
   serverNpub: serverNpubProp,
+  buyNowPrice,
 }: {
   auction: Auction
   serverNpub: string
+  buyNowPrice?: number | null
 }) {
   const router = useRouter()
   const { identity, isLoaded } = useIdentity()
@@ -45,8 +47,8 @@ export function BidForm({
       .catch(() => { /* server might not be running */ })
   }, [serverNpubProp])
 
-  // Wallet
-  const [mintUrl, setMintUrl] = useState(DEFAULT_MINT)
+  // Wallet — default to the mint the seller specified (spec §7.4 / review G4)
+  const [mintUrl, setMintUrl] = useState(auction.mint_url || DEFAULT_MINT)
   const wallet = useWallet(mintUrl)
 
   // Form state
@@ -158,10 +160,15 @@ export function BidForm({
       return
     }
 
-    const bidAmount = parseInt(amount, 10)
-    if (isNaN(bidAmount) || bidAmount <= 0) {
-      setError("amount must be a positive number")
-      return
+    const bidAmount =
+      buyNowPrice !== undefined && buyNowPrice !== null
+        ? buyNowPrice
+        : parseInt(amount, 10)
+    if (buyNowPrice === undefined || buyNowPrice === null) {
+      if (isNaN(bidAmount) || bidAmount <= 0) {
+        setError("amount must be a positive number")
+        return
+      }
     }
 
     if (!testMode) {
@@ -195,6 +202,8 @@ export function BidForm({
 
       if (testMode) {
         const secret = createP2PKsecret(auction.seller_pubkey, [
+          ["pubkeys", serverPubkeyHex],
+          ["n_sigs", "2"],
           ["locktime", String(locktime)],
           ["refund", identity.pubkey],
         ])
@@ -207,7 +216,8 @@ export function BidForm({
         mintUrlForBid = TEST_MINT_URL
       } else {
         const { proof: walletProof } = await wallet.sendP2PK(bidAmount, {
-          pubkey: auction.seller_pubkey,
+          pubkey: [auction.seller_pubkey, serverPubkeyHex],
+          requiredSignatures: 2,
           locktime,
           refundKeys: [identity.pubkey],
         })

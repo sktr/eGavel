@@ -63,6 +63,41 @@ describe("parseAuctionEvent", () => {
   })
 })
 
+describe("parseAuctionEvent extended fields", () => {
+  it("parses mint_url, reserve_price, buy_now_price and meta", () => {
+    const event = makeEvent({
+      content: JSON.stringify({
+        item: "watch",
+        description: "desc",
+        start_price: 100,
+        reserve_price: 5000,
+        buy_now_price: 10000,
+        end_time: Date.now() + 3600_000,
+        mint_url: "https://mint.example",
+        category: "watches",
+        condition: "New",
+        shipping: "Courier",
+        image: "https://img.example/1.png",
+      }),
+    })
+    const result = parseAuctionEvent(event)!
+    expect(result.mint_url).toBe("https://mint.example")
+    expect(result.reserve_price).toBe(5000)
+    expect(result.buy_now_price).toBe(10000)
+    expect(result.category).toBe("watches")
+    expect(result.condition).toBe("New")
+    expect(result.shipping).toBe("Courier")
+    expect(result.image).toBe("https://img.example/1.png")
+  })
+
+  it("defaults mint_url to empty string and nullable prices to null", () => {
+    const result = parseAuctionEvent(makeEvent())!
+    expect(result.mint_url).toBe("")
+    expect(result.reserve_price).toBeNull()
+    expect(result.buy_now_price).toBeNull()
+  })
+})
+
 describe("listener integration with DB", () => {
   let db: Db
 

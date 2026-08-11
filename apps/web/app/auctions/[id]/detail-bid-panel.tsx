@@ -39,6 +39,13 @@ export function DetailBidPanel({
   const highestBid = bids.length > 0 ? bids[0]!.amount : auction.start_price
   const minBid = auction.start_price
 
+  const [buyNow, setBuyNow] = useState(false)
+  const buyNowAvailable =
+    isOpen &&
+    auction.buy_now_price !== null &&
+    auction.buy_now_price > 0 &&
+    (bids.length === 0 || auction.buy_now_price > bids[0]!.amount)
+
   // Live-updating timer
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -117,8 +124,35 @@ export function DetailBidPanel({
         </div>
       )}
 
+      {/* Buy Now */}
+      {buyNowAvailable && (
+        <button
+          type="button"
+          onClick={() => setBuyNow(true)}
+          style={{
+            width: "100%",
+            border: "none",
+            borderRadius: "var(--radius)",
+            background: "var(--accent)",
+            color: "#fff",
+            padding: "12px 24px",
+            fontSize: 15,
+            fontWeight: 600,
+            fontFamily: "inherit",
+            cursor: "pointer",
+            marginBottom: 8,
+          }}
+        >
+          Buy Now — {auction.buy_now_price!.toLocaleString()} sats
+        </button>
+      )}
+
       {/* Bid form */}
-      <BidForm auction={auction} serverNpub={serverNpub} />
+      <BidForm
+        auction={auction}
+        serverNpub={serverNpub}
+        buyNowPrice={buyNow ? auction.buy_now_price : undefined}
+      />
 
       {/* Bid note */}
       <div
@@ -132,6 +166,10 @@ export function DetailBidPanel({
           {minBid.toLocaleString()}
         </strong>{" "}
         sats minimum bid
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+          Bids sent before the end time are accepted until {`end + 30s`} (relay grace). Bids in
+          the last 5 minutes extend the auction by 5 minutes.
+        </p>
       </div>
 
       {/* Outline buttons */}

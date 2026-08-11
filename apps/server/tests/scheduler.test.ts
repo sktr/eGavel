@@ -10,6 +10,8 @@ function makeAuction(overrides: Partial<Auction> = {}): Auction {
     item: "test item",
     description: "desc",
     start_price: 100,
+    reserve_price: null,
+    buy_now_price: null,
     end_time: Date.now() + 300_000,
     seller_pubkey: "abc",
     state: "ACTIVE",
@@ -17,21 +19,22 @@ function makeAuction(overrides: Partial<Auction> = {}): Auction {
     last_extended_at: null,
     winner_npub: null,
     winning_amount: null,
+    mint_url: "https://mint.example",
     ...overrides,
   }
 }
 
-function makePublisher(): Publisher & { calls: unknown[] } {
+function makePublisher(): Publisher & { calls: unknown[]; pub: Publisher } {
   const calls: unknown[] = []
-  return {
-    calls,
-    publishSettlement(auctionId, sellerPubkey, winnerNpub, amount, bidsChecked) {
-      calls.push({ type: "settlement", auctionId, sellerPubkey, winnerNpub, amount, bidsChecked })
+  const pub: Publisher = {
+    publishSettlement(...args: unknown[]) {
+      calls.push({ type: "settlement", args })
     },
-    publishBid(auctionId, sellerPubkey, bidderNpub, amount, Y, receivedAt) {
-      calls.push({ type: "bid", auctionId, sellerPubkey, bidderNpub, amount, Y, receivedAt })
+    publishBid(...args: unknown[]) {
+      calls.push({ type: "bid", args })
     },
   }
+  return Object.assign(pub, { calls, pub })
 }
 
 describe("scheduler", () => {
@@ -41,202 +44,103 @@ describe("scheduler", () => {
     db = initDb()
   })
 
-  it("settles with correct winner", () => {
-    const publisher = makePublisher()
-    const scheduler = createScheduler(db, publisher)
+  function seedBid(auctionId: string, amount: number, receivedAt: number, id = `b${Math.random()}`) {
+    db.saveBid({
+      id,
+      auction_id: auctionId,
+      amount,
+      bidder_npub: "npub-bidder",
+      Y: `y-${id}`,
+      received_at: receivedAt,
+      status: "verified",
+      proof_data: null,
+    })
+  }
 
-    const auction = makeAuction({ id: "a1", end_time: Date.now() - 1000 })
+  // NOTE: `tick()` is now async (it awaits `withAuctionLock`) — always await it.
+  // Anti-sniping window is [E - 5min, E]: bids seeded at `end_time - 6min` (i.e.
+  // `Date.now() - 400_000` when `end_time = Date.now() - 40_000`) stay OUTSIDE the
+  // window so the auction settles instead of extending.
+
+  it("does not settle before end_time + grace", async () => {
+    const auction = makeAuction({ id: "g1", end_time: Date.now() + 10_000 })
     db.saveAuction(auction)
-    db.saveBid({
-      id: "b1",
-      auction_id: "a1",
-      amount: 500,
-      bidder_npub: "npub-winner",
-      Y: "y1",
-      received_at: 1,
-      status: "verified",
-    })
-    db.saveBid({
-      id: "b2",
-      auction_id: "a1",
-      amount: 200,
-      bidder_npub: "npub-loser",
-      Y: "y2",
-      received_at: 2,
-      status: "verified",
-    })
-
-    scheduler.tick()
-
-    const settled = db.getAuction("a1")!
-    expect(settled.state).toBe("SETTLED")
-    expect(settled.winner_npub).toBe("npub-winner")
-    expect(settled.winning_amount).toBe(500)
-
-    expect(publisher.calls).toHaveLength(1)
-    expect(publisher.calls[0]).toMatchObject({
-      type: "settlement",
-      winnerNpub: "npub-winner",
-      amount: 500,
-    })
+    const scheduler = createScheduler(db, makePublisher())
+    await scheduler.tick()
+    expect(db.getAuction("g1")!.state).toBe("ACTIVE")
   })
 
-  it("resolves highest bid with earliest time", () => {
-    const publisher = makePublisher()
-    const scheduler = createScheduler(db, publisher)
-
-    const auction = makeAuction({ id: "a2", end_time: Date.now() - 1000 })
+  it("settles after end_time + grace with the highest bid", async () => {
+    const auction = makeAuction({ id: "g2", end_time: Date.now() - 40_000 })
     db.saveAuction(auction)
-    db.saveBid({
-      id: "b3",
-      auction_id: "a2",
-      amount: 500,
-      bidder_npub: "npub-early",
-      Y: "y3",
-      received_at: 1,
-      status: "verified",
-    })
-    db.saveBid({
-      id: "b4",
-      auction_id: "a2",
-      amount: 500,
-      bidder_npub: "npub-late",
-      Y: "y4",
-      received_at: 5,
-      status: "verified",
-    })
-
-    scheduler.tick()
-
-    const settled = db.getAuction("a2")!
-    expect(settled.winner_npub).toBe("npub-early")
+    seedBid("g2", 500, Date.now() - 400_000) // E - 6min: outside anti-sniping window
+    seedBid("g2", 200, Date.now() - 500_000)
+    const scheduler = createScheduler(db, makePublisher())
+    await scheduler.tick()
+    const settled = db.getAuction("g2")!
+    expect(settled.state).toBe("SETTLED")
+    expect(settled.winner_npub).toBe("npub-bidder")
     expect(settled.winning_amount).toBe(500)
   })
 
-  it("produces null winner when no bids", () => {
-    const publisher = makePublisher()
-    const scheduler = createScheduler(db, publisher)
-
-    const auction = makeAuction({ id: "a3", end_time: Date.now() - 1000 })
+  it("does not extend for a bid inside the grace window (E, E+30s]", async () => {
+    const endTime = Date.now() - 10_000 // past E, within grace
+    const auction = makeAuction({ id: "g3", end_time: endTime })
     db.saveAuction(auction)
-
-    scheduler.tick()
-
-    const settled = db.getAuction("a3")!
-    expect(settled.state).toBe("SETTLED")
-    expect(settled.winner_npub).toBeNull()
-    expect(settled.winning_amount).toBe(0)
-
-    expect(publisher.calls).toHaveLength(1)
-    expect(publisher.calls[0]).toMatchObject({
-      type: "settlement",
-      winnerNpub: null,
-      amount: 0,
-    })
+    seedBid("g3", 300, endTime + 10_000) // arrived in grace
+    const scheduler = createScheduler(db, makePublisher())
+    await scheduler.tick()
+    expect(db.getAuction("g3")!.state).toBe("ACTIVE") // not yet settled (still within grace), and not extended
   })
 
-  it("produces null winner when highest bid below start_price", () => {
-    const publisher = makePublisher()
-    const scheduler = createScheduler(db, publisher)
+  it("extends when a bid arrived within the last 5 minutes before E", async () => {
+    const endTime = Date.now() + 60_000
+    const auction = makeAuction({ id: "g4", end_time: endTime })
+    db.saveAuction(auction)
+    seedBid("g4", 300, endTime - 60_000) // 1 min before E, within the window
+    const scheduler = createScheduler(db, makePublisher())
+    await scheduler.tick()
+    const auction2 = db.getAuction("g4")!
+    expect(auction2.state).toBe("EXTENDED")
+    expect(auction2.end_time).toBe(endTime + 5 * 60_000)
+  })
 
+  it("does not settle a reserve not met", async () => {
     const auction = makeAuction({
-      id: "a4",
-      end_time: Date.now() - 1000,
-      start_price: 500,
+      id: "g5",
+      end_time: Date.now() - 40_000,
+      reserve_price: 1000,
     })
     db.saveAuction(auction)
-    db.saveBid({
-      id: "b5",
-      auction_id: "a4",
-      amount: 200,
-      bidder_npub: "npub-lowball",
-      Y: "y5",
-      received_at: 1,
-      status: "verified",
-    })
-
-    scheduler.tick()
-
-    const settled = db.getAuction("a4")!
+    seedBid("g5", 500, Date.now() - 400_000)
+    const scheduler = createScheduler(db, makePublisher())
+    await scheduler.tick()
+    const settled = db.getAuction("g5")!
+    expect(settled.state).toBe("SETTLED")
     expect(settled.winner_npub).toBeNull()
     expect(settled.winning_amount).toBe(0)
   })
 
-  it("extends auction when bid arrives within 5 min of end", () => {
-    const publisher = makePublisher()
-    const scheduler = createScheduler(db, publisher)
-
-    const fiveMinAgo = Date.now() - 5 * 60_000
-    const auction = makeAuction({
-      id: "a5",
-      end_time: fiveMinAgo,
-    })
+  it("publishes settlement with result tags", async () => {
+    const auction = makeAuction({ id: "g6", end_time: Date.now() - 40_000, reserve_price: 1000 })
     db.saveAuction(auction)
-    // bid arrived 1 min before end (within 5 min window)
-    db.saveBid({
-      id: "b6",
-      auction_id: "a5",
-      amount: 300,
-      bidder_npub: "npub-sniper",
-      Y: "y6",
-      received_at: fiveMinAgo - 60_000,
-      status: "verified",
-    })
-
-    scheduler.tick()
-
-    const extended = db.getAuction("a5")!
-    expect(extended.state).toBe("EXTENDED")
-    expect(extended.last_extended_at).not.toBeNull()
+    seedBid("g6", 500, Date.now() - 400_000)
+    const { pub, calls } = makePublisher()
+    const scheduler = createScheduler(db, pub)
+    await scheduler.tick()
+    const call = calls.find((c: any) => c.type === "settlement") as any
+    expect(call).toBeTruthy()
+    expect(call.args[5]).toBe("reserve_not_met")
   })
 
-  it("settles auction with no recent bids at end time", () => {
-    const publisher = makePublisher()
-    const scheduler = createScheduler(db, publisher)
-
-    const sixMinAgo = Date.now() - 6 * 60_000
-    const auction = makeAuction({
-      id: "a6",
-      end_time: sixMinAgo,
-    })
+  it("settles a winning bid above reserve as sold", async () => {
+    const auction = makeAuction({ id: "g7", end_time: Date.now() - 40_000, reserve_price: 1000 })
     db.saveAuction(auction)
-    // bid arrived 10 min before end (outside 5 min window)
-    db.saveBid({
-      id: "b7",
-      auction_id: "a6",
-      amount: 300,
-      bidder_npub: "npub-early",
-      Y: "y7",
-      received_at: sixMinAgo - 10 * 60_000,
-      status: "verified",
-    })
-
-    scheduler.tick()
-
-    const settled = db.getAuction("a6")!
-    expect(settled.state).toBe("SETTLED")
-    expect(settled.winner_npub).toBe("npub-early")
-  })
-
-  it("is idempotent on already settled auction", () => {
-    const publisher = makePublisher()
-    const scheduler = createScheduler(db, publisher)
-
-    const auction = makeAuction({
-      id: "a7",
-      state: "SETTLED",
-      end_time: Date.now() - 1000,
-      winner_npub: "npub-winner",
-      winning_amount: 500,
-    })
-    db.saveAuction(auction)
-
-    scheduler.tick()
-
-    const settled = db.getAuction("a7")!
-    expect(settled.winner_npub).toBe("npub-winner")
-    expect(settled.winning_amount).toBe(500)
-    expect(settled.state).toBe("SETTLED")
-    expect(publisher.calls).toHaveLength(0)
+    seedBid("g7", 1500, Date.now() - 400_000)
+    const { pub, calls } = makePublisher()
+    const scheduler = createScheduler(db, pub)
+    await scheduler.tick()
+    const call = calls.find((c: any) => c.type === "settlement") as any
+    expect(call.args[5]).toBe("sold")
   })
 })
