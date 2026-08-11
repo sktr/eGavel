@@ -1,36 +1,19 @@
 "use client"
 
-import {
-  generateSecretKey,
-  getPublicKey,
-  finalizeEvent,
-  nip19,
-} from "nostr-tools"
-import { hexToBytes, bytesToHex } from "nostr-tools/utils"
+import { finalizeEvent } from "nostr-tools"
+import type { EventTemplate, Event } from "nostr-tools"
 import { SimplePool } from "nostr-tools/pool"
-import type { EventTemplate } from "nostr-tools"
-
-const STORAGE_KEY = "cashu-auction-nostr-key"
+import type { Identity } from "./identity"
 
 const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol"]
 
-export function loadOrCreateKey(): {
-  secretKey: Uint8Array
-  pubkey: string
-} {
-  const stored = localStorage.getItem(STORAGE_KEY)
-  if (stored) {
-    const bytes = hexToBytes(stored)
-    return { secretKey: bytes, pubkey: getPublicKey(bytes) }
-  }
-  const secretKey = generateSecretKey()
-  localStorage.setItem(STORAGE_KEY, bytesToHex(secretKey))
-  const pubkey = getPublicKey(secretKey)
-  return { secretKey, pubkey }
-}
-
-export function getNpub(pubkey: string): string {
-  return nip19.npubEncode(pubkey)
+export async function publishSignedEvent(
+  event: Event,
+  relays?: string[],
+): Promise<void> {
+  const pool = new SimplePool()
+  const target = relays ?? DEFAULT_RELAYS
+  await Promise.any(pool.publish(target, event))
 }
 
 export async function publishEvent(
@@ -38,8 +21,32 @@ export async function publishEvent(
   secretKey: Uint8Array,
   relays?: string[],
 ): Promise<void> {
-  const pool = new SimplePool()
   const event = finalizeEvent(template, secretKey)
-  const target = relays ?? DEFAULT_RELAYS
-  await Promise.any(pool.publish(target, event))
+  await publishSignedEvent(event, relays)
+}
+
+/**
+ * Sign (via NIP-07 if available, otherwise the in-app fallback key) and
+ * publish a Nostr event. The SAME identity is used for creating auctions,
+ * so seller keys, bids, and the header all share one identity.
+ */
+export async function publishEventWithIdentity(
+  template: EventTemplate,
+  identity: Identity,
+  relays?: string[],
+): Promise<void> {
+  if (identity.type === "nip07" && typeof window !== "undefined" && window.nostr) {
+    const signed = await window.nostr.signEvent(template)
+    const event = {
+      ...template,
+      id: signed.id,
+      sig: signed.sig,
+      pubkey: identity.pubkey,
+    } as unknown as Event
+    await publishSignedEvent(event, relays)
+  } else if (identity.secretKey) {
+    await publishEvent(template, identity.secretKey, relays)
+  } else {
+    throw new Error("no signing key available")
+  }
 }

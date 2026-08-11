@@ -40,6 +40,11 @@ export function AuctionCard({ a }: { a: Auction }) {
           </span>
           {isOpen && <span>{timeLeft(a.end_time)}</span>}
         </div>
+        {a.mint_url === "" && (
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+            Legacy listing — bidding disabled
+          </div>
+        )}
       </div>
     </a>
   )

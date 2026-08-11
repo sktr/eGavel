@@ -47,7 +47,7 @@ function makeP2PKSecret(
       nonce,
       data,
       tags: [
-        ["pubkeys", SERVER_PUBKEY],
+        ["pubkeys", SERVER_PUBKEY, refund],
         ["n_sigs", "2"],
         ["locktime", String(locktime)],
         ["refund", refund],
@@ -138,7 +138,7 @@ describe("verifyBid", () => {
     auction.state = "CLOSED"
     const result = await verifyBid(
       {
-        proof: { id: "x", amount: 200, secret: "x", C: "x" },
+        proofs: [{ id: "x", amount: 200, secret: "x", C: "x" }],
         mint_url: "https://mint.example",
         auction_id: "a1",
         amount: 200,
@@ -155,7 +155,7 @@ describe("verifyBid", () => {
   it("rejects if amount is below start_price", async () => {
     const result = await verifyBid(
       {
-        proof: { id: "x", amount: 50, secret: "x", C: "x" },
+        proofs: [{ id: "x", amount: 50, secret: "x", C: "x" }],
         mint_url: "https://mint.example",
         auction_id: "a1",
         amount: 50,
@@ -169,10 +169,10 @@ describe("verifyBid", () => {
     if (!result.ok) expect(result.error.code).toBe("BELOW_START_PRICE")
   })
 
-  it("rejects if proof amount mismatches claimed amount", async () => {
+  it("rejects if the locked proof value is below the claimed amount", async () => {
     const result = await verifyBid(
       {
-        proof: { id: "x", amount: 300, secret: "x", C: "x" },
+        proofs: [{ id: "x", amount: 100, secret: "x", C: "x" }],
         mint_url: "https://mint.example",
         auction_id: "a1",
         amount: 200,
@@ -191,7 +191,7 @@ describe("verifyBid", () => {
     const secret = makeP2PKSecret("wrong_pubkey", locktime, BIDDER_PUBKEY)
     const result = await verifyBid(
       {
-        proof: { id: "x", amount: 200, secret, C: "x" },
+        proofs: [{ id: "x", amount: 200, secret, C: "x" }],
         mint_url: "https://mint.example",
         auction_id: "a1",
         amount: 200,
@@ -210,7 +210,7 @@ describe("verifyBid", () => {
     const secret = makeP2PKSecret(SELLER_PUBKEY, locktime, BIDDER_PUBKEY)
     const result = await verifyBid(
       {
-        proof: { id: "x", amount: 200, secret, C: "x" },
+        proofs: [{ id: "x", amount: 200, secret, C: "x" }],
         mint_url: "https://mint.example",
         auction_id: "a1",
         amount: 200,
@@ -226,10 +226,22 @@ describe("verifyBid", () => {
 
   it("rejects if refund does not include bidder", async () => {
     const locktime = auction.end_time + 48 * 3600_000
-    const secret = makeP2PKSecret(SELLER_PUBKEY, locktime, "someone_else")
+    const secret = JSON.stringify([
+      "P2PK",
+      {
+        nonce: "n-refund",
+        data: SELLER_PUBKEY,
+        tags: [
+          ["pubkeys", SERVER_PUBKEY, BIDDER_PUBKEY],
+          ["n_sigs", "2"],
+          ["locktime", String(locktime)],
+          ["refund", "someone_else"],
+        ],
+      },
+    ])
     const result = await verifyBid(
       {
-        proof: { id: "x", amount: 200, secret, C: "x" },
+        proofs: [{ id: "x", amount: 200, secret, C: "x" }],
         mint_url: "https://mint.example",
         auction_id: "a1",
         amount: 200,
@@ -257,7 +269,7 @@ function make2of2Secret(
       nonce,
       data,
       tags: [
-        ["pubkeys", SERVER_PUBKEY],
+        ["pubkeys", SERVER_PUBKEY, refund],
         ["n_sigs", "2"],
         ["locktime", String(locktime)],
         ["refund", refund],
@@ -315,7 +327,7 @@ describe("verifyBid 2-of-2 checks", () => {
 
   function bidPayload(secret: string, overrides: Record<string, unknown> = {}) {
     return {
-      proof: { id: "keyset1", amount: 200, secret, C: "c" },
+      proofs: [{ id: "keyset1", amount: 200, secret, C: "c" }],
       mint_url: "https://mint.example",
       auction_id: "auction-1",
       amount: 200,
@@ -346,6 +358,30 @@ describe("verifyBid 2-of-2 checks", () => {
     if (!result.ok) expect(result.error.code).toBe("SERVER_KEY_MISMATCH")
   })
 
+  it("accepts a bid where the bidder is also the seller (data key, deduped from pubkeys)", async () => {
+    const secret = JSON.stringify([
+      "P2PK",
+      {
+        nonce: "n-self",
+        data: "02deadbeef",
+        tags: [
+          ["pubkeys", SERVER_PUBKEY],
+          ["n_sigs", "2"],
+          ["locktime", String(locktime)],
+          ["refund", "02deadbeef"],
+        ],
+      },
+    ])
+    // bidder == seller == 02deadbeef; pubkeys contains only the server key
+    const result = await verifyBid(
+      bidPayload(secret, { bidder_pubkey: "02deadbeef", mint_url: "test://local" }),
+      { ...auction, mint_url: "test://local" } as never,
+      undefined,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(true)
+  })
+
   it("rejects when n_sigs is not 2", async () => {
     const secret = JSON.stringify([
       "P2PK",
@@ -353,7 +389,7 @@ describe("verifyBid 2-of-2 checks", () => {
         nonce: "n4",
         data: "02deadbeef",
         tags: [
-          ["pubkeys", SERVER_PUBKEY],
+          ["pubkeys", SERVER_PUBKEY, "03cafebabe"],
           ["n_sigs", "1"],
           ["locktime", String(locktime)],
           ["refund", "03cafebabe"],
@@ -387,6 +423,21 @@ describe("verifyBid 2-of-2 checks", () => {
 
   it("accepts a well-formed 2-of-2 bid against the test mint", async () => {
     const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "n7")
+    const result = await verifyBid(
+      bidPayload(secret, { mint_url: "test://local" }),
+      auction as never,
+      undefined,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it("accepts a bid whose locktime is exactly ceil((end_time + 24h)/1000)", async () => {
+    // Regression: the web bid form previously computed locktime with Math.floor,
+    // which is always < the server's Math.ceil floor → every real bid was rejected
+    // with LOCKTIME_TOO_EARLY. This test fails with floor and passes with ceil.
+    const exactCeilLocktime = Math.ceil((auction.end_time + 24 * 3600_000) / 1000)
+    const secret = make2of2Secret("02deadbeef", exactCeilLocktime, "03cafebabe", "n-ceil")
     const result = await verifyBid(
       bidPayload(secret, { mint_url: "test://local" }),
       auction as never,
@@ -437,7 +488,7 @@ describe("verifyBid mint checks", () => {
   function payload(mintUrl: string) {
     const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "m1")
     return {
-      proof: { id: "keyset1", amount: 200, secret, C: "c" },
+      proofs: [{ id: "keyset1", amount: 200, secret, C: "c" }],
       mint_url: mintUrl,
       auction_id: "mint-1",
       amount: 200,
@@ -529,13 +580,15 @@ describe("verifyBid mint checks", () => {
     const auction2 = { ...auction, id: "mint-dleq", mint_url: "https://mint-dleq.example" }
     const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "dq1")
     const p = {
-      proof: {
-        id: "keyset1",
-        amount: 200,
-        secret,
-        C: "c",
-        dleq: { e: "02" + "ab".repeat(32), s: "cd".repeat(32) },
-      },
+      proofs: [
+        {
+          id: "keyset1",
+          amount: 200,
+          secret,
+          C: "c",
+          dleq: { e: "02" + "ab".repeat(32), s: "cd".repeat(32) },
+        },
+      ],
       mint_url: "https://mint-dleq.example",
       auction_id: "mint-dleq",
       amount: 200,

@@ -10,14 +10,16 @@ const LOCKTIME_MARGIN_MS = 24 * 60 * 60 * 1000
 const END_TIME_MARGIN_MS = 30_000
 const TEST_MINT_URL = "test://local"
 
+export interface BidPayloadProof {
+  id: string
+  amount: number
+  secret: string
+  C: string
+  dleq?: { e: string; s: string }
+}
+
 export interface BidPayload {
-  proof: {
-    id: string
-    amount: number
-    secret: string
-    C: string
-    dleq?: { e: string; s: string }
-  }
+  proofs: BidPayloadProof[]
   mint_url: string
   auction_id: string
   amount: number
@@ -28,7 +30,7 @@ export type VerifyError =
   | { code: "INVALID_SECRET_FORMAT"; message: string }
   | { code: "NOT_P2PK_SECRET" }
   | { code: "PUBKEY_MISMATCH"; expected: string; actual: string }
-  | { code: "SERVER_KEY_MISMATCH" }
+  | { code: "SERVER_KEY_MISMATCH"; detail?: { pubkeys: string[]; expectedServer: string | null; bidder: string } }
   | { code: "P2PK_STRUCTURE_INVALID"; message: string }
   | { code: "SIGFLAG_NOT_INPUTS"; flag: string }
   | { code: "LOCKTIME_TOO_EARLY"; locktime: number; required: number }
@@ -47,7 +49,7 @@ export type VerifyError =
   | { code: "MINT_UNREACHABLE"; message: string }
 
 export type VerifyResult =
-  | { ok: true; Y: string }
+  | { ok: true; Ys: string[] }
   | { ok: false; error: VerifyError }
 
 function utf8Encode(str: string): Uint8Array {
@@ -193,12 +195,16 @@ export async function verifyBid(
     }
   }
 
-  if (payload.proof.amount !== payload.amount) {
+  // The locked value (sum of all proofs, incl. the future-spend fee the bidder
+  // paid upfront) must cover the bid amount. cashu-ts splits sends into
+  // denomination proofs, so a bid is a bundle of proofs.
+  const totalProofAmount = payload.proofs.reduce((a, p) => a + p.amount, 0)
+  if (totalProofAmount < payload.amount) {
     return {
       ok: false,
       error: {
         code: "AMOUNT_MISMATCH",
-        proofAmount: payload.proof.amount,
+        proofAmount: totalProofAmount,
         claimedAmount: payload.amount,
       },
     }
@@ -220,55 +226,74 @@ export async function verifyBid(
     }
   }
 
-  // ── P2PK structure ──────────────────────────────
-  let parsed: ParsedP2PK | VerifyError
-  try {
-    parsed = parseP2PKSecret(payload.proof.secret)
-  } catch (err) {
-    return { ok: false, error: { code: "INVALID_SECRET_FORMAT", message: String(err) } }
-  }
-  if ("code" in parsed) return { ok: false, error: parsed }
-
-  if (canonicalPubkey(parsed.data) !== canonicalPubkey(auction.seller_pubkey)) {
-    return {
-      ok: false,
-      error: {
-        code: "PUBKEY_MISMATCH",
-        expected: auction.seller_pubkey,
-        actual: parsed.data,
-      },
-    }
-  }
-
-  if (!serverPubkey || !parsed.pubkeys.map(canonicalPubkey).includes(canonicalPubkey(serverPubkey))) {
-    return { ok: false, error: { code: "SERVER_KEY_MISMATCH" } }
-  }
-
-  if (parsed.nSigs !== 2) {
-    return { ok: false, error: { code: "P2PK_STRUCTURE_INVALID", message: `n_sigs=${parsed.nSigs} (expected 2)` } }
-  }
-
+  // ── P2PK structure (per proof) ──────────────────
   const requiredLocktime = Math.ceil((auction.end_time + LOCKTIME_MARGIN_MS) / 1000)
-  if (parsed.locktime < requiredLocktime) {
-    return {
-      ok: false,
-      error: { code: "LOCKTIME_TOO_EARLY", locktime: parsed.locktime, required: requiredLocktime },
+  const Ys: string[] = []
+  for (const proof of payload.proofs) {
+    let parsed: ParsedP2PK | VerifyError
+    try {
+      parsed = parseP2PKSecret(proof.secret)
+    } catch (err) {
+      return { ok: false, error: { code: "INVALID_SECRET_FORMAT", message: String(err) } }
     }
-  }
+    if ("code" in parsed) return { ok: false, error: parsed }
 
-  if (!parsed.refund.split(",").map(canonicalPubkey).includes(canonicalPubkey(payload.bidder_pubkey))) {
-    return { ok: false, error: { code: "REFUND_MISMATCH", expected: payload.bidder_pubkey } }
-  }
+    if (canonicalPubkey(parsed.data) !== canonicalPubkey(auction.seller_pubkey)) {
+      return {
+        ok: false,
+        error: {
+          code: "PUBKEY_MISMATCH",
+          expected: auction.seller_pubkey,
+          actual: parsed.data,
+        },
+      }
+    }
 
-  let Y: string
-  try {
-    Y = computeY(payload.proof.secret)
-  } catch {
-    return { ok: false, error: { code: "INVALID_SECRET_FORMAT", message: "failed to compute Y" } }
+    // 2-of-3: the lock key set is {seller (data), server, bidder}. The bidder may
+    // appear in `pubkeys` OR, when the bidder == seller, be the `data` key itself
+    // (cashu-ts dedupes the data key out of pubkeys).
+    const pubkeysCanon = parsed.pubkeys.map(canonicalPubkey)
+    const bidderInLock =
+      canonicalPubkey(parsed.data) === canonicalPubkey(payload.bidder_pubkey) ||
+      pubkeysCanon.includes(canonicalPubkey(payload.bidder_pubkey))
+    if (!serverPubkey || !pubkeysCanon.includes(canonicalPubkey(serverPubkey)) || !bidderInLock) {
+      return {
+        ok: false,
+        error: {
+          code: "SERVER_KEY_MISMATCH",
+          detail: {
+            pubkeys: parsed.pubkeys.map((p) => p.slice(0, 12)),
+            expectedServer: serverPubkey ? serverPubkey.slice(0, 12) : null,
+            bidder: payload.bidder_pubkey.slice(0, 12),
+          },
+        },
+      }
+    }
+
+    if (parsed.nSigs !== 2) {
+      return { ok: false, error: { code: "P2PK_STRUCTURE_INVALID", message: `n_sigs=${parsed.nSigs} (expected 2)` } }
+    }
+
+    if (parsed.locktime < requiredLocktime) {
+      return {
+        ok: false,
+        error: { code: "LOCKTIME_TOO_EARLY", locktime: parsed.locktime, required: requiredLocktime },
+      }
+    }
+
+    if (!parsed.refund.split(",").map(canonicalPubkey).includes(canonicalPubkey(payload.bidder_pubkey))) {
+      return { ok: false, error: { code: "REFUND_MISMATCH", expected: payload.bidder_pubkey } }
+    }
+
+    try {
+      Ys.push(computeY(proof.secret))
+    } catch {
+      return { ok: false, error: { code: "INVALID_SECRET_FORMAT", message: "failed to compute Y" } }
+    }
   }
 
   if (allowTest && isTestMint) {
-    return { ok: true, Y }
+    return { ok: true, Ys }
   }
 
   // ── mint reachability + NUT-06 ───────────────────
@@ -282,21 +307,22 @@ export async function verifyBid(
   }
 
   // ── best-effort DLEQ (NUT-12) ────────────────────
-  if (payload.proof.dleq) {
+  for (const proof of payload.proofs) {
+    if (!proof.dleq) continue
     try {
       const ksRes = await fetch(`${payload.mint_url}/v1/keysets`)
       if (!ksRes.ok) throw new Error(`keysets HTTP ${ksRes.status}`)
       const { keysets } = (await ksRes.json()) as { keysets: { id: string }[] }
-      const keyset = keysets.find((k) => k.id === payload.proof.id)
+      const keyset = keysets.find((k) => k.id === proof.id)
       if (keyset) {
         const kRes = await fetch(`${payload.mint_url}/v1/keys/${keyset.id}`)
         if (!kRes.ok) throw new Error(`keys HTTP ${kRes.status}`)
         const data = (await kRes.json()) as { keysets?: { id: string; keys: Record<string, string> }[] }
-        const pub = data.keysets?.[0]?.keys[String(payload.proof.amount)]
+        const pub = data.keysets?.[0]?.keys[String(proof.amount)]
         if (pub) {
           const dleqOk = hasValidDleq(
-            payload.proof as unknown as Proof,
-            { id: payload.proof.id, keys: { [payload.proof.amount]: pub } },
+            proof as unknown as Proof,
+            { id: proof.id, keys: { [proof.amount]: pub } },
             { require: false },
           )
           if (!dleqOk) {
@@ -312,32 +338,32 @@ export async function verifyBid(
   // ── NUT-07 unspent check (best-effort with proofs, spec §4.1.9) ──
   try {
     const mint = new Mint(payload.mint_url)
-    let state: string | undefined
+    let states: string[] = []
     // Some mints validate the supplied proofs (detecting forgeries). Best-effort:
     // if the mint rejects the extra field, fall back to the plain Ys check.
     try {
       const res = await fetch(`${payload.mint_url}/v1/checkstate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ Ys: [Y], proofs: [payload.proof] }),
+        body: JSON.stringify({ Ys, proofs: payload.proofs }),
       })
       if (res.ok) {
         const data = (await res.json()) as { states?: { state?: string }[] }
-        state = data.states?.[0]?.state
+        states = (data.states ?? []).map((s) => s.state ?? "")
       }
     } catch {
       // mint does not accept proofs — fall through to the cashu-ts check
     }
-    if (!state) {
-      const result = await mint.check({ Ys: [Y] })
-      state = result.states[0]?.state
+    if (states.length === 0) {
+      const result = await mint.check({ Ys })
+      states = result.states.map((s) => s.state)
     }
-    if (state !== "UNSPENT") {
+    if (states.some((st) => st !== "UNSPENT")) {
       return { ok: false, error: { code: "PROOF_ALREADY_SPENT" } }
     }
   } catch (err) {
     return { ok: false, error: { code: "MINT_ERROR", message: String(err) } }
   }
 
-  return { ok: true, Y }
+  return { ok: true, Ys }
 }

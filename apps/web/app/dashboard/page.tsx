@@ -1,8 +1,12 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useIdentity } from "../../lib/identity"
+import { useWatchlist } from "../../lib/watchlist"
+import { refundBid } from "../../lib/claim"
+import { bytesToHex } from "nostr-tools/utils"
 import type { Auction, Bid } from "@cashu-auction/shared"
+import { ClaimPanel } from "../auctions/[id]/claim-panel"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
 
@@ -21,6 +25,19 @@ function timeLeft(ms: number) {
   if (hours < 24) return `${hours}h ${rem}m`
   const days = Math.floor(hours / 24)
   return `${days}d ${hours % 24}h`
+}
+
+// Seller view: fetch the winner's registered shipping address for a settled auction.
+// API_BASE already carries the /api prefix, so it resolves to /api/auctions/:id/shipping.
+async function loadShipping(
+  auctionId: string,
+  sellerPubkeyHex: string,
+): Promise<{ address: string | null; note: string | null }> {
+  const res = await fetch(`${API_BASE}/auctions/${auctionId}/shipping?seller_pubkey=${sellerPubkeyHex}`, {
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) return { address: null, note: null }
+  return res.json()
 }
 
 function statusPill(label: string, variant: "active" | "winning" | "outbid" | "won" | "pending") {
@@ -61,17 +78,58 @@ function itemThumb(name: string) {
   return <span className="material-icons">{icons[Math.abs(hash) % icons.length]}</span>
 }
 
+const recoverButtonStyle = {
+  fontSize: 12,
+  padding: "6px 14px",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius)",
+  background: "var(--surface)",
+  color: "var(--fg)",
+  cursor: "pointer",
+  fontFamily: "inherit",
+  lineHeight: 1.4,
+  marginTop: 6,
+}
+
+// Refund a replaced (outbid) bid. Bids are placed with the useIdentity key, not
+// loadOrCreateKey (lib/identity.ts "cashu-auction-identity" vs lib/nostr.ts
+// "cashu-auction-nostr-key") — the refund Schnorr signature must come from the
+// SAME key that owns the refund path.
+async function recoverBid(bid: Bid, identity: { pubkey: string; secretKey?: Uint8Array }) {
+  if (bid.bidder_npub !== identity.pubkey) {
+    alert("this bid is not from the connected identity")
+    return
+  }
+  if (!identity.secretKey) {
+    alert("recovering requires the in-app key — NIP-07 signing is not supported yet")
+    return
+  }
+  try {
+    const proofs = await refundBid(bid.id, bid.bidder_npub, bytesToHex(identity.secretKey))
+    alert(`Recovered ${proofs.length} proof(s) — refresh your wallet.`)
+  } catch (err) {
+    alert(String(err))
+  }
+}
+
 export default function DashboardPage() {
   const { identity, isLoaded } = useIdentity()
+  const { ids } = useWatchlist()
   const [auctions, setAuctions] = useState<Auction[]>([])
   const [bids, setBids] = useState<Bid[]>([])
   const [auctionLookup, setAuctionLookup] = useState<Record<string, Auction>>({})
+  const [shippingByAuction, setShippingByAuction] = useState<
+    Record<string, { address: string | null; note: string | null }>
+  >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAuctionById = useCallback(async (id: string): Promise<Auction | null> => {
     try {
-      const res = await fetch(`${API_BASE}/auctions/${id}`, { cache: "no-store" })
+      const res = await fetch(`${API_BASE}/auctions/${id}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      })
       if (!res.ok) return null
       return res.json() as Promise<Auction>
     } catch {
@@ -90,8 +148,12 @@ export default function DashboardPage() {
     const fetchData = async () => {
       try {
         const [auctionsRes, bidsRes] = await Promise.all([
-          fetch(`${API_BASE}/auctions?seller_pubkey=${identity.pubkey}`),
-          fetch(`${API_BASE}/bids?bidder_pubkey=${identity.pubkey}`),
+          fetch(`${API_BASE}/auctions?seller_pubkey=${identity.pubkey}`, {
+            signal: AbortSignal.timeout(10000),
+          }),
+          fetch(`${API_BASE}/bids?bidder_pubkey=${identity.pubkey}`, {
+            signal: AbortSignal.timeout(10000),
+          }),
         ])
 
         if (!auctionsRes.ok) throw new Error(`auctions: ${auctionsRes.status}`)
@@ -128,6 +190,58 @@ export default function DashboardPage() {
 
     fetchData()
   }, [identity, isLoaded, fetchAuctionById])
+
+  // Seller view: fetch shipping addresses for settled listings the user sold
+  useEffect(() => {
+    if (!identity) return
+    const settledListings = auctions.filter(
+      (a) => a.state === "SETTLED" && a.seller_pubkey === identity.pubkey && a.winner_npub,
+    )
+    if (settledListings.length === 0) {
+      setShippingByAuction({})
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const map: Record<string, { address: string | null; note: string | null }> = {}
+      for (const a of settledListings) {
+        map[a.id] = await loadShipping(a.id, identity.pubkey)
+      }
+      if (!cancelled) setShippingByAuction(map)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [identity, auctions])
+
+  // Auto-refund outbid bids: when a bid is no longer the highest, the funds
+  // return immediately via bidder+server co-sign (2-of-3, spec §6.4).
+  const failedRefundsRef = useRef(new Set<string>())
+  useEffect(() => {
+    if (!identity || !identity.secretKey) return // NIP-07 cannot sign arbitrary messages
+    const skHex = bytesToHex(identity.secretKey)
+    let cancelled = false
+    const run = async () => {
+      for (const b of bids) {
+        if (cancelled) return
+        if (b.status !== "outbid") continue
+        if (failedRefundsRef.current.has(b.id)) continue
+        try {
+          await refundBid(b.id, b.bidder_npub, skHex)
+        } catch {
+          // Legacy 2-of-2 bids (pre-2-of-3) can't be co-signed-refunded before
+          // locktime — stop retrying them instead of looping forever.
+          failedRefundsRef.current.add(b.id)
+        }
+      }
+    }
+    run()
+    const timer = setInterval(run, 15000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [bids, identity])
 
   if (!isLoaded || loading) {
     return (
@@ -178,6 +292,11 @@ export default function DashboardPage() {
   const wonAuctions = auctions.filter((a) => a.state === "SETTLED" && a.winner_npub === identity?.pubkey)
   const totalSpent = wonAuctions.reduce((sum, a) => sum + (a.winning_amount ?? 0), 0)
 
+  // Settled listings the user sold to a winner (seller view → shipping address)
+  const settledListings = auctions.filter(
+    (a) => a.state === "SETTLED" && a.seller_pubkey === identity?.pubkey && a.winner_npub,
+  )
+
   // Winning bids: bids on auctions where the user is the winner
   const wonBids = bids.filter((b) => {
     const auction = auctionLookup[b.auction_id]
@@ -186,8 +305,8 @@ export default function DashboardPage() {
 
   // Auctions I won but where my bid matches winning amount
   const wonViaBid = wonBids.length > 0
-  // Combined claimable items
-  const claimable = wonAuctions.length
+  // Combined claimable items (seller view: settled listings with a winner)
+  const claimable = settledListings.length
 
   // Info for bid cards: determine status
   function bidStatus(b: Bid): { label: string; variant: "winning" | "outbid" | "won" } {
@@ -424,6 +543,22 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* ===== Watching ===== */}
+      {ids.length > 0 && (
+        <section style={{ marginTop: 24 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Watching</h2>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {ids.map((id) => (
+              <li key={id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+                <a href={`/auctions/${id}`} style={{ color: "var(--accent)", textDecoration: "none", fontFamily: "var(--font-mono)", fontSize: 13 }}>
+                  {id}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* ===== Active Bids ===== */}
       <div
         style={{
@@ -470,24 +605,24 @@ export default function DashboardPage() {
         {activeBids.map((b, idx) => {
           const auction = auctionLookup[b.auction_id]
           const st = bidStatus(b)
-          return (
-            <a
-              key={b.id}
-              href={`/auctions/${b.auction_id}`}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "56px 1fr auto",
-                gap: 16,
-                alignItems: "center",
-                padding: "8px 0",
-                borderBottom:
-                  idx < activeBids.length - 1
-                    ? "1px solid var(--border)"
-                    : "none",
-                color: "inherit",
-                textDecoration: "none",
-              }}
-            >
+          // refund is only possible after locktime (end_time + 24h) — spec §2.2
+          const recoverable =
+            b.status === "outbid" &&
+            auction !== undefined &&
+            Date.now() > auction.end_time + 24 * 60 * 60 * 1000
+          const rowStyle = {
+            display: "grid",
+            gridTemplateColumns: "56px 1fr auto",
+            gap: 16,
+            alignItems: "center",
+            padding: "8px 0",
+            borderBottom:
+              idx < activeBids.length - 1
+                ? "1px solid var(--border)"
+                : "none",
+          }
+          const row = (
+            <>
               {/* Thumbnail */}
               <div
                 style={{
@@ -553,7 +688,37 @@ export default function DashboardPage() {
                       ? "Bidding"
                       : st.label}
                 </div>
+                {b.status === "outbid" && auction && !recoverable && (
+                  <div style={{ fontSize: 11, color: "var(--amber)" }}>
+                    Outbid — refunding…
+                  </div>
+                )}
+                {recoverable && (
+                  <button
+                    type="button"
+                    onClick={() => recoverBid(b, identity!)}
+                    style={recoverButtonStyle}
+                  >
+                    Recover
+                  </button>
+                )}
               </div>
+            </>
+          )
+          if (recoverable) {
+            return (
+              <div key={b.id} style={rowStyle}>
+                {row}
+              </div>
+            )
+          }
+          return (
+            <a
+              key={b.id}
+              href={`/auctions/${b.auction_id}`}
+              style={{ ...rowStyle, color: "inherit", textDecoration: "none" }}
+            >
+              {row}
             </a>
           )
         })}
@@ -574,23 +739,24 @@ export default function DashboardPage() {
                 const isWinner =
                   auction?.winner_npub === identity?.pubkey &&
                   b.amount === auction?.winning_amount
-                return (
-                  <a
-                    key={b.id}
-                    href={`/auctions/${b.auction_id}`}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "56px 1fr auto",
-                      gap: 16,
-                      alignItems: "center",
-                      padding: "8px 0",
-                      borderBottom:
-                        idx < arr.length - 1 ? "1px solid var(--border)" : "none",
-                      color: "inherit",
-                      textDecoration: "none",
-                      opacity: isWinner ? 1 : 0.7,
-                    }}
-                  >
+                // refund is only possible after locktime (end_time + 24h) — spec §2.2
+                const recoverable =
+                  !isWinner &&
+                  b.status === "outbid" &&
+                  auction !== undefined &&
+                  Date.now() > auction.end_time + 24 * 60 * 60 * 1000
+                const rowStyle = {
+                  display: "grid",
+                  gridTemplateColumns: "56px 1fr auto",
+                  gap: 16,
+                  alignItems: "center",
+                  padding: "8px 0",
+                  borderBottom:
+                    idx < arr.length - 1 ? "1px solid var(--border)" : "none",
+                  opacity: isWinner ? 1 : 0.7,
+                }
+                const row = (
+                  <>
                     <div
                       style={{
                         width: 56,
@@ -633,7 +799,37 @@ export default function DashboardPage() {
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>
                         {isWinner ? "Winning Price" : "Bid Amount"}
                       </div>
+                      {b.status === "outbid" && auction && !recoverable && (
+                        <div style={{ fontSize: 11, color: "var(--amber)" }}>
+                          Outbid — refunding…
+                        </div>
+                      )}
+                      {recoverable && (
+                        <button
+                          type="button"
+                          onClick={() => recoverBid(b, identity!)}
+                          style={recoverButtonStyle}
+                        >
+                          Recover
+                        </button>
+                      )}
                     </div>
+                  </>
+                )
+                if (recoverable) {
+                  return (
+                    <div key={b.id} style={rowStyle}>
+                      {row}
+                    </div>
+                  )
+                }
+                return (
+                  <a
+                    key={b.id}
+                    href={`/auctions/${b.auction_id}`}
+                    style={{ ...rowStyle, color: "inherit", textDecoration: "none" }}
+                  >
+                    {row}
                   </a>
                 )
               })}
@@ -753,6 +949,99 @@ export default function DashboardPage() {
           )
         })}
       </div>
+
+      {/* ===== Sold — Shipping (seller view) ===== */}
+      {settledListings.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 24,
+              marginBottom: 16,
+            }}
+          >
+            <h2
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: 17,
+                fontWeight: 600,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Sold — Shipping
+            </h2>
+          </div>
+
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: "0 16px",
+            }}
+          >
+            {settledListings.map((a, idx) => {
+              const sh = shippingByAuction[a.id]
+              return (
+                <div
+                  key={a.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 16,
+                    padding: "12px 0",
+                    borderBottom:
+                      idx < settledListings.length - 1
+                        ? "1px solid var(--border)"
+                        : "none",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <a
+                      href={`/auctions/${a.id}`}
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: "inherit",
+                        textDecoration: "none",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        display: "block",
+                      }}
+                    >
+                      {a.item}
+                    </a>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                      Winner: {shortId(a.winner_npub ?? "")} —{" "}
+                      {a.winning_amount?.toLocaleString()} sats
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", fontSize: 13, maxWidth: "50%" }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>Shipping</div>
+                    <div
+                      style={{
+                        fontWeight: 500,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {sh?.address ?? "—"}
+                    </div>
+                    {sh?.note && (
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                        Note: {sh.note}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ===== Watchlist ===== */}
       <div
@@ -992,7 +1281,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ===== Ready to Claim ===== */}
+      {/* ===== Ready to Claim (seller view) ===== */}
       {claimable > 0 && (
         <section style={{ marginBottom: 40 }}>
           <h2
@@ -1007,103 +1296,53 @@ export default function DashboardPage() {
             Ready to Claim
           </h2>
 
-          {wonAuctions.map((a) => {
-            const winningBid = bids.find(
-              (b) => b.auction_id === a.id && b.amount === a.winning_amount,
-            )
-            const proofData = winningBid?.proof_data ?? null
-            let parsedProof: Record<string, string> | null = null
-            try {
-              if (proofData) parsedProof = JSON.parse(proofData)
-            } catch {
-              /* ignore */
-            }
-
-            return (
+          {settledListings.map((a) => (
+            <div
+              key={a.id}
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                padding: "16px",
+                marginBottom: 10,
+              }}
+            >
               <div
-                key={a.id}
                 style={{
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
-                  padding: "16px",
-                  marginBottom: 10,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 12,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 12,
-                  }}
-                >
-                  <div>
-                    <a
-                      href={`/auctions/${a.id}`}
-                      style={{
-                        color: "inherit",
-                        fontWeight: 600,
-                        fontSize: 14,
-                        textDecoration: "none",
-                      }}
-                    >
-                      {a.item}
-                    </a>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "var(--muted)",
-                        marginTop: 2,
-                      }}
-                    >
-                      Winner: {shortId(a.winner_npub ?? "")} —{" "}
-                      {a.winning_amount?.toLocaleString()} sats
-                    </div>
-                  </div>
-                  {statusPill("Settled", "won")}
-                </div>
-                {proofData ? (
-                  <div
+                <div>
+                  <a
+                    href={`/auctions/${a.id}`}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
+                      color: "inherit",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      textDecoration: "none",
                     }}
                   >
-                    <span style={{ fontSize: 13, color: "var(--muted)" }}>
-                      {parsedProof?.mint_url === "test://local"
-                        ? "Test proof — locked to your pubkey"
-                        : "Proof locked to your pubkey"}
-                    </span>
-                    <button
-                      style={{
-                        fontSize: 12,
-                        padding: "6px 14px",
-                        border: "1px solid var(--border)",
-                        borderRadius: "var(--radius)",
-                        background: "var(--surface)",
-                        color: "var(--fg)",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        flexShrink: 0,
-                      }}
-                      onClick={() => {
-                        navigator.clipboard.writeText(proofData)
-                      }}
-                    >
-                      Copy Proof
-                    </button>
+                    {a.item}
+                  </a>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--muted)",
+                      marginTop: 2,
+                    }}
+                  >
+                    Winner: {shortId(a.winner_npub ?? "")} —{" "}
+                    {a.winning_amount?.toLocaleString()} sats
                   </div>
-                ) : (
-                  <p style={{ fontSize: 13, color: "var(--muted)" }}>
-                    No proof data.
-                  </p>
-                )}
+                </div>
+                {statusPill("Settled", "won")}
               </div>
-            )
-          })}
+              <ClaimPanel auction={a} isSeller={true} isWinner={false} />
+            </div>
+          ))}
         </section>
       )}
     </div>

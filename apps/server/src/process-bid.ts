@@ -31,19 +31,23 @@ export async function processBid(
     }
 
     const proofData = JSON.stringify({
-      keyset_id: payload.proof.id,
-      C: payload.proof.C,
-      secret: payload.proof.secret,
+      proofs: payload.proofs.map((p) => ({
+        keyset_id: p.id,
+        C: p.C,
+        secret: p.secret,
+        amount: p.amount,
+      })),
       mint_url: payload.mint_url,
       amount: payload.amount,
     })
 
+    const Y = result.Ys.join(",")
     const bid: Bid = {
-      id: `${payload.auction_id}-${result.Y}`,
+      id: `${payload.auction_id}-${result.Ys.map((y) => y.slice(0, 6)).join("-")}`,
       auction_id: payload.auction_id,
       amount: payload.amount,
       bidder_npub: payload.bidder_pubkey,
-      Y: result.Y,
+      Y,
       received_at: Date.now(),
       status: "verified",
       proof_data: proofData,
@@ -55,14 +59,15 @@ export async function processBid(
       auction.seller_pubkey,
       payload.bidder_pubkey,
       payload.amount,
-      result.Y,
+      Y,
       bid.received_at,
     )
 
-    // Mark old bids from same bidder as replaced
+    // Any previously-verified bid is now superseded by this bid → outbid
+    // (immediately refundable by the bidder + server co-sign, §6.4).
     for (const oldBid of existingBids) {
-      if (oldBid.bidder_npub === payload.bidder_pubkey && oldBid.id !== bid.id) {
-        oldBid.status = "replaced"
+      if (oldBid.id !== bid.id && oldBid.status === "verified") {
+        oldBid.status = "outbid"
         db.saveBid(oldBid)
       }
     }

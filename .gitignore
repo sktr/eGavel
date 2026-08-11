@@ -10,3 +10,6 @@ data/
 .env.production
 coverage/
 exports/
+
+# macOS
+.DS_Store

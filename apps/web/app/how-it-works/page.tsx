@@ -84,7 +84,7 @@ export default function HowItWorksPage() {
           {[
             { title: "Cashu", desc: "An ecash protocol that enables instant, private payments. Proofs are blinded signatures that can be swapped at mints." },
             { title: "Nostr", desc: "A decentralized protocol for event distribution. Auctions and bids are published as signed Nostr events." },
-            { title: "P2PK", desc: "Pay-to-Public-Key locks the bid proof to the seller's pubkey. The seller can claim it after the auction ends and locktime passes." },
+            { title: "P2PK", desc: "Pay-to-Public-Key locks each bid proof to the seller AND the auction server (2-of-2). No single party can spend bid funds before settlement; the seller claims with the server's co-signature." },
             { title: "NIP-59", desc: "Gift Wrap encrypts bid payloads so only the server can decrypt them. Bid amounts and bidder identities stay private until settlement." },
           ].map((tech) => (
             <div key={tech.title} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -117,8 +117,9 @@ const steps = [
   },
   {
     title: "Bidders Place Bids",
-    description: "Bidders create a P2PK-locked Cashu proof locked to the seller's pubkey. The proof has a locktime (auction end + 24h) and a refund path back to the bidder.",
-    detail: "P2PK lock: keyset_id + C + secret · Locktime: end_time + 24h · Refund: bidder pubkey",
+    description:
+      "Bidders create a P2PK-locked Cashu proof locked to the seller AND the auction server (2-of-2). The proof has a locktime (auction end + 24h) and a refund path back to the bidder.",
+    detail: "2-of-2 lock: seller + server keys · n_sigs: 2 · Locktime: end_time + 24h · Refund: bidder pubkey",
   },
   {
     title: "Auction Extends (Anti-Sniping)",
@@ -127,12 +128,16 @@ const steps = [
   },
   {
     title: "Settlement",
-    description: "When the auction ends with no more bids, the highest verified bid wins. The auction state changes to SETTLED and the winner is recorded on-chain.",
-    detail: "State: ACTIVE → EXTENDED → SETTLED · Winner: highest bid ≥ start_price",
+    description:
+      "When the auction ends, bids arriving within a 30-second grace window are still accepted. The highest verified bid wins once the grace window closes.",
+    detail:
+      "State: ACTIVE → EXTENDED → SETTLED · Grace: end + 30s · Winner: highest bid ≥ reserve",
   },
   {
     title: "Claim",
-    description: "The seller can claim the winning P2PK-proof after the locktime passes (24h after end_time). The proof is swapped from the mint into the seller's wallet.",
-    detail: "Locktime: end_time + 24h · Swap: mint.v1/swap · Proof: spendable by seller pubkey only",
+    description:
+      "The seller claims the winning bid. Because bids are locked 2-of-2 (seller + server), the server co-signs the claim after settlement. Outbid bidders can recover their locked funds after the locktime (end + 24h) passes.",
+    detail:
+      "2-of-2: seller sig + server sig · Locktime: end + 24h · Refund: bidder reclaims after locktime",
   },
 ]

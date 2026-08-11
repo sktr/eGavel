@@ -13,6 +13,7 @@ export interface Db {
   getBid: (id: string) => Bid | null
   saveShipping: (auctionId: string, address: string, note: string | null) => void
   getShipping: (auctionId: string) => { address: string; note: string | null } | null
+  saveFee: (auctionId: string, amount: number, proofs: string) => void
 }
 
 export function initDb(): Db {
@@ -59,6 +60,14 @@ export function initDb(): Db {
       auction_id TEXT PRIMARY KEY,
       address TEXT NOT NULL,
       note TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (auction_id) REFERENCES auctions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS fees (
+      auction_id TEXT PRIMARY KEY,
+      amount INTEGER NOT NULL,
+      proofs TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (auction_id) REFERENCES auctions(id)
     );
@@ -175,6 +184,12 @@ export function initDb(): Db {
       return (db
         .prepare("SELECT address, note FROM shipping WHERE auction_id = ?")
         .get(auctionId) ?? null) as { address: string; note: string | null } | null
+    },
+    saveFee(auctionId, amount, proofs) {
+      db.prepare(
+        `INSERT OR REPLACE INTO fees (auction_id, amount, proofs, created_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(auctionId, amount, proofs, Date.now())
     },
   }
 }

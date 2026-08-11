@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import type { Auction, Bid } from "@cashu-auction/shared"
 import { BidForm } from "./bid-form"
+import { useWatchlist } from "../../../lib/watchlist"
+import { useIdentity } from "../../../lib/identity"
 
 function formatTimeRemaining(endTime: number): { text: string; urgent: boolean } {
   const diff = endTime - Date.now()
@@ -35,9 +37,11 @@ export function DetailBidPanel({
   bids: Bid[]
   serverNpub: string
 }) {
+  const { identity } = useIdentity()
   const isOpen = auction.state === "ACTIVE" || auction.state === "EXTENDED"
   const highestBid = bids.length > 0 ? bids[0]!.amount : auction.start_price
   const minBid = auction.start_price
+  const amHighest = bids.length > 0 && identity !== null && bids[0]!.bidder_npub === identity.pubkey
 
   const [buyNow, setBuyNow] = useState(false)
   const buyNowAvailable =
@@ -45,6 +49,9 @@ export function DetailBidPanel({
     auction.buy_now_price !== null &&
     auction.buy_now_price > 0 &&
     (bids.length === 0 || auction.buy_now_price > bids[0]!.amount)
+
+  const { watching, toggle } = useWatchlist()
+  const isWatching = watching(auction.id)
 
   // Live-updating timer
   const [now, setNow] = useState(Date.now())
@@ -93,6 +100,24 @@ export function DetailBidPanel({
             sats
           </span>
         </span>
+        {amHighest && isOpen && (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "2px 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 600,
+              background: "var(--accent-soft)",
+              color: "var(--accent)",
+            }}
+          >
+            <span className="material-icons" style={{ fontSize: 13 }}>stars</span>
+            You are the highest bidder
+          </span>
+        )}
       </div>
 
       {/* Timer */}
@@ -182,11 +207,12 @@ export function DetailBidPanel({
       >
         <button
           type="button"
+          onClick={() => toggle(auction.id)}
           style={{
             flex: 1,
             border: "1px solid var(--border)",
             borderRadius: "var(--radius)",
-            background: "var(--surface)",
+            background: isWatching ? "var(--accent-soft)" : "var(--surface)",
             color: "var(--fg)",
             padding: "8px 16px",
             fontSize: 13,
@@ -194,14 +220,8 @@ export function DetailBidPanel({
             fontFamily: "inherit",
             lineHeight: 1.4,
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--border)"
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "var(--surface)"
-          }}
         >
-          ♥ Add to Watchlist
+          {isWatching ? "♥ Watching" : "♡ Add to Watchlist"}
         </button>
         <button
           type="button"

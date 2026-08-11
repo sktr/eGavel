@@ -143,4 +143,18 @@ describe("scheduler", () => {
     const call = calls.find((c: any) => c.type === "settlement") as any
     expect(call.args[5]).toBe("sold")
   })
+
+  it("settles a bidless auction past E+grace as no_bids", async () => {
+    const auction = makeAuction({ id: "g8", end_time: Date.now() - 40_000 })
+    db.saveAuction(auction)
+    const { pub, calls } = makePublisher()
+    const scheduler = createScheduler(db, pub)
+    await scheduler.tick()
+    const settled = db.getAuction("g8")!
+    expect(settled.state).toBe("SETTLED")
+    expect(settled.winner_npub).toBeNull()
+    const call = calls.find((c: any) => c.type === "settlement") as any
+    expect(call).toBeTruthy()
+    expect(call.args[5]).toBe("no_bids")
+  })
 })

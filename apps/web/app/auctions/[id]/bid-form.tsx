@@ -2,9 +2,8 @@
 
 import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { nip19, nip59, generateSecretKey } from "nostr-tools"
+import { nip19 } from "nostr-tools"
 import { bytesToHex } from "nostr-tools/utils"
-import { SimplePool } from "nostr-tools/pool"
 import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import type { Auction } from "@cashu-auction/shared"
@@ -13,7 +12,6 @@ import { useIdentity } from "../../../lib/identity"
 
 const TEST_MINT_URL = "test://local"
 
-const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol"]
 const DEFAULT_MINT = "https://testnut.cashu.space"
 
 export function BidForm({
@@ -38,8 +36,10 @@ export function BidForm({
         return
       } catch { /* fall through to API */ }
     }
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
-    fetch(`${apiBase}/health`)
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
+      .replace(/\/+$/, "")
+      .replace(/\/api$/, "")
+    fetch(`${apiBase}/health`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         if (data.pubkey) setServerPubkeyHex(data.pubkey)
@@ -53,8 +53,6 @@ export function BidForm({
 
   // Form state
   const [amount, setAmount] = useState("")
-  const [tokenInput, setTokenInput] = useState("")
-  const [receiveMessage, setReceiveMessage] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -93,36 +91,40 @@ export function BidForm({
         state: quote.state,
       })
       setMintStep("awaiting")
-      setMintMessage(
-        `Invoice created — pay it with a testnet Lightning wallet, then click "Check payment".`,
-      )
+      setMintMessage("Waiting for payment — testnut auto-pays in a few seconds…")
     } catch (err) {
       setMintError(`mint request failed: ${err instanceof Error ? err.message : String(err)}`)
       setMintStep("idle")
     }
   }, [mintAmount, wallet])
 
-  const handleCheckPayment = useCallback(async () => {
-    if (!mintQuote) return
-    setMintError(null)
-    setMintMessage("checking payment...")
-    try {
-      const checked = await wallet.checkMintQuote(mintQuote.quote)
-      if (checked.state !== MintQuoteState.PAID) {
-        setMintMessage(`Invoice status: ${checked.state}. Pay the invoice first, then check again.`)
-        return
+  // Auto-poll the quote until it's paid, then mint automatically.
+  useEffect(() => {
+    if (mintStep !== "awaiting" || !mintQuote) return
+    let cancelled = false
+    const timer = setInterval(async () => {
+      try {
+        const checked = await wallet.checkMintQuote(mintQuote.quote)
+        if (cancelled) return
+        if (checked.state === MintQuoteState.PAID) {
+          clearInterval(timer)
+          setMintStep("claiming")
+          setMintMessage("payment received! minting tokens...")
+          await wallet.claimMint(mintQuote.amount, checked)
+          if (cancelled) return
+          setMintStep("done")
+          setMintMessage(`Minted ${mintQuote.amount} sats successfully!`)
+          wallet.refresh()
+        }
+      } catch {
+        // transient — keep polling
       }
-      // Paid — mint the proofs
-      setMintStep("claiming")
-      setMintMessage("payment received! minting tokens...")
-      await wallet.claimMint(mintQuote.amount, checked)
-      setMintStep("done")
-      setMintMessage(`Minted ${mintQuote.amount} sats successfully!`)
-    } catch (err) {
-      setMintError(`payment check failed: ${err instanceof Error ? err.message : String(err)}`)
-      setMintStep("awaiting")
+    }, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
     }
-  }, [mintQuote, wallet])
+  }, [mintStep, mintQuote, wallet])
 
   const handleCopyInvoice = useCallback(() => {
     if (mintQuote?.request) {
@@ -131,29 +133,16 @@ export function BidForm({
     }
   }, [mintQuote])
 
-  // ── Receive tokens ───────────────────────────────────
-  async function handleReceive() {
-    if (!tokenInput.trim()) return
-    setError(null)
-    setReceiveMessage(null)
-    try {
-      const result = await wallet.receive(tokenInput.trim())
-      setTokenInput("")
-      setReceiveMessage(`Received ${result.amount} sats at ${result.mint}`)
-      // If the token's mint differs, update the field
-      if (result.mint !== mintUrl) {
-        setMintUrl(result.mint)
-      }
-    } catch (err) {
-      setError(`receive failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
   // ── Place bid ────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setSuccess(null)
+
+    if (!auction.mint_url) {
+      setError("this legacy listing does not accept bids")
+      return
+    }
 
     if (!identity) {
       setError("identity not loaded")
@@ -192,78 +181,72 @@ export function BidForm({
     setSubmitting(true)
 
     try {
-      const locktime = Math.floor(
+      const locktime = Math.ceil(
         (auction.end_time + 24 * 60 * 60 * 1000) / 1000,
       )
 
       // 1. Create proof (real P2PK or test dummy)
       let proof: Proof
+      let proofs: Proof[]
       let mintUrlForBid: string
 
       if (testMode) {
         const secret = createP2PKsecret(auction.seller_pubkey, [
-          ["pubkeys", serverPubkeyHex],
+          ["pubkeys", serverPubkeyHex, identity.pubkey],
           ["n_sigs", "2"],
           ["locktime", String(locktime)],
           ["refund", identity.pubkey],
         ])
-        proof = {
-          id: "test-keyset",
-          amount: Amount.from(bidAmount),
-          secret,
-          C: "test-signature",
-        }
+        proofs = [
+          {
+            id: "test-keyset",
+            amount: Amount.from(bidAmount),
+            secret,
+            C: "test-signature",
+          },
+        ]
         mintUrlForBid = TEST_MINT_URL
       } else {
-        const { proof: walletProof } = await wallet.sendP2PK(bidAmount, {
-          pubkey: [auction.seller_pubkey, serverPubkeyHex],
+        const { proofs: walletProofs } = await wallet.sendP2PK(bidAmount, {
+          // 2-of-3: {seller, server, bidder} — bidder's key enables instant
+          // refund co-signing when outbid (spec §2.2).
+          pubkey: [auction.seller_pubkey, serverPubkeyHex, identity.pubkey],
           requiredSignatures: 2,
           locktime,
           refundKeys: [identity.pubkey],
         })
-        proof = walletProof
+        proofs = walletProofs
         mintUrlForBid = mintUrl
       }
 
-      // 2. Build the server payload
+      // 2. Build the server payload — a bid is backed by a bundle of proofs
       const payload = JSON.stringify({
-        proof: {
-          id: proof.id,
-          amount: Number(proof.amount),
-          secret: proof.secret,
-          C: proof.C,
-        },
+        proofs: proofs.map((p) => ({
+          id: p.id,
+          amount: Number(p.amount),
+          secret: p.secret,
+          C: p.C,
+        })),
         mint_url: mintUrlForBid,
         auction_id: auction.id,
         amount: bidAmount,
         bidder_pubkey: identity.pubkey,
       })
 
-      // 3. Send bid
-      if (testMode) {
-        // Test mode: send directly via HTTP (no Nostr relays needed)
-        const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"
-        const res = await fetch(`${apiBase}/api/bids`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: payload,
-        })
-        if (!res.ok) {
-          const err = await res.json()
-          throw new Error(err.error ?? "bid rejected")
-        }
-      } else {
-        // Real mode: send via NIP-59 gift wrap to Nostr relays
-        // Use the identity key if available (fallback); otherwise use ephemeral
-        // key for the gift-wrap encryption (authenticated by bidder_pubkey inside)
-        const wrapKey = identity.secretKey ?? generateSecretKey()
-        const pool = new SimplePool()
-        const wrapEvent = nip59.wrapEvent(
-          { kind: 14, tags: [], content: payload },
-          wrapKey,
-          serverPubkeyHex,
-        )
-        await Promise.any(pool.publish(DEFAULT_RELAYS, wrapEvent))
+      // 3. Send bid — directly to the auction server (synchronous result,
+      // reliable, no relay dependency). The server verifies and publishes
+      // kind:39001 to Nostr itself.
+      const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
+        .replace(/\/+$/, "")
+        .replace(/\/api$/, "")
+      const res = await fetch(`${apiBase}/api/bids`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error ?? "bid rejected")
       }
 
       setSuccess("bid submitted!")
@@ -371,7 +354,7 @@ export function BidForm({
 
       {/* Advanced settings (collapsible) */}
       <details style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-        <summary style={{ cursor: "pointer", padding: "4px 0", fontWeight: 500 }}>
+        <summary suppressHydrationWarning style={{ cursor: "pointer", padding: "4px 0", fontWeight: 500 }}>
           Advanced Settings
         </summary>
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -478,75 +461,15 @@ export function BidForm({
             </div>
           )}
 
-          {/* Receive tokens (non-test mode) */}
+                    {/* Get Sats (testnet faucet) — unified: enter sats, get them */}
           {!testMode && (
             <details style={{ fontSize: 13 }}>
-              <summary style={{ cursor: "pointer", color: "var(--muted)", padding: "4px 0" }}>
-                Receive Tokens
+              <summary suppressHydrationWarning style={{ cursor: "pointer", color: "var(--muted)", padding: "4px 0" }}>
+                Get Sats
               </summary>
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                <textarea
-                  rows={2}
-                  value={tokenInput}
-                  onChange={(e) => setTokenInput(e.target.value)}
-                  placeholder="cashuA… or paste token JSON"
-                  style={{
-                    width: "100%",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius)",
-                    padding: "8px 12px",
-                    fontSize: 13,
-                    fontFamily: "var(--font-mono)",
-                    background: "var(--surface)",
-                    color: "var(--fg)",
-                    outline: "none",
-                    resize: "vertical",
-                  }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "var(--accent)"
-                    e.currentTarget.style.boxShadow = "0 0 0 3px var(--accent-soft)"
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "var(--border)"
-                    e.currentTarget.style.boxShadow = "none"
-                  }}
-                />
-                {receiveMessage && (
-                  <p style={{ color: "var(--accent2)", fontSize: 12, margin: 0 }}>{receiveMessage}</p>
-                )}
-                <button
-                  type="button"
-                  onClick={handleReceive}
-                  disabled={!tokenInput.trim() || wallet.loading}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius)",
-                    background: "var(--surface)",
-                    color: "var(--fg)",
-                    padding: "6px 14px",
-                    fontSize: 13,
-                    cursor: !tokenInput.trim() || wallet.loading ? "not-allowed" : "pointer",
-                    fontFamily: "inherit",
-                    opacity: !tokenInput.trim() || wallet.loading ? 0.5 : 1,
-                    alignSelf: "flex-start",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  Receive
-                </button>
-              </div>
-            </details>
-          )}
-
-          {/* Faucet (non-test mode) */}
-          {!testMode && (
-            <details style={{ fontSize: 13 }}>
-              <summary style={{ cursor: "pointer", color: "var(--muted)", padding: "4px 0" }}>
-                Request Test Tokens
-              </summary>
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>
-                  Request from <code style={{ fontSize: 11 }}>{mintUrl}</code>
+                <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
+                  Enter how many sats you need — they'll be minted straight into your wallet.
                 </p>
 
                 {mintStep === "idle" || mintStep === "quoting" ? (
@@ -567,14 +490,6 @@ export function BidForm({
                         color: "var(--fg)",
                         outline: "none",
                       }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "var(--accent)"
-                        e.currentTarget.style.boxShadow = "0 0 0 3px var(--accent-soft)"
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "var(--border)"
-                        e.currentTarget.style.boxShadow = "none"
-                      }}
                     />
                     <button
                       type="button"
@@ -593,8 +508,11 @@ export function BidForm({
                         lineHeight: 1.4,
                       }}
                     >
-                      {mintStep === "quoting" ? "Requesting…" : "Request Mint"}
+                      {mintStep === "quoting" ? "Requesting…" : "Get Sats"}
                     </button>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {wallet.ready ? `balance: ${wallet.balance.toLocaleString()} sats` : "loading wallet…"}
+                    </span>
                   </div>
                 ) : mintStep === "awaiting" && mintQuote ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -614,7 +532,7 @@ export function BidForm({
                         resize: "none",
                       }}
                     />
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       <button
                         type="button"
                         onClick={handleCopyInvoice}
@@ -632,26 +550,12 @@ export function BidForm({
                       >
                         Copy Invoice
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleCheckPayment}
-                        style={{
-                          border: "1px solid var(--border)",
-                          borderRadius: "var(--radius)",
-                          background: "var(--surface)",
-                          color: "var(--fg)",
-                          padding: "6px 14px",
-                          fontSize: 12,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        Check Payment
-                      </button>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                        Waiting for payment — testnut auto-pays in a few seconds…
+                      </span>
                     </div>
                     <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
-                      Need sats?{" "}
+                      Paying externally?{" "}
                       <a
                         href="https://faucet.lightning.community/"
                         target="_blank"
@@ -665,18 +569,38 @@ export function BidForm({
                 ) : mintStep === "claiming" ? (
                   <p style={{ color: "var(--muted)", margin: 0 }}>Minting tokens…</p>
                 ) : mintStep === "done" ? (
-                  <p style={{ color: "var(--accent2)", margin: 0 }}>Done! Tokens minted.</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <p style={{ color: "var(--accent2)", margin: 0 }}>
+                      {mintMessage} — balance: {wallet.balance.toLocaleString()} sats
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMintStep("idle")
+                        setMintQuote(null)
+                        setMintMessage(null)
+                        setMintError(null)
+                      }}
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius)",
+                        background: "var(--surface)",
+                        color: "var(--fg)",
+                        padding: "6px 14px",
+                        fontSize: 12,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Mint more
+                    </button>
+                  </div>
                 ) : null}
 
                 {mintError && <p style={{ color: "var(--red)", fontSize: 12, margin: 0 }}>{mintError}</p>}
-                {mintMessage && (
-                  <p style={{
-                    color: mintStep === "done" ? "var(--accent2)" : "var(--muted)",
-                    fontSize: 12,
-                    margin: 0,
-                  }}>
-                    {mintMessage}
-                  </p>
+                {mintMessage && mintStep !== "done" && (
+                  <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{mintMessage}</p>
                 )}
               </div>
             </details>

@@ -84,17 +84,23 @@ export function useWallet(mintUrl: string) {
     async (tokenStr: string): Promise<{ mint: string; amount: number }> => {
       // Determine the token's mint
       let tokenMint: string
+      let proofsOverride: Proof[] | null = null
       try {
         const meta = getTokenMetadata(tokenStr)
         tokenMint = meta.mint
       } catch {
-        // If getTokenMetadata fails, try as raw JSON
+        // If getTokenMetadata fails, try as raw JSON (v3 token format)
         try {
           const parsed = JSON.parse(tokenStr)
           const entry = Array.isArray(parsed.token)
             ? parsed.token[0]
             : parsed
           tokenMint = entry?.mint ?? entry?.mint_url ?? mintUrl
+          // v3 tokens carry plain proofs — cashu-ts can't parse the JSON string
+          // itself, so hand it the proofs array instead.
+          if (Array.isArray(entry?.proofs)) {
+            proofsOverride = entry.proofs as Proof[]
+          }
         } catch {
           tokenMint = mintUrl
         }
@@ -112,7 +118,8 @@ export function useWallet(mintUrl: string) {
         await receiveWallet.loadMint()
       }
 
-      const newProofs = await receiveWallet.receive(tokenStr)
+      const input: string | Proof[] = proofsOverride ?? tokenStr
+      const newProofs = await receiveWallet.receive(input as never)
       const total = newProofs.length > 0 ? Number(sumProofs(newProofs)) : 0
 
       // Store under the token's mint
@@ -137,7 +144,7 @@ export function useWallet(mintUrl: string) {
     async (
       amount: number,
       options: P2PKOptions,
-    ): Promise<{ proof: Proof; change: Proof[] }> => {
+    ): Promise<{ proofs: Proof[]; change: Proof[] }> => {
       const wallet = walletRef.current
       if (!wallet) throw new Error("Wallet not initialized")
 
@@ -161,9 +168,8 @@ export function useWallet(mintUrl: string) {
         result.keep.length > 0 ? Number(sumProofs(result.keep)) : 0,
       )
 
-      const sent = result.send[0]
-      if (!sent) throw new Error("send produced no output proofs")
-      return { proof: sent, change: result.keep }
+      if (result.send.length === 0) throw new Error("send produced no output proofs")
+      return { proofs: result.send, change: result.keep }
     },
     [mintUrl],
   )
@@ -232,4 +238,77 @@ export function useWallet(mintUrl: string) {
   }, [mintUrl])
 
   return { balance, loading, error, ready, receive, sendP2PK, refresh, requestMint, checkMintQuote, claimMint }
+}
+
+export function storeProofsInWallet(proofs: Proof[], mintUrl: string) {
+  const store = loadStore()
+  const existing = deserializeProofs(store[mintUrl] ?? [])
+  store[mintUrl] = serializeProofs([...existing, ...proofs])
+  saveStore(store)
+}
+
+// ── Total balance across all mints in the local wallet store ──────────────
+export interface MintBalance {
+  mint: string
+  amount: number
+}
+
+export function useTotalBalance() {
+  const [total, setTotal] = useState(0)
+  const [byMint, setByMint] = useState<MintBalance[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const load = useCallback(async () => {
+    const store = loadStore()
+    const entries = Object.entries(store).filter(([, proofs]) => proofs.length > 0)
+    if (entries.length === 0) {
+      setTotal(0)
+      setByMint([])
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
+
+    const results = await Promise.all(
+      entries.map(async ([mint, raw]): Promise<MintBalance> => {
+        try {
+          const wallet = new Wallet(mint, { unit: "sat" })
+          await wallet.loadMint()
+          const stored = deserializeProofs(raw)
+          const { unspent } = await wallet.groupProofsByState(stored)
+          const amount = unspent.length > 0 ? Number(sumProofs(unspent)) : 0
+          return { mint, amount }
+        } catch {
+          // mint unreachable — best effort: sum the stored amounts as-is
+          let amount = 0
+          for (const s of raw) {
+            try {
+              amount += Number(JSON.parse(s).amount ?? 0)
+            } catch {
+              // unparseable entry — skip
+            }
+          }
+          return { mint, amount }
+        }
+      }),
+    )
+
+    const valid = results.filter((r) => r.amount > 0)
+    setByMint(valid)
+    setTotal(valid.reduce((acc, r) => acc + r.amount, 0))
+    setLoading(false)
+    setRefreshing(false)
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true)
+    await load()
+  }, [load])
+
+  return { total, byMint, loading, refreshing, refresh }
 }

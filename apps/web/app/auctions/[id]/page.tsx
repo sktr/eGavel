@@ -1,5 +1,6 @@
 import type { Auction, Bid } from "@cashu-auction/shared"
-import { DetailBidPanel } from "./detail-bid-panel"
+import { LiveBids } from "./live-bids"
+import { Checkout } from "./checkout"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
 
@@ -107,6 +108,7 @@ export default async function AuctionPage({
             {[0, 1, 2, 3].map((i) => (
               <div
                 key={i}
+                suppressHydrationWarning
                 style={{
                   width: 72,
                   height: 56,
@@ -162,95 +164,13 @@ export default async function AuctionPage({
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>visibility</span> {bids.length} bids
             </span>
-          </div>
-
-          {/* Bid panel */}
-          <DetailBidPanel auction={auction} bids={bids} serverNpub={""} />
-
-          {/* Bid History */}
-          <div
-            style={{
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              overflow: "hidden",
-              marginTop: 24,
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 16px",
-                background: "var(--surface)",
-                fontSize: 13,
-                fontWeight: 600,
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-              <span>Bid History ({bids.length})</span>
-              <a
-                href="#"
-                style={{
-                  color: "var(--accent)",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  textDecoration: "none",
-                }}
-              >
-                View all <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle" }}>arrow_forward</span>
-              </a>
-            </div>
-
-            {/* Rows */}
-            {bids.length === 0 ? (
-              <div
-                style={{
-                  padding: "12px 16px",
-                  fontSize: 13,
-                  color: "var(--muted)",
-                }}
-              >
-                No bids yet.
-              </div>
-            ) : (
-              bids.map((b: Bid) => (
-                <div
-                  key={b.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "8px 16px",
-                    fontSize: 13,
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  <span style={{ color: "var(--accent)", fontWeight: 500 }}>
-                    {shortId(b.bidder_npub)}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontWeight: 600,
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {b.amount.toLocaleString()} sats
-                  </span>
-                  <span style={{ color: "var(--muted)", fontSize: 12 }}>
-                    {new Date(b.received_at).toLocaleString("ja-JP", {
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-              ))
+            {auction.mint_url === "" && (
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>Legacy listing — bidding disabled</span>
             )}
           </div>
+
+          {/* Live bid panel + history (polls the server) */}
+          <LiveBids auction={auction} bids={bids} serverNpub={""} />
         </div>
 
         {/* ===== BELOW THE GRID: Description ===== */}
@@ -580,6 +500,11 @@ export default async function AuctionPage({
             </div>
           </div>
         )}
+
+        {/* ===== BELOW THE GRID: Winner Checkout ===== */}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <Checkout auctionId={auction.id} winnerNpub={auction.winner_npub ?? ""} />
+        </div>
 
         {/* ===== BELOW THE GRID: Similar Items (placeholder) ===== */}
         <div style={{ gridColumn: "1 / -1" }}>

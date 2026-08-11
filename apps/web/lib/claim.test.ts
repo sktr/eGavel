@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { signSecretHex, buildWitness, swapLockedProof } from "./claim"
+import { signSecretHex, buildWitness, swapLockedProofs } from "./claim"
 import { schnorr } from "@noble/curves/secp256k1.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { generateSecretKey, getPublicKey } from "nostr-tools"
@@ -25,7 +25,7 @@ describe("claim signing", () => {
   })
 })
 
-describe("swapLockedProof", () => {
+describe("swapLockedProofs", () => {
   it("throws with a clear error when the mint is unreachable", async () => {
     const proof = {
       id: "ks1",
@@ -36,6 +36,6 @@ describe("swapLockedProof", () => {
       witness: "",
     } as unknown as Proof
     const sk = generateSecretKey()
-    await expect(swapLockedProof(proof, 100, bytesToHex(sk))).rejects.toThrow()
+    await expect(swapLockedProofs([proof], 100, bytesToHex(sk))).rejects.toThrow()
   })
 })
