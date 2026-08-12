@@ -1,10 +1,8 @@
 import type { Bid } from "@cashu-auction/shared"
 import type { Db } from "./db/index.js"
-import type { Publisher } from "./nostr/publisher.js"
 import { verifyBid, type BidPayload } from "./verify/index.js"
 import { withAuctionLock } from "./lib/auction-lock.js"
 import { computeStandingPrice } from "./lib/standing-price.js"
-import { calcFee } from "./lib/auction-fee.js"
 
 export type ProcessBidResult =
   | { ok: true; buyNow?: boolean }
@@ -13,7 +11,6 @@ export type ProcessBidResult =
 export async function processBid(
   payload: BidPayload,
   db: Db,
-  pub: Publisher,
   serverPubkey?: string,
 ): Promise<ProcessBidResult> {
   return withAuctionLock(payload.auction_id, async () => {
@@ -97,15 +94,6 @@ export async function processBid(
       db.saveBid(prevLeader)
     }
 
-    pub.publishBid(
-      auction.id,
-      auction.seller_pubkey,
-      payload.bidder_pubkey,
-      bid.current_amount,
-      Y,
-      bid.received_at,
-    )
-
     // ── Buy-now: a max reaching buy_now_price settles immediately at that price ──
     if (
       auction.buy_now_price !== null &&
@@ -118,15 +106,6 @@ export async function processBid(
       bid.current_amount = auction.buy_now_price
       db.saveBid(bid)
       db.saveAuction(auction)
-      pub.publishSettlement(
-        auction.id,
-        auction.seller_pubkey,
-        bid.bidder_npub,
-        bid.current_amount,
-        db.getVerifiedBids(auction.id).length,
-        "sold",
-        calcFee(bid.current_amount),
-      )
       return { ok: true, buyNow: true }
     }
 

@@ -26,7 +26,6 @@ describe("key-store (BIP-39 recovery phrase)", () => {
     expect(validateMnemonicInput(acct.words!)).toBe(true)
     expect(acct.secretKeyHex).toMatch(/^[0-9a-f]{64}$/)
     expect(acct.pubkey).toMatch(/^[0-9a-f]{64}$/)
-    expect(acct.npub.startsWith("npub1")).toBe(true)
   })
 
   it("restores the exact same keypair from the mnemonic", () => {
@@ -34,7 +33,6 @@ describe("key-store (BIP-39 recovery phrase)", () => {
     const restored = deriveAccountFromWords(acct.words!)
     expect(restored.secretKeyHex).toBe(acct.secretKeyHex)
     expect(restored.pubkey).toBe(acct.pubkey)
-    expect(restored.npub).toBe(acct.npub)
   })
 
   it("different mnemonics derive different keys", () => {

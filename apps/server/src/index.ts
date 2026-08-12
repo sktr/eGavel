@@ -8,8 +8,6 @@ import { hexToBytes } from "nostr-tools/utils"
 import { initDb } from "./db/index.js"
 import { createAuctionRoutes } from "./routes/auctions.js"
 import { createScheduler } from "./scheduler/index.js"
-import { createNostrListener } from "./nostr/listener.js"
-import { createPublisher } from "./nostr/publisher.js"
 import { rateLimit } from "./lib/rate-limit.js"
 
 const app = new Hono()
@@ -72,9 +70,7 @@ app.get("/health", (c) =>
 )
 
 const db = initDb()
-const publisher = createPublisher()
-const scheduler = createScheduler(db, publisher)
-const nostrListener = createNostrListener(db, publisher)
+const scheduler = createScheduler(db)
 
 app.route("/api", createAuctionRoutes(db))
 
@@ -83,11 +79,9 @@ const port = Number(process.env.PORT ?? 3001)
 serve({ fetch: app.fetch, port }, () => {
   console.log(`server running on :${port}`)
 
-  nostrListener.start()
   scheduler.start()
 
   const shutdown = () => {
-    nostrListener.stop()
     scheduler.stop()
     process.exit(0)
   }

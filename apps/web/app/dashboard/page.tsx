@@ -92,10 +92,8 @@ const recoverButtonStyle = {
   marginTop: 6,
 }
 
-// Refund a replaced (outbid) bid. Bids are placed with the useIdentity key, not
-// loadOrCreateKey (lib/identity.ts "cashu-auction-identity" vs lib/nostr.ts
-// "cashu-auction-nostr-key") — the refund Schnorr signature must come from the
-// SAME key that owns the refund path.
+// Refund a replaced (outbid) bid. The refund Schnorr signature must come from
+// the SAME key that owns the refund path (the bidder's in-app key).
 async function recoverBid(bid: PublicBid, identity: { pubkey: string; secretKey: Uint8Array }) {
   if (bid.bidder_npub !== identity.pubkey) {
     alert("this bid is not from the connected identity")

@@ -28,7 +28,7 @@ export function Header() {
   const copyNpub = async () => {
     if (!identity) return
     try {
-      await navigator.clipboard.writeText(identity.npub)
+      await navigator.clipboard.writeText(identity.pubkey)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -88,7 +88,7 @@ export function Header() {
                   person
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)" }}>
-                  {identity.npub.slice(0, 12)}…
+                  {identity.pubkey.slice(0, 12)}…
                 </span>
                 {!loading && (
                   <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600 }}>
@@ -158,11 +158,11 @@ export function Header() {
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all", background: "transparent", padding: 0 }}>
-                        {identity.npub}
+                        {identity.pubkey}
                       </code>
                       <button
                         onClick={copyNpub}
-                        aria-label="Copy npub"
+                        aria-label="Copy pubkey"
                         style={{
                           background: "none", border: "none", cursor: "pointer",
                           color: copied ? "var(--success)" : "var(--muted)", padding: 0, minHeight: 0, lineHeight: 1, fontSize: 15,

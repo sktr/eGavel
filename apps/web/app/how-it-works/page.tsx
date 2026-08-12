@@ -12,8 +12,8 @@ export default function HowItWorksPage() {
         How Cashu Auction Works
       </h1>
       <p style={{ color: "var(--muted)", fontSize: 16, marginBottom: 48, maxWidth: 560, lineHeight: 1.6 }}>
-        Peer-to-peer auctions without custody. Bids are locked with Cashu e-cash, 
-        settlement is automatic, and everything runs on Nostr relays.
+        Peer-to-peer auctions without custody. Bids are locked as Cashu e-cash with a
+        2-of-3 P2PK lock, and settlement is automatic.
       </p>
 
       {/* Step cards */}
@@ -83,9 +83,9 @@ export default function HowItWorksPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {[
             { title: "Cashu", desc: "An ecash protocol that enables instant, private payments. Proofs are blinded signatures that can be swapped at mints." },
-            { title: "Nostr", desc: "A decentralized protocol for event distribution. Auctions and bids are published as signed Nostr events." },
-            { title: "P2PK", desc: "Pay-to-Public-Key locks each bid proof to the seller AND the auction server (2-of-2). No single party can spend bid funds before settlement; the seller claims with the server's co-signature." },
-            { title: "NIP-59", desc: "Gift Wrap encrypts bid payloads so only the server can decrypt them. Bid amounts and bidder identities stay private until settlement." },
+            { title: "P2PK (2-of-3)", desc: "Pay-to-Public-Key locks each bid proof to the seller, the auction server, AND the bidder (2-of-3). No single party can spend bid funds — the seller claims with the server's co-signature, and outbid bidders refund with the server's co-signature." },
+            { title: "Proxy bidding", desc: "The bid amount is a maximum. The engine bids just enough to stay in the lead (second-highest max + the minimum increment), and the winner pays only the standing price. The excess over the standing price is returned to the winner after the sale." },
+            { title: "Mint", desc: "The Cashu mint holds the actual ecash. The auction server never holds user funds — it only co-signs P2PK unlocks, so it can never move money alone." },
           ].map((tech) => (
             <div key={tech.title} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
               <span style={{ color: "var(--accent)", fontWeight: 700, fontSize: 14, fontFamily: "var(--font-mono)", minWidth: 70 }}>
@@ -112,32 +112,32 @@ export default function HowItWorksPage() {
 const steps = [
   {
     title: "Create an Auction",
-    description: "Describe your item, set a starting price and duration. A Nostr event (kind:39000) is published to relays. No deposit, no registration — just your Nostr key.",
-    detail: "Kind: 39000 · Signed with your nsec · Published to wss://relay.damus.io, wss://nos.lol",
+    description: "Describe your item, set a starting price and duration. The listing is created directly on the auction server. No deposit, no registration — your account is your key.",
+    detail: "POST /api/auctions · Account = 12-word recovery phrase (BIP-39)",
   },
   {
     title: "Bidders Place Bids",
     description:
-      "Bidders create a P2PK-locked Cashu proof locked to the seller AND the auction server (2-of-2). The proof has a locktime (auction end + 24h) and a refund path back to the bidder.",
-    detail: "2-of-2 lock: seller + server keys · n_sigs: 2 · Locktime: end_time + 24h · Refund: bidder pubkey",
+      "Bidders enter their MAXIMUM bid. The engine bids just enough to stay in the lead — the second-highest max plus the minimum increment. Each bid locks its full max as a 2-of-3 P2PK proof (seller + server + bidder).",
+    detail: "2-of-3 lock: seller + server + bidder keys · n_sigs: 2 · Locktime: end_time + 24h · Refund: bidder",
   },
   {
     title: "Auction Extends (Anti-Sniping)",
     description: "If a bid arrives in the last 5 minutes, the auction auto-extends by 5 more minutes. This prevents last-second sniping and gives other bidders time to respond.",
-    detail: "Extension: +5 min · Trigger: bid within last 5 min of end_time · Max: indefinite while bids arrive",
+    detail: "Extension: +5 min · Trigger: bid within last 5 min of end_time",
   },
   {
     title: "Settlement",
     description:
-      "When the auction ends, bids arriving within a 30-second grace window are still accepted. The highest verified bid wins once the grace window closes.",
+      "When the auction ends, bids arriving within a 30-second grace window are still accepted. The highest bidder wins at the standing price once the grace window closes.",
     detail:
-      "State: ACTIVE → EXTENDED → SETTLED · Grace: end + 30s · Winner: highest bid ≥ reserve",
+      "State: ACTIVE → EXTENDED → SETTLED · Grace: end + 30s · Winner: standing price ≥ reserve",
   },
   {
-    title: "Claim",
+    title: "Claim & Change",
     description:
-      "The seller claims the winning bid. Because bids are locked 2-of-2 (seller + server), the server co-signs the claim after settlement. Outbid bidders can recover their locked funds after the locktime (end + 24h) passes.",
+      "The seller claims the winning bid: the server splits the locked proofs into the seller's share, the operator fee, and any change (max − standing price) back to the winner. Outbid bidders get an instant refund via bidder + server co-signature.",
     detail:
-      "2-of-2: seller sig + server sig · Locktime: end + 24h · Refund: bidder reclaims after locktime",
+      "2-of-3: seller + server co-sign the claim · fee: AUCTION_FEE_BPS (5%) · change: returned to the winner",
   },
 ]

@@ -1,21 +1,14 @@
 import type { Auction } from "@cashu-auction/shared"
 import type { Db } from "../db/index.js"
-import type { Publisher } from "../nostr/publisher.js"
-import { createPublisher } from "../nostr/publisher.js"
 import { withAuctionLock } from "../lib/auction-lock.js"
-import { calcFee } from "../lib/auction-fee.js"
 
 const POLL_INTERVAL = 60_000
 const EXTEND_BY = 5 * 60_000
 const GRACE_MS = 30_000
 const ANTI_SNIPING_WINDOW = 5 * 60_000
 
-export function createScheduler(
-  db: Db,
-  publisher?: Publisher,
-) {
+export function createScheduler(db: Db) {
   let timer: ReturnType<typeof setInterval> | null = null
-  const pub = publisher ?? createPublisher()
 
   async function tick() {
     const now = Date.now()
@@ -50,12 +43,12 @@ export function createScheduler(
           return
         }
 
-        settle(current, bids, db, pub)
+        settle(current, bids, db)
       })
     }
   }
 
-  function settle(auction: Auction, bids: ReturnType<Db["getVerifiedBids"]>, db: Db, pub: Publisher) {
+  function settle(auction: Auction, bids: ReturnType<Db["getVerifiedBids"]>, db: Db) {
     const bidsChecked = bids.length
 
     const threshold = Math.max(
@@ -64,29 +57,10 @@ export function createScheduler(
     )
 
     if (bidsChecked === 0 || bids[0]!.current_amount < threshold) {
-      const result = bidsChecked === 0 ? "no_bids" : "reserve_not_met"
-      pub.publishSettlement(
-        auction.id,
-        auction.seller_pubkey,
-        null,
-        0,
-        bidsChecked,
-        result,
-        0,
-      )
       auction.winner_npub = null
       auction.winning_amount = 0
     } else {
       const winner = bids[0]!
-      pub.publishSettlement(
-        auction.id,
-        auction.seller_pubkey,
-        winner.bidder_npub,
-        winner.current_amount,
-        bidsChecked,
-        "sold",
-        calcFee(winner.current_amount),
-      )
       auction.winner_npub = winner.bidder_npub
       auction.winning_amount = winner.current_amount
     }

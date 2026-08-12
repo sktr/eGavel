@@ -193,7 +193,7 @@ export function DetailBidPanel({
         </strong>{" "}
         sats minimum bid
         <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
-          Bids sent before the end time are accepted until {`end + 30s`} (relay grace). Bids in
+          Bids sent before the end time are accepted until {`end + 30s`} (grace). Bids in
           the last 5 minutes extend the auction by 5 minutes.
         </p>
       </div>

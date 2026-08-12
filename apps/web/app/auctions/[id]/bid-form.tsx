@@ -269,9 +269,9 @@ export function BidForm({
         <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
           Loading…
         </p>
-      ) : identity?.npub ? (
+      ) : identity?.pubkey ? (
         <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, wordBreak: "break-all" }}>
-          Key: <code style={{ fontSize: 11 }}>{identity.npub}</code>
+          Key: <code style={{ fontSize: 11 }}>{identity.pubkey.slice(0, 20)}…</code>
         </p>
       ) : null}
 
