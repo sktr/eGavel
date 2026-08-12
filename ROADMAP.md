@@ -23,18 +23,7 @@ Images are currently external URLs pasted into the description. Options:
 
 ## 2. Serverless migration (Cloudflare D1 + R2)
 
-**Status**: not implemented
-
-A free-to-run, no-DB-admin setup:
-
-```
-Next.js (frontend) → Vercel free tier
-Hono API          → Cloudflare Workers + D1 (DB) + R2 (images) + Cron (settle)
-```
-
-- Migration: `better-sqlite3` → D1 (SQL is nearly compatible); Hono is Workers-native
-- The only thing that must be persisted is the bids' `proof_data`
-- R2 free tier (10 GB) hosts images
+**Status**: planned — see [`docs/serverless-migration.md`](docs/serverless-migration.md) for the step-by-step plan (async Db refactor → D1 binding → Cron/DO scheduler → migrations → Vercel). Not started.
 
 ## 3. Reputation / review layer
 
