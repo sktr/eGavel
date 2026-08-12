@@ -1,0 +1,42 @@
+# Local deployment: docker compose up
+# Set NOSTR_PRIVATE_KEY first (e.g. in a .env file or your shell):
+#   NOSTR_PRIVATE_KEY=nsec1... docker compose up
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      NOSTR_PRIVATE_KEY: ${NOSTR_PRIVATE_KEY:?set NOSTR_PRIVATE_KEY in .env}
+      PORT: "3001"
+      DB_PATH: /data/auction.db
+      ALLOW_TEST_BIDS: "0"
+      AUCTION_FEE_BPS: "500"
+    volumes:
+      - auction-data:/data
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+    environment:
+      # SSR fetches run inside the container and must reach the server via the
+      # docker network; the browser uses NEXT_PUBLIC_API_URL (localhost:3001).
+      SSR_API_URL: http://server:3001/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  auction-data:

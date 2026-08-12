@@ -2,7 +2,7 @@ import type { Auction } from "@cashu-auction/shared"
 import { AuctionCard } from "../auction-card"
 import { FilterBar } from "./filter-bar"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
+const API_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
 
 const PAGE_SIZE = 16
 

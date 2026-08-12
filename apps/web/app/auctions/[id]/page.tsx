@@ -2,7 +2,7 @@ import type { Auction, PublicBid } from "@cashu-auction/shared"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
+const API_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
 
 function shortId(s: string) {
   if (s.length <= 16) return s

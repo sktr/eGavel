@@ -70,10 +70,21 @@ pnpm dev        # server :3001 / web :3000
 4. Use **Get Sats** on the detail page to get test sats
 5. **Place Bid** with a **maximum** — watch the standing price rise automatically, and see outbid bids refund instantly
 
+### Run with Docker
+
+```bash
+cp .env.example apps/server/.env   # if not present
+NOSTR_PRIVATE_KEY=nsec1... docker compose up --build
+```
+
+- Server: `http://localhost:3001` · Web: `http://localhost:3000`
+- SQLite data persists in the `auction-data` volume
+- `ALLOW_TEST_BIDS` defaults to `0` in Docker (production-safe); override via `docker compose` env if you want the test mint
+
 ### Tests
 
 ```bash
-pnpm --filter @cashu-auction/server test   # server 94 tests
+pnpm --filter @cashu-auction/server test   # server 95 tests
 cd apps/web && npx vitest run               # web 18 tests
 ```
 

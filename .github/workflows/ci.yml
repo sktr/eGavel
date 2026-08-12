@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared types
+        run: pnpm --filter @cashu-auction/shared build
+
+      - name: Server tests
+        run: pnpm --filter @cashu-auction/server test
+
+      - name: Web tests
+        run: pnpm --filter @cashu-auction/web exec vitest run
+
+      - name: Server typecheck
+        run: pnpm --filter @cashu-auction/server exec tsc --noEmit
+
+      - name: Web typecheck
+        run: pnpm --filter @cashu-auction/web exec tsc --noEmit
+
+      - name: Server build
+        run: pnpm --filter @cashu-auction/server build
