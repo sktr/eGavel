@@ -65,3 +65,24 @@ export function parseProofData(proofData: string): StoredProofBundle {
     throw new Error("INVALID_PROOF")
   }
 }
+
+/**
+ * Proxy-bidding claim split. The winner locked their full MAX; the standing
+ * price (winning_amount) may be lower, so the excess is returned to the winner
+ * as a change output during the seller's claim swap.
+ *
+ *   sellerNet = winning_amount - fee - 1 (1 sat reserved for the mint swap fee)
+ *   change    = totalInput - winning_amount (>= 0)
+ *
+ * Invariant: sellerNet + fee + change + reserveFee === totalInput.
+ */
+export function computeClaimSplit(
+  totalInput: number,
+  winningAmount: number,
+  feeBps: number,
+): { sellerNet: number; fee: number; change: number; reserveFee: number } {
+  const fee = Math.floor((winningAmount * feeBps) / 10000)
+  const change = Math.max(0, totalInput - winningAmount)
+  const sellerNet = Math.max(0, winningAmount - fee - 1)
+  return { sellerNet, fee, change, reserveFee: 1 }
+}

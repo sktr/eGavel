@@ -13,3 +13,8 @@ exports/
 
 # macOS
 .DS_Store
+
+# Scratch / session artifacts
+.scratch/
+.slim/
+.superpowers/

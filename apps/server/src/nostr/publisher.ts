@@ -14,6 +14,7 @@ export interface Publisher {
     amount: number,
     bidsChecked: number,
     result?: "sold" | "reserve_not_met" | "no_bids",
+    fee?: number,
   ): void
   publishBid(
     auctionId: string,
@@ -63,6 +64,7 @@ export function createPublisher(): Publisher {
       amount: number,
       bidsChecked: number,
       result: "sold" | "reserve_not_met" | "no_bids" = "sold",
+      fee = 0,
     ) {
       const aTag = `39000:${sellerPubkey}:${auctionId}`
       const tags: string[][] = [["a", aTag], ["result", result]]
@@ -70,6 +72,7 @@ export function createPublisher(): Publisher {
         tags.push(["p", winnerNpub])
       }
       tags.push(["winner_amount", String(amount)])
+      tags.push(["fee", String(fee)])
 
       signAndPublish({
         kind: 39003,
@@ -77,6 +80,7 @@ export function createPublisher(): Publisher {
         tags,
         content: JSON.stringify({
           bids_checked: bidsChecked,
+          fee,
           settled_at: Date.now(),
         }),
       })

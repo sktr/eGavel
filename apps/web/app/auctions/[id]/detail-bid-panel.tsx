@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, PublicBid } from "@cashu-auction/shared"
 import { BidForm } from "./bid-form"
 import { useWatchlist } from "../../../lib/watchlist"
 import { useIdentity } from "../../../lib/identity"
@@ -34,12 +34,13 @@ export function DetailBidPanel({
   serverNpub,
 }: {
   auction: Auction
-  bids: Bid[]
+  bids: PublicBid[]
   serverNpub: string
 }) {
   const { identity } = useIdentity()
   const isOpen = auction.state === "ACTIVE" || auction.state === "EXTENDED"
-  const highestBid = bids.length > 0 ? bids[0]!.amount : auction.start_price
+  // Proxy bidding: the standing price is the leader's current_amount (2nd max + increment).
+  const highestBid = bids.length > 0 ? bids[0]!.current_amount : auction.start_price
   const minBid = auction.start_price
   const amHighest = bids.length > 0 && identity !== null && bids[0]!.bidder_npub === identity.pubkey
 
@@ -48,7 +49,7 @@ export function DetailBidPanel({
     isOpen &&
     auction.buy_now_price !== null &&
     auction.buy_now_price > 0 &&
-    (bids.length === 0 || auction.buy_now_price > bids[0]!.amount)
+    (bids.length === 0 || auction.buy_now_price > bids[0]!.current_amount)
 
   const { watching, toggle } = useWatchlist()
   const isWatching = watching(auction.id)

@@ -166,7 +166,7 @@ async function checkMintCapabilities(mintUrl: string): Promise<{ ok: boolean; mi
 export async function verifyBid(
   payload: BidPayload,
   auction: Auction,
-  currentHighestBid?: number,
+  currentPrice?: number,
   serverPubkey?: string,
 ): Promise<VerifyResult> {
   if (auction.state !== "ACTIVE" && auction.state !== "EXTENDED") {
@@ -188,10 +188,12 @@ export async function verifyBid(
     }
   }
 
-  if (currentHighestBid !== undefined && payload.amount <= currentHighestBid) {
+  // payload.amount is the bidder's MAX (proxy bidding). A max at or below the
+  // current standing price can never take the lead.
+  if (currentPrice !== undefined && payload.amount <= currentPrice) {
     return {
       ok: false,
-      error: { code: "BELOW_HIGHEST_BID", amount: payload.amount, highestBid: currentHighestBid },
+      error: { code: "BELOW_HIGHEST_BID", amount: payload.amount, highestBid: currentPrice },
     }
   }
 

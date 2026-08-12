@@ -3,10 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useIdentity } from "../../lib/identity"
 import { useWatchlist } from "../../lib/watchlist"
-import { refundBid } from "../../lib/claim"
+import { refundBid, collectChange } from "../../lib/claim"
 import { bytesToHex } from "nostr-tools/utils"
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, PublicBid } from "@cashu-auction/shared"
 import { ClaimPanel } from "../auctions/[id]/claim-panel"
+import { BackupSection } from "../backup-section"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
 
@@ -95,13 +96,9 @@ const recoverButtonStyle = {
 // loadOrCreateKey (lib/identity.ts "cashu-auction-identity" vs lib/nostr.ts
 // "cashu-auction-nostr-key") — the refund Schnorr signature must come from the
 // SAME key that owns the refund path.
-async function recoverBid(bid: Bid, identity: { pubkey: string; secretKey?: Uint8Array }) {
+async function recoverBid(bid: PublicBid, identity: { pubkey: string; secretKey: Uint8Array }) {
   if (bid.bidder_npub !== identity.pubkey) {
     alert("this bid is not from the connected identity")
-    return
-  }
-  if (!identity.secretKey) {
-    alert("recovering requires the in-app key — NIP-07 signing is not supported yet")
     return
   }
   try {
@@ -112,11 +109,74 @@ async function recoverBid(bid: Bid, identity: { pubkey: string; secretKey?: Uint
   }
 }
 
+// Proxy bidding: the winner locked their full MAX, but pays only the standing
+// price. The excess is returned as a change output during the seller's claim —
+// this collects it into the winner's wallet (1-of-1 P2PK to the winner).
+function ChangeCollector({
+  auctionId,
+  bidderPubkey,
+}: {
+  auctionId: string
+  bidderPubkey: string
+}) {
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const collect = async () => {
+    setBusy(true)
+    setError(null)
+    setStatus(null)
+    try {
+      const res = await collectChange(auctionId, bidderPubkey)
+      setStatus(`Collected ${res.amount} sats of change into your wallet`)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        type="button"
+        onClick={collect}
+        disabled={busy}
+        style={{
+          border: "1px solid var(--accent)",
+          borderRadius: "var(--radius)",
+          background: "var(--accent-soft)",
+          color: "var(--accent)",
+          padding: "4px 10px",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: busy ? "wait" : "pointer",
+          fontFamily: "inherit",
+          lineHeight: 1.4,
+        }}
+      >
+        {busy ? "Collecting…" : "Collect change"}
+      </button>
+      {status && (
+        <div style={{ fontSize: 11, color: "var(--accent2)", marginTop: 4 }}>{status}</div>
+      )}
+      {error && (
+        <div style={{ fontSize: 11, color: "var(--amber)", marginTop: 4 }}>
+          {error === "Error: NO_CHANGE"
+            ? "Nothing to collect yet — the seller hasn't claimed the auction, or your max matched the winning price."
+            : error}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const { identity, isLoaded } = useIdentity()
   const { ids } = useWatchlist()
   const [auctions, setAuctions] = useState<Auction[]>([])
-  const [bids, setBids] = useState<Bid[]>([])
+  const [bids, setBids] = useState<PublicBid[]>([])
   const [auctionLookup, setAuctionLookup] = useState<Record<string, Auction>>({})
   const [shippingByAuction, setShippingByAuction] = useState<
     Record<string, { address: string | null; note: string | null }>
@@ -160,7 +220,7 @@ export default function DashboardPage() {
         if (!bidsRes.ok) throw new Error(`bids: ${bidsRes.status}`)
 
         const fetchedAuctions: Auction[] = await auctionsRes.json()
-        const fetchedBids: Bid[] = await bidsRes.json()
+        const fetchedBids: PublicBid[] = await bidsRes.json()
 
         setAuctions(fetchedAuctions)
         setBids(fetchedBids)
@@ -218,7 +278,7 @@ export default function DashboardPage() {
   // return immediately via bidder+server co-sign (2-of-3, spec §6.4).
   const failedRefundsRef = useRef(new Set<string>())
   useEffect(() => {
-    if (!identity || !identity.secretKey) return // NIP-07 cannot sign arbitrary messages
+    if (!identity) return
     const skHex = bytesToHex(identity.secretKey)
     let cancelled = false
     const run = async () => {
@@ -309,12 +369,13 @@ export default function DashboardPage() {
   const claimable = settledListings.length
 
   // Info for bid cards: determine status
-  function bidStatus(b: Bid): { label: string; variant: "winning" | "outbid" | "won" } {
+  function bidStatus(b: PublicBid): { label: string; variant: "winning" | "outbid" | "won" } {
     const auction = auctionLookup[b.auction_id]
     if (!auction) return { label: "Pending", variant: "outbid" }
     if (auction.state === "SETTLED") {
-      // Check if this is the winning bid
-      if (auction.winner_npub === identity?.pubkey && b.amount === auction.winning_amount) {
+      // The winner's bid stays status "verified" — with proxy bidding the
+      // max never equals the winning price, so match on status, not amount.
+      if (auction.winner_npub === identity?.pubkey && b.status === "verified") {
         return { label: "Won", variant: "won" }
       }
       return { label: "Ended", variant: "outbid" }
@@ -335,7 +396,7 @@ export default function DashboardPage() {
       const st = bidStatus(b)
       activityItems.push({
         icon: "notifications",
-        text: `Placed bid on "${a.item}" (${b.amount.toLocaleString()} sats)`,
+        text: `Placed bid on "${a.item}" (${b.current_amount.toLocaleString()} sats)`,
         time: timeLeft(a.end_time),
       })
     }
@@ -512,6 +573,9 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      {/* ===== Account Backup (recovery phrase) ===== */}
+      <BackupSection />
+
       {/* ===== Tab Navigation ===== */}
       <div
         style={{
@@ -679,7 +743,7 @@ export default function DashboardPage() {
                           : "var(--fg)",
                   }}
                 >
-                  {b.amount.toLocaleString()} sats
+                  {b.current_amount.toLocaleString()} sats
                 </div>
                 <div style={{ fontSize: 12, color: "var(--muted)" }}>
                   {st.label === "Winning"
@@ -738,7 +802,7 @@ export default function DashboardPage() {
                 const auction = auctionLookup[b.auction_id]
                 const isWinner =
                   auction?.winner_npub === identity?.pubkey &&
-                  b.amount === auction?.winning_amount
+                  b.status === "verified" // proxy bidding: max ≠ winning price
                 // refund is only possible after locktime (end_time + 24h) — spec §2.2
                 const recoverable =
                   !isWinner &&
@@ -794,10 +858,15 @@ export default function DashboardPage() {
                           fontSize: 14,
                         }}
                       >
-                        {b.amount.toLocaleString()} sats
+                        {(
+                          isWinner
+                            ? (auction?.winning_amount ?? b.current_amount)
+                            : b.current_amount
+                        ).toLocaleString()}{" "}
+                        sats
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {isWinner ? "Winning Price" : "Bid Amount"}
+                        {isWinner ? "Winning Price" : "Bid"}
                       </div>
                       {b.status === "outbid" && auction && !recoverable && (
                         <div style={{ fontSize: 11, color: "var(--amber)" }}>
@@ -812,6 +881,9 @@ export default function DashboardPage() {
                         >
                           Recover
                         </button>
+                      )}
+                      {isWinner && identity && (
+                        <ChangeCollector auctionId={b.auction_id} bidderPubkey={identity.pubkey} />
                       )}
                     </div>
                   </>

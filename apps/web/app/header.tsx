@@ -85,7 +85,7 @@ export function Header() {
                 }}
               >
                 <span className="material-icons" style={{ fontSize: 16, color: "var(--accent)" }}>
-                  {identity.type === "nip07" ? "extension" : "person"}
+                  person
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)" }}>
                   {identity.npub.slice(0, 12)}…
@@ -154,7 +154,7 @@ export function Header() {
                   {/* Identity */}
                   <div style={{ padding: "2px 4px" }}>
                     <span style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
-                      {identity.type === "nip07" ? "NIP-07 key" : "In-app key"}
+                      In-app key
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all", background: "transparent", padding: 0 }}>

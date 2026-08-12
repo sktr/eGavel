@@ -26,27 +26,17 @@ export async function publishEvent(
 }
 
 /**
- * Sign (via NIP-07 if available, otherwise the in-app fallback key) and
- * publish a Nostr event. The SAME identity is used for creating auctions,
- * so seller keys, bids, and the header all share one identity.
+ * Sign with the in-app key and publish a Nostr event. The SAME key is used
+ * for creating auctions, bids, and identity, so the audit log stays coherent:
+ * event pubkey = seller P2PK key = wallet key.
  */
 export async function publishEventWithIdentity(
   template: EventTemplate,
   identity: Identity,
   relays?: string[],
 ): Promise<void> {
-  if (identity.type === "nip07" && typeof window !== "undefined" && window.nostr) {
-    const signed = await window.nostr.signEvent(template)
-    const event = {
-      ...template,
-      id: signed.id,
-      sig: signed.sig,
-      pubkey: identity.pubkey,
-    } as unknown as Event
-    await publishSignedEvent(event, relays)
-  } else if (identity.secretKey) {
-    await publishEvent(template, identity.secretKey, relays)
-  } else {
+  if (!identity.secretKey) {
     throw new Error("no signing key available")
   }
+  await publishEvent(template, identity.secretKey, relays)
 }

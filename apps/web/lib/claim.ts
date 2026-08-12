@@ -179,3 +179,39 @@ async function requestRefundCoSign(
   const data = (await res.json()) as { server_sigs: string[] }
   return data.server_sigs
 }
+
+export interface ChangeReturn {
+  proofs: StoredProof[]
+  amount: number
+  mint_url: string
+}
+
+export async function fetchChangeData(
+  auctionId: string,
+  bidderPubkey: string,
+  apiBase = API_BASE,
+): Promise<ChangeReturn> {
+  const res = await fetch(
+    `${apiBase}/api/auctions/${auctionId}/change?bidder_pubkey=${bidderPubkey}`,
+    { cache: "no-store" },
+  )
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error ?? "change fetch failed")
+  }
+  return res.json() as Promise<ChangeReturn>
+}
+
+/** The winner sweeps the excess (locked max − standing price) into their wallet.
+ * The change proofs are 1-of-1 P2PK to the winner, so no server interaction is
+ * needed to spend them — storing them in the wallet is enough (same as the
+ * seller's claim proofs). */
+export async function collectChange(
+  auctionId: string,
+  bidderPubkey: string,
+  apiBase = API_BASE,
+): Promise<ChangeReturn> {
+  const data = await fetchChangeData(auctionId, bidderPubkey, apiBase)
+  storeProofsInWallet(data.proofs as unknown as Proof[], data.mint_url)
+  return data
+}

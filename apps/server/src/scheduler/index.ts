@@ -3,6 +3,7 @@ import type { Db } from "../db/index.js"
 import type { Publisher } from "../nostr/publisher.js"
 import { createPublisher } from "../nostr/publisher.js"
 import { withAuctionLock } from "../lib/auction-lock.js"
+import { calcFee } from "../lib/auction-fee.js"
 
 const POLL_INTERVAL = 60_000
 const EXTEND_BY = 5 * 60_000
@@ -62,7 +63,7 @@ export function createScheduler(
       auction.reserve_price ?? auction.start_price,
     )
 
-    if (bidsChecked === 0 || bids[0]!.amount < threshold) {
+    if (bidsChecked === 0 || bids[0]!.current_amount < threshold) {
       const result = bidsChecked === 0 ? "no_bids" : "reserve_not_met"
       pub.publishSettlement(
         auction.id,
@@ -71,6 +72,7 @@ export function createScheduler(
         0,
         bidsChecked,
         result,
+        0,
       )
       auction.winner_npub = null
       auction.winning_amount = 0
@@ -80,12 +82,13 @@ export function createScheduler(
         auction.id,
         auction.seller_pubkey,
         winner.bidder_npub,
-        winner.amount,
+        winner.current_amount,
         bidsChecked,
         "sold",
+        calcFee(winner.current_amount),
       )
       auction.winner_npub = winner.bidder_npub
-      auction.winning_amount = winner.amount
+      auction.winning_amount = winner.current_amount
     }
 
     auction.state = "SETTLED"

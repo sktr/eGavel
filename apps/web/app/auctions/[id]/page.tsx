@@ -1,4 +1,4 @@
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, PublicBid } from "@cashu-auction/shared"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
 
@@ -15,10 +15,10 @@ async function fetchAuction(id: string): Promise<Auction | null> {
   return res.json() as Promise<Auction>
 }
 
-async function fetchBids(id: string): Promise<Bid[]> {
+async function fetchBids(id: string): Promise<PublicBid[]> {
   const res = await fetch(`${API_BASE}/auctions/${id}/bids`, { cache: "no-store" })
   if (!res.ok) return []
-  return res.json() as Promise<Bid[]>
+  return res.json() as Promise<PublicBid[]>
 }
 
 export default async function AuctionPage({

@@ -290,7 +290,7 @@ export function BidForm({
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           required
-          placeholder="Bid amount (sats)"
+          placeholder="Max bid (sats)"
           style={{
             flex: 1,
             border: "1px solid var(--border)",
@@ -351,6 +351,13 @@ export function BidForm({
       {success && (
         <p style={{ color: "var(--accent2)", fontSize: 13, margin: "4px 0 8px" }}>{success}</p>
       )}
+
+      {/* Proxy bidding note: the entered amount is the MAX, not the price */}
+      <p style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 0" }}>
+        This is your <strong style={{ color: "var(--fg)" }}>maximum</strong> — the engine bids
+        just enough to stay in the lead (second-highest max + the minimum increment). You only
+        pay the standing price if you win; the excess is returned to you after the sale.
+      </p>
 
       {/* Advanced settings (collapsible) */}
       <details style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>

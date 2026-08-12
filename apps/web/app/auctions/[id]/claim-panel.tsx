@@ -28,11 +28,8 @@ export function ClaimPanel({
     setError(null)
     setStatus(null)
     try {
-      // Claim requires a raw Schnorr signature — only the in-app key can do
-      // that (NIP-07 cannot sign arbitrary messages), so the seller must be
-      // using the in-app fallback identity.
-      if (!identity?.secretKey) {
-        throw new Error("claim requires the in-app key — NIP-07 signing is not supported yet")
+      if (!identity) {
+        throw new Error("identity not loaded")
       }
       if (identity.pubkey !== auction.seller_pubkey) {
         throw new Error("claim requires the in-app key that created this auction")

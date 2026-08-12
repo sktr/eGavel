@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, PublicBid } from "@cashu-auction/shared"
 import { DetailBidPanel } from "./detail-bid-panel"
 import { useIdentity } from "../../../lib/identity"
 import { refundBid } from "../../../lib/claim"
@@ -26,7 +26,7 @@ export function LiveBids({
   serverNpub,
 }: {
   auction: Auction
-  bids: Bid[]
+  bids: PublicBid[]
   serverNpub: string
 }) {
   const [auction, setAuction] = useState(initialAuction)
@@ -39,7 +39,7 @@ export function LiveBids({
   // (bidder + server co-sign, 2-of-3). The dashboard already does this; this
   // covers the natural "watching the auction" flow.
   useEffect(() => {
-    if (!identity || !identity.secretKey) return // NIP-07 cannot sign arbitrary messages
+    if (!identity) return
     const skHex = bytesToHex(identity.secretKey)
     let cancelled = false
     const run = async () => {
@@ -71,7 +71,7 @@ export function LiveBids({
         ])
         if (cancelled) return
         if (aRes.ok) setAuction((await aRes.json()) as Auction)
-        if (bRes.ok) setBids((await bRes.json()) as Bid[])
+        if (bRes.ok) setBids((await bRes.json()) as PublicBid[])
       } catch {
         // transient network error — keep the last good data
       }
@@ -119,7 +119,7 @@ export function LiveBids({
             No bids yet.
           </div>
         ) : (
-          bids.map((b: Bid) => (
+          bids.map((b: PublicBid) => (
             <div
               key={b.id}
               style={{
@@ -141,7 +141,7 @@ export function LiveBids({
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {b.amount.toLocaleString()} sats
+                {b.current_amount.toLocaleString()} sats
               </span>
               <span style={{ color: "var(--muted)", fontSize: 12 }}>
                 {new Date(b.received_at).toLocaleString("ja-JP", {

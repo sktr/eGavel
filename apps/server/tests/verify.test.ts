@@ -169,6 +169,43 @@ describe("verifyBid", () => {
     if (!result.ok) expect(result.error.code).toBe("BELOW_START_PRICE")
   })
 
+  it("rejects a max at or below the current price (proxy bidding)", async () => {
+    // payload.amount is the bidder's MAX; currentHighestBid is the current
+    // standing price. A max <= current price can never take the lead.
+    const result = await verifyBid(
+      {
+        proofs: [{ id: "x", amount: 300, secret: "x", C: "x" }],
+        mint_url: "https://mint.example",
+        auction_id: "a1",
+        amount: 300,
+        bidder_pubkey: BIDDER_PUBKEY,
+      },
+      auction,
+      300,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe("BELOW_HIGHEST_BID")
+  })
+
+  it("accepts a max strictly above the current price", async () => {
+    const locktime = auction.end_time + 48 * 3600_000
+    const secret = makeP2PKSecret(SELLER_PUBKEY, locktime, BIDDER_PUBKEY)
+    const result = await verifyBid(
+      {
+        proofs: [{ id: "x", amount: 400, secret, C: "x" }],
+        mint_url: "test://local",
+        auction_id: "a1",
+        amount: 400,
+        bidder_pubkey: BIDDER_PUBKEY,
+      },
+      auction,
+      300,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(true)
+  })
+
   it("rejects if the locked proof value is below the claimed amount", async () => {
     const result = await verifyBid(
       {
