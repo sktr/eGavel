@@ -46,8 +46,9 @@ server — that is the core of the work.
 
 ## Step-by-step
 
-1. [ ] Refactor `Db` to async; keep better-sqlite3 implementation; run the
+1. [x] Refactor `Db` to async; keep better-sqlite3 implementation; run the
       existing server tests unchanged (they call the same methods, now async).
+      — done (2026-08-13, commit 76e0810)
 2. [ ] Add `wrangler.toml` + `src/index.ts` Workers entry with a D1 binding;
       implement `D1Db` against the same interface; local dev via `wrangler dev`.
 3. [ ] Replace the scheduler with a Cron Trigger / Durable Object; port the
