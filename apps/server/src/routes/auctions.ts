@@ -28,16 +28,16 @@ function serverPubkey(): string | null {
 export function createAuctionRoutes(db: Db) {
   const router = new Hono()
 
-  router.get("/auctions", (c) => {
+  router.get("/auctions", async (c) => {
     const filter = c.req.query("filter")
     const sellerPubkey = c.req.query("seller_pubkey")
     if (sellerPubkey) {
-      return c.json(db.getAuctionsBySeller(sellerPubkey))
+      return c.json(await db.getAuctionsBySeller(sellerPubkey))
     }
     if (filter === "active") {
-      return c.json(db.getActiveAuctions())
+      return c.json(await db.getActiveAuctions())
     }
-    return c.json(db.getAllAuctions())
+    return c.json(await db.getAllAuctions())
   })
 
   // ── Create listing: HTTP-direct (no Nostr relay dependency) ──
@@ -86,18 +86,18 @@ export function createAuctionRoutes(db: Db) {
       ...(typeof body.shipping === "string" && body.shipping ? { shipping: body.shipping } : {}),
       ...(typeof body.image === "string" && body.image ? { image: body.image } : {}),
     }
-    db.saveAuction(auction)
+    await db.saveAuction(auction)
     return c.json(auction)
   })
 
-  router.get("/auctions/:id", (c) => {
-    const auction = db.getAuction(c.req.param("id")!)
+  router.get("/auctions/:id", async (c) => {
+    const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
     return c.json(auction)
   })
 
-  router.get("/auctions/:id/bids", (c) => {
-    const bids = db.getVerifiedBids(c.req.param("id")!)
+  router.get("/auctions/:id/bids", async (c) => {
+    const bids = await db.getVerifiedBids(c.req.param("id")!)
     return c.json(bids.map(toPublicBid))
   })
 
@@ -121,20 +121,20 @@ export function createAuctionRoutes(db: Db) {
     return c.json({ ok: true })
   })
 
-  router.get("/bids", (c) => {
+  router.get("/bids", async (c) => {
     const bidderPubkey = c.req.query("bidder_pubkey")
     if (!bidderPubkey) {
       return c.json({ error: "bidder_pubkey query param required" }, 400)
     }
-    return c.json(db.getBidsByBidder(bidderPubkey).map(toPublicBid))
+    return c.json((await db.getBidsByBidder(bidderPubkey)).map(toPublicBid))
   })
 
   // ── Claim: seller fetches the winning proof ──
-  router.get("/auctions/:id/claim-data", (c) => {
-    const auction = db.getAuction(c.req.param("id")!)
+  router.get("/auctions/:id/claim-data", async (c) => {
+    const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
     const sellerPubkey = c.req.query("seller_pubkey") ?? ""
-    const bids = db.getVerifiedBids(auction.id)
+    const bids = await db.getVerifiedBids(auction.id)
     const winningBid = bids[0] ?? null
     const claim = winningBid ? validateClaim(auction, winningBid, sellerPubkey) : { ok: false as const, error: "NO_WINNER" }
     if (!claim.ok) return c.json({ error: claim.error }, 400)
@@ -147,7 +147,7 @@ export function createAuctionRoutes(db: Db) {
 
   // ── Claim: server co-signs the winning proofs' secrets (bundle) ──
   router.post("/auctions/:id/co-sign", async (c) => {
-    const auction = db.getAuction(c.req.param("id")!)
+    const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
     let body: { secrets?: string[]; seller_sigs?: string[] }
     try {
@@ -165,7 +165,7 @@ export function createAuctionRoutes(db: Db) {
       return c.json({ error: "missing secrets or seller_sigs" }, 400)
     }
 
-    const bids = db.getVerifiedBids(auction.id)
+    const bids = await db.getVerifiedBids(auction.id)
     const winningBid = bids[0] ?? null
     const sellerPubkey = auction.seller_pubkey
     const claim = winningBid
@@ -203,7 +203,7 @@ export function createAuctionRoutes(db: Db) {
   // ── Claim: seller claims the winning bid; server builds the swap and
   // splits the proceeds into [seller_net, operator_fee] (seller-paid fee) ──
   router.post("/auctions/:id/claim", async (c) => {
-    const auction = db.getAuction(c.req.param("id")!)
+    const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
     let body: { secrets?: string[]; seller_sigs?: string[] }
     try {
@@ -221,7 +221,7 @@ export function createAuctionRoutes(db: Db) {
       return c.json({ error: "missing secrets or seller_sigs" }, 400)
     }
 
-    const bids = db.getVerifiedBids(auction.id)
+    const bids = await db.getVerifiedBids(auction.id)
     const winningBid = bids[0] ?? null
     const claim = winningBid
       ? validateClaim(auction, winningBid, auction.seller_pubkey)
@@ -311,10 +311,10 @@ export function createAuctionRoutes(db: Db) {
       )
 
       if (feeProofs.length > 0) {
-        db.saveFee(auction.id, fee, JSON.stringify(feeProofs))
+        await db.saveFee(auction.id, fee, JSON.stringify(feeProofs))
       }
       if (winnerProofs.length > 0 && auction.winner_npub) {
-        db.saveChange(
+        await db.saveChange(
           auction.id,
           auction.winner_npub,
           change,
@@ -330,11 +330,11 @@ export function createAuctionRoutes(db: Db) {
 
   // ── Change: the winner collects the excess (locked max − standing price)
   // returned during the seller's claim swap (proxy bidding) ──
-  router.get("/auctions/:id/change", (c) => {
-    const auction = db.getAuction(c.req.param("id")!)
+  router.get("/auctions/:id/change", async (c) => {
+    const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
     const bidderPubkey = c.req.query("bidder_pubkey") ?? ""
-    const change = db.getChange(auction.id)
+    const change = await db.getChange(auction.id)
     if (!change) return c.json({ error: "NO_CHANGE" }, 400)
     if (canonicalPubkey(bidderPubkey) !== canonicalPubkey(change.bidder_npub)) {
       return c.json({ error: "NOT_BIDDER" }, 400)
@@ -361,8 +361,8 @@ export function createAuctionRoutes(db: Db) {
   }
 
   // ── Refund: bidder fetches their own locked proof after locktime ──
-  router.get("/bids/:id/refund-data", (c) => {
-    const bid = db.getBid(c.req.param("id")!)
+  router.get("/bids/:id/refund-data", async (c) => {
+    const bid = await db.getBid(c.req.param("id")!)
     if (!bid) return c.json({ error: "not found" }, 404)
     const bidderPubkey = c.req.query("bidder_pubkey") ?? ""
     if (canonicalPubkey(bidderPubkey) !== canonicalPubkey(bid.bidder_npub)) {
@@ -387,7 +387,7 @@ export function createAuctionRoutes(db: Db) {
 
   // ── Refund: server co-signs the outbid bid's secrets (2-of-3, bidder+server) ──
   router.post("/bids/:id/refund-co-sign", async (c) => {
-    const bid = db.getBid(c.req.param("id")!)
+    const bid = await db.getBid(c.req.param("id")!)
     if (!bid) return c.json({ error: "not found" }, 404)
     let body: { secrets?: string[]; bidder_sigs?: string[] }
     try {
@@ -431,8 +431,8 @@ export function createAuctionRoutes(db: Db) {
   })
 
   // ── Refund: client confirms completion → mark refunded (prevents re-refund) ──
-  router.post("/bids/:id/refunded", (c) => {
-    const bid = db.getBid(c.req.param("id")!)
+  router.post("/bids/:id/refunded", async (c) => {
+    const bid = await db.getBid(c.req.param("id")!)
     if (!bid) return c.json({ error: "not found" }, 404)
     const bidderPubkey = c.req.query("bidder_pubkey") ?? ""
     if (canonicalPubkey(bidderPubkey) !== canonicalPubkey(bid.bidder_npub)) {
@@ -440,14 +440,14 @@ export function createAuctionRoutes(db: Db) {
     }
     if (bid.status !== "outbid") return c.json({ error: "NOT_OUTBID" }, 400)
     bid.status = "refunded"
-    db.saveBid(bid)
+    await db.saveBid(bid)
     return c.json({ ok: true })
   })
 
   // ── Checkout: winner registers a shipping address.
   // Auth = Schnorr signature over the payload string (same scheme as P2PK). ──
   router.post("/auctions/:id/shipping", async (c) => {
-    const auction = db.getAuction(c.req.param("id")!)
+    const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
     let body: { auction_id?: string; address?: string; note?: string | null; pubkey?: string; sig?: string }
     try {
@@ -467,18 +467,18 @@ export function createAuctionRoutes(db: Db) {
     if (!verifySecretSignature(sig, content, canonicalPubkey(pubkey))) {
       return c.json({ error: "INVALID_SIGNATURE" }, 400)
     }
-    db.saveShipping(auction.id, address, note ?? null)
+    await db.saveShipping(auction.id, address, note ?? null)
     return c.json({ ok: true })
   })
 
-  router.get("/auctions/:id/shipping", (c) => {
-    const auction = db.getAuction(c.req.param("id")!)
+  router.get("/auctions/:id/shipping", async (c) => {
+    const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
     const sellerPubkey = c.req.query("seller_pubkey") ?? ""
     if (canonicalPubkey(sellerPubkey) !== canonicalPubkey(auction.seller_pubkey)) {
       return c.json({ error: "NOT_SELLER" }, 400)
     }
-    const shipping = db.getShipping(auction.id)
+    const shipping = await db.getShipping(auction.id)
     return c.json(shipping ?? { address: null, note: null })
   })
 

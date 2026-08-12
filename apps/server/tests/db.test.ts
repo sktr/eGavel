@@ -36,12 +36,12 @@ function bid(id: string, max: number): Bid {
   }
 }
 
-describe("db proxy-bidding schema", () => {
+describe("db proxy-bidding schema", async () => {
   let db: Db
   const origPath = process.env.DB_PATH
   const testPath = `data/test-proxy-${Date.now()}.db`
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.DB_PATH = testPath
     for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
       if (fs.existsSync(f)) fs.unlinkSync(f)
@@ -49,48 +49,48 @@ describe("db proxy-bidding schema", () => {
     db = initDb()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     if (origPath === undefined) delete process.env.DB_PATH
     else process.env.DB_PATH = origPath
   })
 
-  it("migrates a legacy bids table (amount) to max_amount/current_amount", () => {
-    db.saveAuction(legacyAuction("a1"))
+  it("migrates a legacy bids table (amount) to max_amount/current_amount", async () => {
+    await db.saveAuction(legacyAuction("a1"))
 
     // Simulate a pre-proxy-bidding database: old column names only.
-    db.exec(
+    await db.exec(
       "ALTER TABLE bids RENAME COLUMN max_amount TO amount; " +
         "ALTER TABLE bids DROP COLUMN current_amount",
     )
-    db.prepare(
+    await db.exec(
       `INSERT INTO bids (id, auction_id, amount, bidder_npub, Y, received_at, status)
-       VALUES ('legacy1', 'a1', 500, '03cafebabe', 'y', ?, 'verified')`,
-    ).run(Date.now())
+       VALUES ('legacy1', 'a1', 500, '03cafebabe', 'y', ${Date.now()}, 'verified')`,
+    )
 
     // Re-init → the idempotent migration must rename + backfill.
     db = initDb()
 
-    const migrated = db.getBid("legacy1")!
+    const migrated = (await db.getBid("legacy1"))!
     expect(migrated.max_amount).toBe(500)
     expect(migrated.current_amount).toBe(500)
   })
 
-  it("getAllBids returns bids of every status", () => {
-    db.saveAuction(legacyAuction("a1"))
-    db.saveBid({ ...bid("b1", 500), status: "verified" })
-    db.saveBid({ ...bid("b2", 300), status: "outbid" })
-    db.saveBid({ ...bid("b3", 200), status: "refunded" })
+  it("getAllBids returns bids of every status", async () => {
+    await db.saveAuction(legacyAuction("a1"))
+    await db.saveBid({ ...bid("b1", 500), status: "verified" })
+    await db.saveBid({ ...bid("b2", 300), status: "outbid" })
+    await db.saveBid({ ...bid("b3", 200), status: "refunded" })
 
-    const all = db.getAllBids("a1")
+    const all = await db.getAllBids("a1")
     expect(all.map((b) => b.status).sort()).toEqual(["outbid", "refunded", "verified"])
   })
 
-  it("getVerifiedBids orders by max_amount DESC and exposes both fields", () => {
-    db.saveAuction(legacyAuction("a1"))
-    db.saveBid({ ...bid("b1", 500), status: "outbid" })
-    db.saveBid({ ...bid("b2", 800), status: "verified" })
+  it("getVerifiedBids orders by max_amount DESC and exposes both fields", async () => {
+    await db.saveAuction(legacyAuction("a1"))
+    await db.saveBid({ ...bid("b1", 500), status: "outbid" })
+    await db.saveBid({ ...bid("b2", 800), status: "verified" })
 
-    const verified = db.getVerifiedBids("a1")
+    const verified = await db.getVerifiedBids("a1")
     expect(verified).toHaveLength(1)
     expect(verified[0]!.max_amount).toBe(800)
     expect(verified[0]!.current_amount).toBe(800)

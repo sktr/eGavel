@@ -13,15 +13,15 @@ export function createScheduler(db: Db) {
   async function tick() {
     const now = Date.now()
 
-    const needingCheck = db.getActiveAuctions()
+    const needingCheck = await db.getActiveAuctions()
 
     for (const auction of needingCheck) {
       await withAuctionLock(auction.id, async () => {
-        const current = db.getAuction(auction.id)
+        const current = await db.getAuction(auction.id)
         if (!current) return
         if (current.state !== "ACTIVE" && current.state !== "EXTENDED") return
 
-        const bids = db.getVerifiedBids(current.id)
+        const bids = await db.getVerifiedBids(current.id)
         const e = current.end_time
 
         // Only consider bids that arrived before E for extension (spec §5.2)
@@ -34,7 +34,7 @@ export function createScheduler(db: Db) {
           current.state = "EXTENDED"
           current.end_time = e + EXTEND_BY
           current.last_extended_at = now
-          db.saveAuction(current)
+          await db.saveAuction(current)
           return
         }
 
@@ -43,12 +43,12 @@ export function createScheduler(db: Db) {
           return
         }
 
-        settle(current, bids, db)
+        await settle(current, bids, db)
       })
     }
   }
 
-  function settle(auction: Auction, bids: ReturnType<Db["getVerifiedBids"]>, db: Db) {
+  async function settle(auction: Auction, bids: Awaited<ReturnType<Db["getVerifiedBids"]>>, db: Db) {
     const bidsChecked = bids.length
 
     const threshold = Math.max(
@@ -66,7 +66,7 @@ export function createScheduler(db: Db) {
     }
 
     auction.state = "SETTLED"
-    db.saveAuction(auction)
+    await db.saveAuction(auction)
   }
 
   return {

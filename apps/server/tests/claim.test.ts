@@ -64,8 +64,8 @@ function makeBid(overrides: Partial<Bid> = {}): Bid {
   }
 }
 
-describe("validateClaim", () => {
-  it("accepts the seller for a settled auction with a winner", () => {
+describe("validateClaim", async () => {
+  it("accepts the seller for a settled auction with a winner", async () => {
     const result = validateClaim(makeAuction(), makeBid(), SELLER)
     expect(result.ok).toBe(true)
     if (result.ok) {
@@ -74,25 +74,25 @@ describe("validateClaim", () => {
     }
   })
 
-  it("rejects a non-seller claimant", () => {
+  it("rejects a non-seller claimant", async () => {
     const result = validateClaim(makeAuction(), makeBid(), "02attacker")
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe("NOT_SELLER")
   })
 
-  it("rejects when the auction is not settled", () => {
+  it("rejects when the auction is not settled", async () => {
     const result = validateClaim(makeAuction({ state: "ACTIVE" }), makeBid(), SELLER)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe("NOT_SETTLED")
   })
 
-  it("rejects when there is no winner", () => {
+  it("rejects when there is no winner", async () => {
     const result = validateClaim(makeAuction({ winner_npub: null }), makeBid(), SELLER)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe("NO_WINNER")
   })
 
-  it("rejects when locktime has already passed", () => {
+  it("rejects when locktime has already passed", async () => {
     const bid = makeBid()
     const bundle = JSON.parse(bid.proof_data!) as {
       proofs: { secret: string }[]
@@ -117,34 +117,34 @@ describe("validateClaim", () => {
     if (!result.ok) expect(result.error).toBe("CLAIM_EXPIRED")
   })
 
-  it("rejects a winning bid with no proof_data (NO_PROOF)", () => {
+  it("rejects a winning bid with no proof_data (NO_PROOF)", async () => {
     const result = validateClaim(makeAuction(), makeBid({ proof_data: null }), SELLER)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe("NO_PROOF")
   })
 
-  it("rejects a winning bid with unparseable proof_data (INVALID_PROOF)", () => {
+  it("rejects a winning bid with unparseable proof_data (INVALID_PROOF)", async () => {
     const result = validateClaim(makeAuction(), makeBid({ proof_data: "not-json" }), SELLER)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe("INVALID_PROOF")
   })
 
-  it("rejects a winning bid whose proof_data parses but has no secret (INVALID_PROOF)", () => {
+  it("rejects a winning bid whose proof_data parses but has no secret (INVALID_PROOF)", async () => {
     const result = validateClaim(makeAuction(), makeBid({ proof_data: "{}" }), SELLER)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe("INVALID_PROOF")
   })
 })
 
-describe("bid-list endpoints (max secrecy)", () => {
+describe("bid-list endpoints (max secrecy)", async () => {
   let db: Db
   let app: Hono
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = initDb()
-    db.saveAuction(makeAuction({ state: "ACTIVE" }))
-    db.saveBid(makeBid()) // verified leader, max_amount 500
-    db.saveBid({ ...makeBid({ id: "a1-y2", bidder_npub: "05outbid", status: "outbid" }), current_amount: 310 })
+    await db.saveAuction(makeAuction({ state: "ACTIVE" }))
+    await db.saveBid(makeBid()) // verified leader, max_amount 500
+    await db.saveBid({ ...makeBid({ id: "a1-y2", bidder_npub: "05outbid", status: "outbid" }), current_amount: 310 })
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
   })
@@ -172,11 +172,11 @@ describe("bid-list endpoints (max secrecy)", () => {
   })
 })
 
-describe("POST /api/auctions (create listing, HTTP-direct)", () => {
+describe("POST /api/auctions (create listing, HTTP-direct)", async () => {
   let db: Db
   let app: Hono
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = initDb()
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
@@ -206,7 +206,7 @@ describe("POST /api/auctions (create listing, HTTP-direct)", () => {
     expect(auction.state).toBe("ACTIVE")
     expect(auction.seller_pubkey).toBe(SELLER)
     expect(auction.start_price).toBe(100)
-    expect(db.getAuction(auction.id)?.item).toBe("test item")
+    expect((await db.getAuction(auction.id))?.item).toBe("test item")
   })
 
   it("passes through optional fields (reserve, buy-now, category, image)", async () => {
@@ -253,17 +253,17 @@ describe("POST /api/auctions (create listing, HTTP-direct)", () => {
   })
 })
 
-describe("POST /api/auctions/:id/shipping (Schnorr-signed payload)", () => {
+describe("POST /api/auctions/:id/shipping (Schnorr-signed payload)", async () => {
   let db: Db
   let app: Hono
   let winnerSkHex: string
   let winnerPubkey: string
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = initDb()
     winnerSkHex = Buffer.from(generateSecretKey()).toString("hex")
     winnerPubkey = getPublicKey(hexToBytes(winnerSkHex))
-    db.saveAuction(makeAuction({ state: "SETTLED", winner_npub: winnerPubkey }))
+    await db.saveAuction(makeAuction({ state: "SETTLED", winner_npub: winnerPubkey }))
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
   })
@@ -286,7 +286,7 @@ describe("POST /api/auctions/:id/shipping (Schnorr-signed payload)", () => {
       body: JSON.stringify(shippingBody("Tokyo", null, winnerSkHex, winnerPubkey)),
     })
     expect(res.status).toBe(200)
-    expect(db.getShipping("a1")?.address).toBe("Tokyo")
+    expect((await db.getShipping("a1"))?.address).toBe("Tokyo")
   })
 
   it("rejects a signature from a non-winner (NOT_WINNER)", async () => {
@@ -316,24 +316,24 @@ describe("POST /api/auctions/:id/shipping (Schnorr-signed payload)", () => {
   })
 })
 
-describe("change-return route", () => {
+describe("change-return route", async () => {
   let db: Db
   let app: Hono
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = initDb()
     process.env.NOSTR_PRIVATE_KEY = "ab".repeat(32)
-    db.saveAuction(makeAuction({ state: "SETTLED", winner_npub: BIDDER }))
+    await db.saveAuction(makeAuction({ state: "SETTLED", winner_npub: BIDDER }))
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     delete process.env.NOSTR_PRIVATE_KEY
   })
 
   it("returns the stored change proofs to the winner", async () => {
-    db.saveChange(
+    await db.saveChange(
       "a1",
       BIDDER,
       200,
@@ -350,7 +350,7 @@ describe("change-return route", () => {
   })
 
   it("rejects a non-winner requesting the change", async () => {
-    db.saveChange(
+    await db.saveChange(
       "a1",
       BIDDER,
       200,
@@ -374,35 +374,35 @@ describe("change-return route", () => {
   })
 })
 
-describe("computeClaimSplit (proxy-bidding change return)", () => {
-  it("splits locked max into seller, fee, and winner change", () => {
+describe("computeClaimSplit (proxy-bidding change return)", async () => {
+  it("splits locked max into seller, fee, and winner change", async () => {
     // locked 1000 (the max), winning 800, 5% fee
     const split = computeClaimSplit(1000, 800, 500)
     expect(split).toEqual({ sellerNet: 759, fee: 40, change: 200, reserveFee: 1 })
     expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(1000)
   })
 
-  it("no change when the winner locked exactly the winning amount", () => {
+  it("no change when the winner locked exactly the winning amount", async () => {
     const split = computeClaimSplit(500, 500, 500)
     expect(split.change).toBe(0)
     expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(500)
   })
 
-  it("buy-now: returns the excess above buy_now_price to the winner", () => {
+  it("buy-now: returns the excess above buy_now_price to the winner", async () => {
     // locked 1500, winning (buy-now) 1000, 5% fee
     const split = computeClaimSplit(1500, 1000, 500)
     expect(split).toEqual({ sellerNet: 949, fee: 50, change: 500, reserveFee: 1 })
     expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(1500)
   })
 
-  it("never returns negative change", () => {
+  it("never returns negative change", async () => {
     const split = computeClaimSplit(100, 500, 500) // defensive: winning > locked
     expect(split.change).toBe(0)
     expect(split.sellerNet).toBeGreaterThanOrEqual(0)
   })
 })
 
-describe("co-sign route", () => {
+describe("co-sign route", async () => {
   let db: Db
   let app: Hono
   let sellerSk: Uint8Array
@@ -410,7 +410,7 @@ describe("co-sign route", () => {
   let serverSkHex: string
   let serverPubkeyXOnly: string
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = initDb()
     sellerSk = generateSecretKey()
     sellerPubkey = getPublicKey(sellerSk)
@@ -419,7 +419,7 @@ describe("co-sign route", () => {
     process.env.NOSTR_PRIVATE_KEY = serverSkHex
 
     const auction = makeAuction({ seller_pubkey: sellerPubkey, state: "SETTLED", winner_npub: BIDDER })
-    db.saveAuction(auction)
+    await db.saveAuction(auction)
     const secret = JSON.stringify([
       "P2PK",
       {
@@ -433,7 +433,7 @@ describe("co-sign route", () => {
         ],
       },
     ])
-    db.saveBid({
+    await db.saveBid({
       id: "a1-y",
       auction_id: "a1",
       max_amount: 500,
@@ -453,12 +453,12 @@ describe("co-sign route", () => {
     app.route("/api", createAuctionRoutes(db))
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     delete process.env.NOSTR_PRIVATE_KEY
   })
 
   it("co-signs the winning secret with a valid seller signature", async () => {
-    const bundle = JSON.parse(db.getBid("a1-y")!.proof_data!) as {
+    const bundle = JSON.parse((await db.getBid("a1-y"))!.proof_data!) as {
       proofs: { secret: string }[]
     }
     const winningSecret = bundle.proofs[0]!.secret
@@ -475,7 +475,7 @@ describe("co-sign route", () => {
   })
 
   it("rejects a wrong secret with INVALID_MSG", async () => {
-    const bundle = JSON.parse(db.getBid("a1-y")!.proof_data!) as {
+    const bundle = JSON.parse((await db.getBid("a1-y"))!.proof_data!) as {
       proofs: { secret: string }[]
     }
     const winningSecret = bundle.proofs[0]!.secret

@@ -14,10 +14,10 @@ export async function processBid(
   serverPubkey?: string,
 ): Promise<ProcessBidResult> {
   return withAuctionLock(payload.auction_id, async () => {
-    const auction = db.getAuction(payload.auction_id)
+    const auction = await db.getAuction(payload.auction_id)
     if (!auction) return { ok: false, error: "auction not found" }
 
-    const allBids = db.getAllBids(auction.id)
+    const allBids = await db.getAllBids(auction.id)
     const verifiedBids = allBids.filter((b) => b.status === "verified")
     const prevLeader = verifiedBids[0] ?? null
     const currentPrice = prevLeader ? prevLeader.current_amount : undefined
@@ -40,9 +40,9 @@ export async function processBid(
     // locked on two auctions would be claimable/refundable only once, silently
     // breaking the other auction's settlement. Lock BEFORE saving the bid, and
     // roll back our own acquisitions if the bundle is already locked elsewhere.
-    const acquired = db.tryLockProofs(bidId, auction.id, result.Ys)
+    const acquired = await db.tryLockProofs(bidId, auction.id, result.Ys)
     if (acquired.length !== result.Ys.length) {
-      db.unlockProofs(bidId, acquired)
+      await db.unlockProofs(bidId, acquired)
       return { ok: false, error: "verify error: PROOF_ALREADY_LOCKED" }
     }
 
@@ -88,7 +88,7 @@ export async function processBid(
       status: newIsLeader ? "verified" : "outbid",
       proof_data: proofData,
     }
-    db.saveBid(bid)
+    await db.saveBid(bid)
 
     if (newIsLeader) {
       // Any previously-verified bid is now superseded → outbid (immediately
@@ -97,13 +97,13 @@ export async function processBid(
       for (const oldBid of verifiedBids) {
         if (oldBid.id !== bid.id && oldBid.status === "verified") {
           oldBid.status = "outbid"
-          db.saveBid(oldBid)
+          await db.saveBid(oldBid)
         }
       }
     } else if (prevLeader) {
       // The standing leader keeps the lead, but the price rose under them.
       prevLeader.current_amount = newPrice
-      db.saveBid(prevLeader)
+      await db.saveBid(prevLeader)
     }
 
     // ── Buy-now: a max reaching buy_now_price settles immediately at that price ──
@@ -116,8 +116,8 @@ export async function processBid(
       auction.winner_npub = bid.bidder_npub
       auction.winning_amount = auction.buy_now_price
       bid.current_amount = auction.buy_now_price
-      db.saveBid(bid)
-      db.saveAuction(auction)
+      await db.saveBid(bid)
+      await db.saveAuction(auction)
       return { ok: true, buyNow: true }
     }
 

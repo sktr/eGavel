@@ -1,27 +1,25 @@
 import Database from "better-sqlite3"
-import type { Statement } from "better-sqlite3"
 import type { Auction, Bid } from "@cashu-auction/shared"
 
 export interface Db {
-  getActiveAuctions: () => Auction[]
-  getAllAuctions: () => Auction[]
-  getAuction: (id: string) => Auction | null
-  saveAuction: (auction: Auction) => void
-  getVerifiedBids: (auctionId: string) => Bid[]
-  getAllBids: (auctionId: string) => Bid[]
-  saveBid: (bid: Bid) => void
-  getAuctionsBySeller: (sellerPubkey: string) => Auction[]
-  getBidsByBidder: (bidderPubkey: string) => Bid[]
-  getBid: (id: string) => Bid | null
-  saveShipping: (auctionId: string, address: string, note: string | null) => void
-  getShipping: (auctionId: string) => { address: string; note: string | null } | null
-  saveFee: (auctionId: string, amount: number, proofs: string) => void
-  saveChange: (auctionId: string, bidderNpub: string, amount: number, proofs: string) => void
-  getChange: (auctionId: string) => { bidder_npub: string; amount: number; proofs: string } | null
-  tryLockProofs: (bidId: string, auctionId: string, Ys: string[]) => string[]
-  unlockProofs: (bidId: string, Ys: string[]) => void
-  exec: (sql: string) => void
-  prepare: (sql: string) => Statement
+  getActiveAuctions: () => Promise<Auction[]>
+  getAllAuctions: () => Promise<Auction[]>
+  getAuction: (id: string) => Promise<Auction | null>
+  saveAuction: (auction: Auction) => Promise<void>
+  getVerifiedBids: (auctionId: string) => Promise<Bid[]>
+  getAllBids: (auctionId: string) => Promise<Bid[]>
+  saveBid: (bid: Bid) => Promise<void>
+  getAuctionsBySeller: (sellerPubkey: string) => Promise<Auction[]>
+  getBidsByBidder: (bidderPubkey: string) => Promise<Bid[]>
+  getBid: (id: string) => Promise<Bid | null>
+  saveShipping: (auctionId: string, address: string, note: string | null) => Promise<void>
+  getShipping: (auctionId: string) => Promise<{ address: string; note: string | null } | null>
+  saveFee: (auctionId: string, amount: number, proofs: string) => Promise<void>
+  saveChange: (auctionId: string, bidderNpub: string, amount: number, proofs: string) => Promise<void>
+  getChange: (auctionId: string) => Promise<{ bidder_npub: string; amount: number; proofs: string } | null>
+  tryLockProofs: (bidId: string, auctionId: string, Ys: string[]) => Promise<string[]>
+  unlockProofs: (bidId: string, Ys: string[]) => Promise<void>
+  exec: (sql: string) => Promise<void>
 }
 
 export function initDb(): Db {
@@ -161,7 +159,7 @@ export function initDb(): Db {
   `)
 
   return {
-    getActiveAuctions() {
+    async getActiveAuctions() {
       return db
         .prepare(
           "SELECT * FROM auctions WHERE state = 'ACTIVE' OR state = 'EXTENDED'",
@@ -169,18 +167,18 @@ export function initDb(): Db {
         .all() as Auction[]
     },
 
-    getAllAuctions() {
+    async getAllAuctions() {
       return db
         .prepare("SELECT * FROM auctions ORDER BY end_time DESC")
         .all() as Auction[]
     },
 
-    getAuction(id: string) {
+    async getAuction(id: string) {
       return (db.prepare("SELECT * FROM auctions WHERE id = ?").get(id) ??
         null) as Auction | null
     },
 
-    saveAuction(auction: Auction) {
+    async saveAuction(auction: Auction) {
       insertAuction.run({
         ...auction,
         last_extended_at: auction.last_extended_at ?? null,
@@ -195,7 +193,7 @@ export function initDb(): Db {
       })
     },
 
-    getVerifiedBids(auctionId: string) {
+    async getVerifiedBids(auctionId: string) {
       return db
         .prepare(
           "SELECT * FROM bids WHERE auction_id = ? AND status = 'verified' ORDER BY max_amount DESC, received_at ASC",
@@ -203,62 +201,62 @@ export function initDb(): Db {
         .all(auctionId) as Bid[]
     },
 
-    getAllBids(auctionId: string) {
+    async getAllBids(auctionId: string) {
       return db
         .prepare("SELECT * FROM bids WHERE auction_id = ? ORDER BY max_amount DESC, received_at ASC")
         .all(auctionId) as Bid[]
     },
 
-    saveBid(bid: Bid) {
+    async saveBid(bid: Bid) {
       db.prepare(
         `INSERT OR REPLACE INTO bids (id, auction_id, max_amount, current_amount, bidder_npub, Y, received_at, status, proof_data)
          VALUES (@id, @auction_id, @max_amount, @current_amount, @bidder_npub, @Y, @received_at, @status, @proof_data)`,
       ).run({ ...bid, proof_data: bid.proof_data ?? null })
     },
 
-    getAuctionsBySeller(sellerPubkey: string) {
+    async getAuctionsBySeller(sellerPubkey: string) {
       return db
         .prepare("SELECT * FROM auctions WHERE seller_pubkey = ? ORDER BY end_time DESC")
         .all(sellerPubkey) as Auction[]
     },
 
-    getBidsByBidder(bidderPubkey: string) {
+    async getBidsByBidder(bidderPubkey: string) {
       return db
         .prepare("SELECT * FROM bids WHERE bidder_npub = ? ORDER BY received_at DESC")
         .all(bidderPubkey) as Bid[]
     },
 
-    getBid(id: string) {
+    async getBid(id: string) {
       return (db.prepare("SELECT * FROM bids WHERE id = ?").get(id) ?? null) as Bid | null
     },
 
-    saveShipping(auctionId, address, note) {
+    async saveShipping(auctionId, address, note) {
       db.prepare(
         `INSERT OR REPLACE INTO shipping (auction_id, address, note, created_at)
          VALUES (?, ?, ?, ?)`,
       ).run(auctionId, address, note, Date.now())
     },
 
-    getShipping(auctionId) {
+    async getShipping(auctionId) {
       return (db
         .prepare("SELECT address, note FROM shipping WHERE auction_id = ?")
         .get(auctionId) ?? null) as { address: string; note: string | null } | null
     },
-    saveFee(auctionId, amount, proofs) {
+    async saveFee(auctionId, amount, proofs) {
       db.prepare(
         `INSERT OR REPLACE INTO fees (auction_id, amount, proofs, created_at)
          VALUES (?, ?, ?, ?)`,
       ).run(auctionId, amount, proofs, Date.now())
     },
 
-    saveChange(auctionId, bidderNpub, amount, proofs) {
+    async saveChange(auctionId, bidderNpub, amount, proofs) {
       db.prepare(
         `INSERT OR REPLACE INTO change_returns (auction_id, bidder_npub, amount, proofs, created_at)
          VALUES (?, ?, ?, ?, ?)`,
       ).run(auctionId, bidderNpub, amount, proofs, Date.now())
     },
 
-    getChange(auctionId) {
+    async getChange(auctionId) {
       return (db
         .prepare("SELECT bidder_npub, amount, proofs FROM change_returns WHERE auction_id = ?")
         .get(auctionId) ?? null) as {
@@ -268,7 +266,7 @@ export function initDb(): Db {
       } | null
     },
 
-    tryLockProofs(bidId, auctionId, Ys) {
+    async tryLockProofs(bidId, auctionId, Ys) {
       const insert = db.prepare(
         "INSERT OR IGNORE INTO bid_proofs (Y, bid_id, auction_id, locked_at) VALUES (?, ?, ?, ?)",
       )
@@ -281,18 +279,15 @@ export function initDb(): Db {
       return acquired
     },
 
-    unlockProofs(bidId, Ys) {
+    async unlockProofs(bidId, Ys) {
       if (Ys.length === 0) return
       const placeholders = Ys.map(() => "?").join(", ")
       db.prepare(`DELETE FROM bid_proofs WHERE bid_id = ? AND Y IN (${placeholders})`).run(bidId, ...Ys)
     },
 
-    exec(sql: string) {
+    async exec(sql: string) {
       db.exec(sql)
     },
 
-    prepare(sql: string) {
-      return db.prepare(sql)
-    },
   }
 }
