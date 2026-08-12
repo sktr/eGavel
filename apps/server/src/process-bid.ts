@@ -31,6 +31,21 @@ export async function processBid(
       }
     }
 
+    const Y = result.Ys.join(",")
+    const bidId = `${payload.auction_id}-${result.Ys.map((y) => y.slice(0, 6)).join("-")}`
+    const newMax = payload.amount
+
+    // ── Proof double-lock guard ─────────────────────────────
+    // The same proofs (same Ys) must not back more than one bid: a bundle
+    // locked on two auctions would be claimable/refundable only once, silently
+    // breaking the other auction's settlement. Lock BEFORE saving the bid, and
+    // roll back our own acquisitions if the bundle is already locked elsewhere.
+    const acquired = db.tryLockProofs(bidId, auction.id, result.Ys)
+    if (acquired.length !== result.Ys.length) {
+      db.unlockProofs(bidId, acquired)
+      return { ok: false, error: "verify error: PROOF_ALREADY_LOCKED" }
+    }
+
     const proofData = JSON.stringify({
       proofs: payload.proofs.map((p) => ({
         keyset_id: p.id,
@@ -41,9 +56,6 @@ export async function processBid(
       mint_url: payload.mint_url,
       amount: payload.amount,
     })
-
-    const Y = result.Ys.join(",")
-    const newMax = payload.amount
 
     // ── Proxy bidding (second price) ────────────────────────────
     // Each bidder's effective max is the highest max across all their bids
@@ -64,7 +76,7 @@ export async function processBid(
     const newIsLeader = prevLeader === null || newMax > prevLeader.max_amount
 
     const bid: Bid = {
-      id: `${payload.auction_id}-${result.Ys.map((y) => y.slice(0, 6)).join("-")}`,
+      id: bidId,
       auction_id: payload.auction_id,
       max_amount: newMax,
       // Standing price for the leader; for an immediately-outbid bid this is

@@ -131,6 +131,30 @@ describe("processBid (proxy bidding)", () => {
     if (!result.ok) expect(result.error).toContain("BELOW_HIGHEST_BID")
   })
 
+  it("rejects reusing the same proofs on another auction (double-lock)", async () => {
+    const auction1 = makeAuction({ id: "a1" })
+    const auction2 = makeAuction({ id: "a2" })
+    db.saveAuction(auction1)
+    db.saveAuction(auction2)
+
+    // Same locktime / same secret → same Y (= same proofs) used on two auctions
+    const locktime = Math.ceil((auction1.end_time + 24 * 3600_000) / 1000) + 100
+    const sameProofs = (auctionId: string, amount: number) => ({
+      proofs: [{ id: "ks1", amount, secret: p2pk(SELLER, locktime, BIDDER, "n1"), C: "c" }],
+      mint_url: "test://local",
+      auction_id: auctionId,
+      amount,
+      bidder_pubkey: BIDDER,
+    })
+
+    const first = await processBid(sameProofs("a1", 300), db, SERVER)
+    expect(first.ok).toBe(true)
+
+    const second = await processBid(sameProofs("a2", 300), db, SERVER)
+    expect(second.ok).toBe(false)
+    if (!second.ok) expect(second.error).toContain("PROOF_ALREADY_LOCKED")
+  })
+
   it("a re-bid by the same bidder supersedes their own old bid", async () => {
     const auction = makeAuction()
     db.saveAuction(auction)

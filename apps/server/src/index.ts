@@ -33,6 +33,7 @@ app.use("*", async (c, next) => {
 })
 
 app.use("/api/bids", rateLimit({ windowMs: 60_000, max: 30 }))
+app.use("/api/auctions", rateLimit({ windowMs: 60_000, max: 10 }))
 app.use("/api/auctions/*/co-sign", rateLimit({ windowMs: 60_000, max: 20 }))
 app.use("/api/auctions/*/claim-data", rateLimit({ windowMs: 60_000, max: 30 }))
 app.use("/api/auctions/*/shipping", rateLimit({ windowMs: 60_000, max: 30 }))

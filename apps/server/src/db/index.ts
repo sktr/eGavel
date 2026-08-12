@@ -18,6 +18,8 @@ export interface Db {
   saveFee: (auctionId: string, amount: number, proofs: string) => void
   saveChange: (auctionId: string, bidderNpub: string, amount: number, proofs: string) => void
   getChange: (auctionId: string) => { bidder_npub: string; amount: number; proofs: string } | null
+  tryLockProofs: (bidId: string, auctionId: string, Ys: string[]) => string[]
+  unlockProofs: (bidId: string, Ys: string[]) => void
   exec: (sql: string) => void
   prepare: (sql: string) => Statement
 }
@@ -86,6 +88,15 @@ export function initDb(): Db {
       proofs TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (auction_id) REFERENCES auctions(id)
+    );
+
+    -- One row per proof (Y) locked by a bid. UNIQUE(Y) prevents the same
+    -- proofs from backing multiple bids/auctions (double-lock).
+    CREATE TABLE IF NOT EXISTS bid_proofs (
+      Y TEXT PRIMARY KEY,
+      bid_id TEXT NOT NULL,
+      auction_id TEXT NOT NULL,
+      locked_at INTEGER NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_bids_auction_id ON bids(auction_id);
@@ -255,6 +266,25 @@ export function initDb(): Db {
         amount: number
         proofs: string
       } | null
+    },
+
+    tryLockProofs(bidId, auctionId, Ys) {
+      const insert = db.prepare(
+        "INSERT OR IGNORE INTO bid_proofs (Y, bid_id, auction_id, locked_at) VALUES (?, ?, ?, ?)",
+      )
+      const now = Date.now()
+      const acquired: string[] = []
+      for (const y of Ys) {
+        const res = insert.run(y, bidId, auctionId, now)
+        if (res.changes > 0) acquired.push(y)
+      }
+      return acquired
+    },
+
+    unlockProofs(bidId, Ys) {
+      if (Ys.length === 0) return
+      const placeholders = Ys.map(() => "?").join(", ")
+      db.prepare(`DELETE FROM bid_proofs WHERE bid_id = ? AND Y IN (${placeholders})`).run(bidId, ...Ys)
     },
 
     exec(sql: string) {
