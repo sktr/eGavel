@@ -191,6 +191,7 @@ export default function DashboardPage() {
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [bids, setBids] = useState<PublicBid[]>([]);
   const [auctionLookup, setAuctionLookup] = useState<Record<string, Auction>>({});
+  const [watchNames, setWatchNames] = useState<Record<string, string>>({});
   const [shippingByAuction, setShippingByAuction] = useState<
     Record<string, { address: string | null; note: string | null }>
   >({});
@@ -263,6 +264,25 @@ export default function DashboardPage() {
 
     fetchData();
   }, [identity, isLoaded, fetchAuctionById]);
+
+  // Resolve watchlist ids to auction item names (ids are 64-char hex; show the
+  // item name instead, with the id as the link).
+  useEffect(() => {
+    if (ids.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const names: Record<string, string> = {};
+      for (const id of ids) {
+        if (cancelled) return;
+        const a = await fetchAuctionById(id);
+        if (a) names[id] = a.item;
+      }
+      if (!cancelled) setWatchNames(names);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ids, fetchAuctionById]);
 
   // Seller view: fetch shipping addresses for settled listings the user sold
   useEffect(() => {
@@ -558,18 +578,39 @@ export default function DashboardPage() {
           <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Watching</h2>
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {ids.map((id) => (
-              <li key={id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+              <li
+                key={id}
+                style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}
+              >
                 <a
                   href={`/auctions/${id}`}
                   style={{
-                    color: "var(--accent)",
+                    color: "var(--fg)",
                     textDecoration: "none",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    display: "block",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {watchNames[id] ?? `Auction ${shortId(id)}`}
+                </a>
+                <span
+                  style={{
+                    color: "var(--muted)",
                     fontFamily: "var(--font-mono)",
-                    fontSize: 13,
+                    fontSize: 11,
+                    display: "block",
+                    marginTop: 2,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {id}
-                </a>
+                </span>
               </li>
             ))}
           </ul>
