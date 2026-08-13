@@ -4,12 +4,14 @@ import { useState, useRef, useEffect } from "react"
 import { useIdentity } from "../lib/identity"
 import { useTotalBalance } from "../lib/wallet"
 import { useTheme } from "@wrksz/themes/client"
+import { ConnectDialog } from "../components/connect-dialog"
 
 export function Header() {
-  const { identity, isLoaded, login, logout } = useIdentity()
+  const { identity, isLoaded, login, logout, restore } = useIdentity()
   const { theme, setTheme } = useTheme()
   const { total, byMint, loading, refreshing, refresh } = useTotalBalance()
   const [open, setOpen] = useState(false)
+  const [showConnect, setShowConnect] = useState(false)
   const [copied, setCopied] = useState(false)
   const popRef = useRef<HTMLDivElement>(null)
 
@@ -221,7 +223,7 @@ export function Header() {
             </div>
           ) : isLoaded ? (
             <button
-              onClick={login}
+              onClick={() => setShowConnect(true)}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
                 background: "var(--surface)", border: "1px solid var(--border)",
@@ -235,6 +237,21 @@ export function Header() {
           ) : null}
         </div>
       </nav>
+
+      {showConnect && (
+        <ConnectDialog
+          onUseDevice={() => {
+            setShowConnect(false);
+            login();
+          }}
+          onRestore={(input) => {
+            const res = restore(input);
+            if (res.ok) setShowConnect(false);
+            return res;
+          }}
+          onClose={() => setShowConnect(false)}
+        />
+      )}
     </div>
   )
 }

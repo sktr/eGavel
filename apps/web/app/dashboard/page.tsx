@@ -214,7 +214,13 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isLoaded) return;
     if (!identity) {
-      setError("Identity not available — try refreshing the page.");
+      // Logged out (or anonymous) — clear any previously fetched data so the
+      // dashboard shows nothing from a previous account.
+      setAuctions([]);
+      setBids([]);
+      setAuctionLookup({});
+      setShippingByAuction({});
+      setError("Identity not available — Connect to view your dashboard.");
       setLoading(false);
       return;
     }
