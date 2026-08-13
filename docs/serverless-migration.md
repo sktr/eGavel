@@ -60,10 +60,13 @@ server — that is the core of the work.
        (`settleIfDue` in the list/detail/bids routes) via an atomic D1
        conditional UPDATE. No Cron Trigger / Durable Object needed.
        — done (2026-08-13)
-4. [ ] Port DB schema to D1 migrations; add `wrangler d1 migrations apply`.
-5. [ ] Deploy web to Vercel (set `NEXT_PUBLIC_API_URL` to the worker URL);
+4. [x] DB schema ported to D1 migrations and applied to the remote database.
+5. [x] Worker deployed to Cloudflare (cashu-auction-api.sktr1211.workers.dev);
+       SERVER_PRIVATE_KEY set as a secret; /health and listing create/list
+       verified on the deployed Worker. — done (2026-08-13)
+6. [ ] Deploy web to Vercel (set `NEXT_PUBLIC_API_URL` to the worker URL);
        keep `SSR_API_URL` pointing at the worker.
-6. [ ] (later) R2 image uploads.
+7. [ ] (later) R2 image uploads.
 
 ## Risks / notes
 
