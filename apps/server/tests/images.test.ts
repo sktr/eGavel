@@ -142,6 +142,26 @@ describe("POST /api/auctions with images", async () => {
     expect(res.status).toBe(400)
   })
 
+  it("rejects images whose aggregate size exceeds 2MB", async () => {
+    const imgs = Array.from({ length: 3 }, () => "x".repeat(1_000_000))
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ images: imgs })),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it("accepts images whose aggregate size is exactly 2MB", async () => {
+    const imgs = Array.from({ length: 2 }, () => "x".repeat(1_000_000))
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ images: imgs })),
+    })
+    expect(res.status).toBe(200)
+  })
+
   it("list endpoints truncate images to the first element", async () => {
     const imgs = ["data:image/webp;base64,AAA", "data:image/webp;base64,BBB"]
     await app.request("http://localhost/api/auctions", {

@@ -10,7 +10,10 @@ export default async function Home() {
     const res = await fetch(`${API_BASE}/auctions?filter=active`, { cache: "no-store" })
     if (res.ok) {
       const active = (await res.json()) as Auction[]
-      featured = active.sort((a, b) => a.end_time - b.end_time)[0] ?? null
+      featured =
+        active
+          .filter((a) => a.state === "ACTIVE" || a.state === "EXTENDED")
+          .sort((a, b) => a.end_time - b.end_time)[0] ?? null
     }
   } catch {
     // hero simply stays hidden

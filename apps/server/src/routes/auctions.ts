@@ -98,7 +98,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       return c.json({ error: "end_time must be in the future" }, 400);
     }
 
-    // Images: optional array of data URLs, max 4, each ≤ 2MB.
+    // Images: optional array of data URLs, max 4, each ≤ 2MB, aggregate ≤ 2MB.
     let images: string[] | undefined;
     if (body.images !== undefined) {
       if (
@@ -106,10 +106,14 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         body.images.length > 4 ||
         body.images.some(
           (img) => typeof img !== "string" || img.length > 2_000_000,
-        )
+        ) ||
+        body.images.reduce(
+          (total, img) => total + (typeof img === "string" ? img.length : 0),
+          0,
+        ) > 2_000_000
       ) {
         return c.json(
-          { error: "images must be an array of at most 4 strings, each ≤ 2MB" },
+          { error: "images must be an array of at most 4 strings, each ≤ 2MB, total ≤ 2MB" },
           400,
         );
       }
