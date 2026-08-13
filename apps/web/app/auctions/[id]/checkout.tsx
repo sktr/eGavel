@@ -1,59 +1,64 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useIdentity } from "../../../lib/identity"
-import { signSecretHex } from "../../../lib/claim"
-import { bytesToHex } from "nostr-tools/utils"
+import { useState } from "react";
+import { useIdentity } from "../../../lib/identity";
+import { signSecretHex } from "../../../lib/claim";
+import { bytesToHex } from "../../../lib/hex";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
   .replace(/\/+$/, "")
-  .replace(/\/api$/, "")
+  .replace(/\/api$/, "");
 
 export function Checkout({ auctionId, winnerNpub }: { auctionId: string; winnerNpub: string }) {
-  const { identity } = useIdentity()
-  const [address, setAddress] = useState("")
-  const [note, setNote] = useState("")
-  const [status, setStatus] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { identity } = useIdentity();
+  const [address, setAddress] = useState("");
+  const [note, setNote] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // winnerNpub is stored as the bidder's HEX pubkey (process-bid.ts stores
   // bidder_pubkey hex into bidder_npub) — compare hex-vs-hex, not npub.
-  const isWinner =
-    identity && winnerNpub && identity.pubkey === winnerNpub
+  const isWinner = identity && winnerNpub && identity.pubkey === winnerNpub;
 
-  if (!isWinner) return null
+  if (!isWinner) return null;
 
   async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setStatus(null)
-    if (!identity) return
+    e.preventDefault();
+    setError(null);
+    setStatus(null);
+    if (!identity) return;
 
     // Auth = Schnorr signature over the payload string (same scheme as P2PK).
     // The winner signs with their key; the server verifies it matches the winner key.
     try {
       if (!identity.secretKey) {
-        setError("signing unavailable")
-        return
+        setError("signing unavailable");
+        return;
       }
-      const noteOrNull = note || null
-      const content = JSON.stringify({ auction_id: auctionId, address, note: noteOrNull })
-      const sig = signSecretHex(content, bytesToHex(identity.secretKey))
+      const noteOrNull = note || null;
+      const content = JSON.stringify({ auction_id: auctionId, address, note: noteOrNull });
+      const sig = signSecretHex(content, bytesToHex(identity.secretKey));
 
       const res = await fetch(`${API_BASE}/api/auctions/${auctionId}/shipping`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auction_id: auctionId, address, note: noteOrNull, pubkey: identity.pubkey, sig }),
-      })
+        body: JSON.stringify({
+          auction_id: auctionId,
+          address,
+          note: noteOrNull,
+          pubkey: identity.pubkey,
+          sig,
+        }),
+      });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(body.error ?? "failed to submit shipping info")
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "failed to submit shipping info");
       }
-      setAddress("")
-      setNote("")
-      setStatus("Shipping address submitted to the seller.")
+      setAddress("");
+      setNote("");
+      setStatus("Shipping address submitted to the seller.");
     } catch (err) {
-      setError(`failed to submit: ${err instanceof Error ? err.message : String(err)}`)
+      setError(`failed to submit: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -67,7 +72,9 @@ export function Checkout({ auctionId, winnerNpub }: { auctionId: string; winnerN
         marginTop: 24,
       }}
     >
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>You won — provide shipping details</h2>
+      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
+        You won — provide shipping details
+      </h2>
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <input
           type="text"
@@ -122,5 +129,5 @@ export function Checkout({ auctionId, winnerNpub }: { auctionId: string; winnerN
         {status && <p style={{ color: "var(--accent2)", fontSize: 13, margin: 0 }}>{status}</p>}
       </form>
     </div>
-  )
+  );
 }

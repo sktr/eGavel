@@ -2,8 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { nip19 } from "nostr-tools"
-import { bytesToHex } from "nostr-tools/utils"
+import { bytesToHex } from "../../../lib/hex"
 import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import type { Auction } from "@cashu-auction/shared"
@@ -30,11 +29,8 @@ export function BidForm({
   // Fetch server pubkey from health API or fall back to env prop
   useEffect(() => {
     if (serverNpubProp) {
-      try {
-        const decoded = nip19.decode(serverNpubProp)
-        setServerPubkeyHex(bytesToHex(decoded.data as Uint8Array))
-        return
-      } catch { /* fall through to API */ }
+      setServerPubkeyHex(serverNpubProp) // the server pubkey, as hex
+      return
     }
     const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
       .replace(/\/+$/, "")
@@ -233,9 +229,7 @@ export function BidForm({
         bidder_pubkey: identity.pubkey,
       })
 
-      // 3. Send bid — directly to the auction server (synchronous result,
-      // reliable, no relay dependency). The server verifies and publishes
-      // kind:39001 to Nostr itself.
+      // 3. Send the bid to the auction server, which verifies it.
       const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
         .replace(/\/+$/, "")
         .replace(/\/api$/, "")

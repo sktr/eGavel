@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import { useState, useMemo, useRef, useCallback } from "react"
-import { useRouter } from "next/navigation"
-import { useIdentity } from "../../lib/identity"
+import { useState, useMemo, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useIdentity } from "../../lib/identity";
 
 const DURATIONS = [
   { value: "1d", label: "1 day" },
@@ -10,7 +10,7 @@ const DURATIONS = [
   { value: "5d", label: "5 days", default: true },
   { value: "7d", label: "7 days" },
   { value: "14d", label: "14 days" },
-] as const
+] as const;
 
 const CATEGORIES = [
   { value: "", label: "Select a category" },
@@ -24,7 +24,7 @@ const CATEGORIES = [
   { value: "furniture", label: "Furniture & Interior" },
   { value: "electronics", label: "Electronics" },
   { value: "other", label: "Other" },
-] as const
+] as const;
 
 const CONDITIONS = [
   "New & Unused",
@@ -33,7 +33,7 @@ const CONDITIONS = [
   "Good",
   "Scratches & Stains",
   "Junk / For Parts",
-] as const
+] as const;
 
 const SHIPPING_OPTIONS = [
   {
@@ -51,93 +51,102 @@ const SHIPPING_OPTIONS = [
     title: "Hand Delivery",
     desc: "In-person handover — Tokyo area",
   },
-] as const
+] as const;
 
-const FOCUS_STYLE = { borderColor: "var(--accent)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent)" }
-const UNFOCUS_STYLE = { borderColor: "var(--border)", boxShadow: "none" }
+const FOCUS_STYLE = {
+  borderColor: "var(--accent)",
+  boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent)",
+};
+const UNFOCUS_STYLE = { borderColor: "var(--border)", boxShadow: "none" };
 
 export default function CreateAuctionPage() {
-  const router = useRouter()
-  const { identity, isLoaded } = useIdentity()
+  const router = useRouter();
+  const { identity, isLoaded } = useIdentity();
 
   // Form state
-  const [item, setItem] = useState("")
-  const [description, setDescription] = useState("")
-  const [startPrice, setStartPrice] = useState("")
-  const [reservePrice, setReservePrice] = useState("")
-  const [buyNowPrice, setBuyNowPrice] = useState("")
-  const [duration, setDuration] = useState("5d")
-  const [category, setCategory] = useState("")
-  const [condition, setCondition] = useState<string | null>(null)
-  const [shipping, setShipping] = useState("Home delivery")
-  const [agreeTerms, setAgreeTerms] = useState(false)
-  const [mintUrl, setMintUrl] = useState("https://testnut.cashu.space")
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [images, setImages] = useState<string[]>([])
+  const [item, setItem] = useState("");
+  const [description, setDescription] = useState("");
+  const [startPrice, setStartPrice] = useState("");
+  const [reservePrice, setReservePrice] = useState("");
+  const [buyNowPrice, setBuyNowPrice] = useState("");
+  const [duration, setDuration] = useState("5d");
+  const [category, setCategory] = useState("");
+  const [condition, setCondition] = useState<string | null>(null);
+  const [shipping, setShipping] = useState("Home delivery");
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [mintUrl, setMintUrl] = useState("https://testnut.cashu.space");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]);
 
   // Modal state
-  const [showModal, setShowModal] = useState(false)
+  const [showModal, setShowModal] = useState(false);
 
   // Toast state
-  const [toast, setToast] = useState<{ msg: string; icon: string } | null>(null)
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [toast, setToast] = useState<{ msg: string; icon: string } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((msg: string, icon = "check_circle") => {
-    setToast({ msg, icon })
-    if (toastTimer.current) clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(null), 3500)
-  }, [])
+    setToast({ msg, icon });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }, []);
 
-  const fileRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Validation errors per field
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const durationLabel = useMemo(() => {
-    return DURATIONS.find((d) => d.value === duration)?.label ?? "5 days"
-  }, [duration])
+    return DURATIONS.find((d) => d.value === duration)?.label ?? "5 days";
+  }, [duration]);
 
   const categoryLabel = useMemo(() => {
-    return CATEGORIES.find((c) => c.value === category)?.label ?? "—"
-  }, [category])
+    return CATEGORIES.find((c) => c.value === category)?.label ?? "—";
+  }, [category]);
 
   function validate(): boolean {
-    const errs: Record<string, string> = {}
-    if (!item.trim()) errs.item = "Enter item name"
-    if (!description.trim()) errs.description = "Enter description"
-    if (!condition) errs.condition = "Select condition"
-    const sp = parseInt(startPrice, 10)
-    if (!sp || sp < 1) errs.startPrice = "Enter start price (minimum 1 sat)"
-    if (!mintUrl.trim()) errs.mintUrl = "Enter a valid Mint URL"
-    if (!agreeTerms) errs.agreeTerms = "Agree to terms of service"
-    setFieldErrors(errs)
-    return Object.keys(errs).length === 0
+    const errs: Record<string, string> = {};
+    if (!item.trim()) errs.item = "Enter item name";
+    if (!description.trim()) errs.description = "Enter description";
+    if (!condition) errs.condition = "Select condition";
+    const sp = parseInt(startPrice, 10);
+    if (!sp || sp < 1) errs.startPrice = "Enter start price (minimum 1 sat)";
+    if (!mintUrl.trim()) errs.mintUrl = "Enter a valid Mint URL";
+    if (!agreeTerms) errs.agreeTerms = "Agree to terms of service";
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
   }
 
   function handleOpenModal(e: React.FormEvent) {
-    e.preventDefault()
-    if (!validate()) return
-    setShowModal(true)
+    e.preventDefault();
+    if (!validate()) return;
+    setShowModal(true);
   }
 
   async function handleConfirm() {
-    if (!identity) return
+    if (!identity) return;
 
-    const price = parseInt(startPrice, 10)
+    const price = parseInt(startPrice, 10);
     if (isNaN(price) || price <= 0) {
-      setError("Start price must be a positive number")
-      return
+      setError("Start price must be a positive number");
+      return;
     }
 
     // Compute end time from duration
-    const hoursMap: Record<string, number> = { "1d": 24, "3d": 72, "5d": 120, "7d": 168, "14d": 336 }
-    const hours = hoursMap[duration] ?? 120
-    const endTime = Date.now() + hours * 60 * 60 * 1000
+    const hoursMap: Record<string, number> = {
+      "1d": 24,
+      "3d": 72,
+      "5d": 120,
+      "7d": 168,
+      "14d": 336,
+    };
+    const hours = hoursMap[duration] ?? 120;
+    const endTime = Date.now() + hours * 60 * 60 * 1000;
 
-    setShowModal(false)
-    setSubmitting(true)
-    setError(null)
+    setShowModal(false);
+    setSubmitting(true);
+    setError(null);
 
     try {
       const body: Record<string, unknown> = {
@@ -147,67 +156,67 @@ export default function CreateAuctionPage() {
         end_time: endTime,
         seller_pubkey: identity.pubkey,
         mint_url: mintUrl || "https://testnut.cashu.space",
-      }
+      };
       if (reservePrice) {
-        const rp = parseInt(reservePrice, 10)
-        if (!isNaN(rp) && rp > 0) body.reserve_price = rp
+        const rp = parseInt(reservePrice, 10);
+        if (!isNaN(rp) && rp > 0) body.reserve_price = rp;
       }
       if (buyNowPrice) {
-        const bp = parseInt(buyNowPrice, 10)
-        if (!isNaN(bp) && bp > 0) body.buy_now_price = bp
+        const bp = parseInt(buyNowPrice, 10);
+        if (!isNaN(bp) && bp > 0) body.buy_now_price = bp;
       }
-      if (category) body.category = category
-      if (condition) body.condition = condition
-      if (shipping) body.shipping = shipping
-      if (images.length > 0) body.image = images[0]
+      if (category) body.category = category;
+      if (condition) body.condition = condition;
+      if (shipping) body.shipping = shipping;
+      if (images.length > 0) body.image = images[0];
 
       const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
         .replace(/\/+$/, "")
-        .replace(/\/api$/, "")
+        .replace(/\/api$/, "");
       const res = await fetch(`${apiBase}/api/auctions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      })
+      });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error((err as { error?: string }).error ?? "listing creation failed")
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "listing creation failed");
       }
 
-      showToast("Auction created!")
+      showToast("Auction created!");
       // Reset form
-      setItem("")
-      setDescription("")
-      setStartPrice("")
-      setReservePrice("")
-      setBuyNowPrice("")
-      setDuration("5d")
-      setCategory("")
-      setCondition(null)
-      setShipping("Home delivery")
-      setAgreeTerms(false)
-      setMintUrl("https://testnut.cashu.space")
-      setImages([])
-      setFieldErrors({})
+      setItem("");
+      setDescription("");
+      setStartPrice("");
+      setReservePrice("");
+      setBuyNowPrice("");
+      setDuration("5d");
+      setCategory("");
+      setCondition(null);
+      setShipping("Home delivery");
+      setAgreeTerms(false);
+      setMintUrl("https://testnut.cashu.space");
+      setImages([]);
+      setFieldErrors({});
 
-      setTimeout(() => router.push("/"), 2000)
+      setTimeout(() => router.push("/"), 2000);
     } catch (err) {
-      setError(String(err))
-      setSubmitting(false)
+      setError(String(err));
+      setSubmitting(false);
     }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files
+    const files = e.target.files;
     if (files) {
-      const newNames = Array.from(files).map((f) => f.name)
-      setImages((prev) => [...prev, ...newNames].slice(0, 10))
+      const newNames = Array.from(files).map((f) => f.name);
+      setImages((prev) => [...prev, ...newNames].slice(0, 10));
     }
-    if (fileRef.current) fileRef.current.value = ""
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   function removeImage(index: number) {
-    setImages((prev) => prev.filter((_, i) => i !== index))
+    setImages((prev) => prev.filter((_, i) => i !== index));
   }
 
   function handleSaveDraft() {
@@ -225,52 +234,52 @@ export default function CreateAuctionPage() {
         agreeTerms,
         mintUrl,
         images,
-      }
-      const drafts = JSON.parse(localStorage.getItem("auction_drafts") || "[]")
-      drafts.push({ ...draft, savedAt: Date.now() })
-      localStorage.setItem("auction_drafts", JSON.stringify(drafts))
-      showToast("Draft saved", "edit")
+      };
+      const drafts = JSON.parse(localStorage.getItem("auction_drafts") || "[]");
+      drafts.push({ ...draft, savedAt: Date.now() });
+      localStorage.setItem("auction_drafts", JSON.stringify(drafts));
+      showToast("Draft saved", "edit");
     } catch {
-      showToast("Failed to save draft", "warning")
+      showToast("Failed to save draft", "warning");
     }
   }
 
   function handleCancel() {
     if (item || description || startPrice) {
-      if (!confirm("Discard draft?")) return
+      if (!confirm("Discard draft?")) return;
     }
-    setItem("")
-    setDescription("")
-    setStartPrice("")
-    setReservePrice("")
-    setBuyNowPrice("")
-    setDuration("5d")
-    setCategory("")
-    setCondition(null)
-    setShipping("Home delivery")
-    setAgreeTerms(false)
-    setMintUrl("https://testnut.cashu.space")
-    setImages([])
-    setFieldErrors({})
-    showToast("Draft discarded", "delete")
+    setItem("");
+    setDescription("");
+    setStartPrice("");
+    setReservePrice("");
+    setBuyNowPrice("");
+    setDuration("5d");
+    setCategory("");
+    setCondition(null);
+    setShipping("Home delivery");
+    setAgreeTerms(false);
+    setMintUrl("https://testnut.cashu.space");
+    setImages([]);
+    setFieldErrors({});
+    showToast("Draft discarded", "delete");
   }
 
   function errStyle(field: string) {
-    return fieldErrors[field] ? { borderColor: "var(--red)" } : {}
+    return fieldErrors[field] ? { borderColor: "var(--red)" } : {};
   }
 
   // Shared input focus/blur handlers
   function handleFocus(e: React.FocusEvent<HTMLElement>) {
-    const el = e.currentTarget
-    el.style.borderColor = "var(--accent)"
-    el.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent)"
+    const el = e.currentTarget;
+    el.style.borderColor = "var(--accent)";
+    el.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent)";
   }
 
   function handleBlur(e: React.FocusEvent<HTMLElement>, field?: string) {
-    const el = e.currentTarget
+    const el = e.currentTarget;
     if (!field || !fieldErrors[field]) {
-      el.style.borderColor = "var(--border)"
-      el.style.boxShadow = "none"
+      el.style.borderColor = "var(--border)";
+      el.style.boxShadow = "none";
     }
   }
 
@@ -285,16 +294,14 @@ export default function CreateAuctionPage() {
     color: "var(--fg)",
     outline: "none",
     transition: "border-color .15s",
-  }
+  };
 
   if (!isLoaded || !identity) {
     return (
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
-        <p style={{ color: "var(--muted)", fontSize: 14, padding: "24px 0" }}>
-          Loading identity…
-        </p>
+        <p style={{ color: "var(--muted)", fontSize: 14, padding: "24px 0" }}>Loading identity…</p>
       </div>
-    )
+    );
   }
 
   return (
@@ -344,7 +351,10 @@ export default function CreateAuctionPage() {
             textDecoration: "none",
           }}
         >
-          View Drafts <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle" }}>arrow_forward</span>
+          View Drafts{" "}
+          <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle" }}>
+            arrow_forward
+          </span>
         </a>
       </div>
 
@@ -370,9 +380,7 @@ export default function CreateAuctionPage() {
               }}
             >
               Item Image{" "}
-              <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>
-                (max 10)
-              </span>
+              <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>(max 10)</span>
             </label>
             <input
               ref={fileRef}
@@ -385,12 +393,13 @@ export default function CreateAuctionPage() {
             <div
               onClick={() => fileRef.current?.click()}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--accent)"
-                e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 4%, transparent)"
+                e.currentTarget.style.borderColor = "var(--accent)";
+                e.currentTarget.style.background =
+                  "color-mix(in srgb, var(--accent) 4%, transparent)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--border)"
-                e.currentTarget.style.background = "transparent"
+                e.currentTarget.style.borderColor = "var(--border)";
+                e.currentTarget.style.background = "transparent";
               }}
               style={{
                 border: "2px dashed var(--border)",
@@ -402,7 +411,11 @@ export default function CreateAuctionPage() {
                 marginBottom: 16,
               }}
             >
-              <div style={{ fontSize: 28, marginBottom: 8, color: "var(--muted)" }}><span className="material-icons" style={{ fontSize: 28 }}>upload</span></div>
+              <div style={{ fontSize: 28, marginBottom: 8, color: "var(--muted)" }}>
+                <span className="material-icons" style={{ fontSize: 28 }}>
+                  upload
+                </span>
+              </div>
               <p style={{ fontSize: 14, color: "var(--muted)" }}>
                 Click or drag & drop to add images
               </p>
@@ -449,15 +462,24 @@ export default function CreateAuctionPage() {
                     }}
                     title={name}
                   >
-                    <span className="material-icons" style={{ fontSize: 18 }}>image</span>
-                    <span style={{ marginTop: 2, lineHeight: 1.2, textAlign: "center", padding: "0 4px" }}>
+                    <span className="material-icons" style={{ fontSize: 18 }}>
+                      image
+                    </span>
+                    <span
+                      style={{
+                        marginTop: 2,
+                        lineHeight: 1.2,
+                        textAlign: "center",
+                        padding: "0 4px",
+                      }}
+                    >
                       {name.length > 12 ? name.slice(0, 10) + "…" : name}
                     </span>
                     <button
                       type="button"
                       onClick={(e) => {
-                        e.stopPropagation()
-                        removeImage(i)
+                        e.stopPropagation();
+                        removeImage(i);
                       }}
                       style={{
                         position: "absolute",
@@ -477,7 +499,9 @@ export default function CreateAuctionPage() {
                         lineHeight: 1,
                       }}
                     >
-                      <span className="material-icons" style={{ fontSize: 11 }}>close</span>
+                      <span className="material-icons" style={{ fontSize: 11 }}>
+                        close
+                      </span>
                     </button>
                   </div>
                 ))}
@@ -497,8 +521,10 @@ export default function CreateAuctionPage() {
                       cursor: "pointer",
                     }}
                   >
-                      <span className="material-icons" style={{ fontSize: 24 }}>add</span>
-                    </div>
+                    <span className="material-icons" style={{ fontSize: 24 }}>
+                      add
+                    </span>
+                  </div>
                 )}
               </div>
             )}
@@ -531,9 +557,7 @@ export default function CreateAuctionPage() {
               onBlur={(e) => handleBlur(e, "item")}
             />
             {fieldErrors.item && (
-              <span
-                style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}
-              >
+              <span style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}>
                 {fieldErrors.item}
               </span>
             )}
@@ -612,12 +636,10 @@ export default function CreateAuctionPage() {
                 marginTop: 4,
               }}
             >
-               A detailed description helps attract higher bids. 300+ characters recommended.
+              A detailed description helps attract higher bids. 300+ characters recommended.
             </div>
             {fieldErrors.description && (
-              <span
-                style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}
-              >
+              <span style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}>
                 {fieldErrors.description}
               </span>
             )}
@@ -648,12 +670,12 @@ export default function CreateAuctionPage() {
                   onClick={() => setCondition(cond === condition ? null : cond)}
                   onMouseEnter={(e) => {
                     if (cond !== condition) {
-                      e.currentTarget.style.borderColor = "var(--accent)"
+                      e.currentTarget.style.borderColor = "var(--accent)";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (cond !== condition) {
-                      e.currentTarget.style.borderColor = "var(--border)"
+                      e.currentTarget.style.borderColor = "var(--border)";
                     }
                   }}
                   style={{
@@ -672,9 +694,7 @@ export default function CreateAuctionPage() {
               ))}
             </div>
             {fieldErrors.condition && (
-              <span
-                style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}
-              >
+              <span style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}>
                 {fieldErrors.condition}
               </span>
             )}
@@ -743,7 +763,10 @@ export default function CreateAuctionPage() {
                     marginBottom: 6,
                   }}
                 >
-                  Reserve Price <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>(optional, no sale below this)</span>
+                  Reserve Price{" "}
+                  <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>
+                    (optional, no sale below this)
+                  </span>
                 </label>
                 <input
                   id="reservePrice"
@@ -767,7 +790,10 @@ export default function CreateAuctionPage() {
                     marginBottom: 6,
                   }}
                 >
-                  Buy Now Price <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>(optional)</span>
+                  Buy Now Price{" "}
+                  <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>
+                    (optional)
+                  </span>
                 </label>
                 <input
                   id="buyNowPrice"
@@ -809,12 +835,12 @@ export default function CreateAuctionPage() {
                   onClick={() => setDuration(d.value)}
                   onMouseEnter={(e) => {
                     if (d.value !== duration) {
-                      e.currentTarget.style.borderColor = "var(--accent)"
+                      e.currentTarget.style.borderColor = "var(--accent)";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (d.value !== duration) {
-                      e.currentTarget.style.borderColor = "var(--border)"
+                      e.currentTarget.style.borderColor = "var(--border)";
                     }
                   }}
                   style={{
@@ -859,12 +885,12 @@ export default function CreateAuctionPage() {
                   onClick={() => setShipping(opt.value)}
                   onMouseEnter={(e) => {
                     if (opt.value !== shipping) {
-                      e.currentTarget.style.borderColor = "var(--accent)"
+                      e.currentTarget.style.borderColor = "var(--accent)";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (opt.value !== shipping) {
-                      e.currentTarget.style.borderColor = "var(--border)"
+                      e.currentTarget.style.borderColor = "var(--border)";
                     }
                   }}
                   style={{
@@ -943,7 +969,13 @@ export default function CreateAuctionPage() {
             </div>
             {fieldErrors.agreeTerms && (
               <span
-                style={{ fontSize: 12, color: "var(--red)", marginTop: 2, marginLeft: 24, display: "block" }}
+                style={{
+                  fontSize: 12,
+                  color: "var(--red)",
+                  marginTop: 2,
+                  marginLeft: 24,
+                  display: "block",
+                }}
               >
                 {fieldErrors.agreeTerms}
               </span>
@@ -979,9 +1011,7 @@ export default function CreateAuctionPage() {
               onBlur={(e) => handleBlur(e, "mintUrl")}
             />
             {fieldErrors.mintUrl && (
-              <span
-                style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}
-              >
+              <span style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}>
                 {fieldErrors.mintUrl}
               </span>
             )}
@@ -1019,10 +1049,10 @@ export default function CreateAuctionPage() {
                 opacity: submitting ? 0.5 : 1,
               }}
               onMouseEnter={(e) => {
-                if (!submitting) e.currentTarget.style.filter = "brightness(.92)"
+                if (!submitting) e.currentTarget.style.filter = "brightness(.92)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.filter = "none"
+                e.currentTarget.style.filter = "none";
               }}
             >
               {submitting ? "Publishing…" : "Publish"}
@@ -1043,10 +1073,10 @@ export default function CreateAuctionPage() {
                 transition: "background .15s",
               }}
               onMouseEnter={(e) => {
-                if (!submitting) e.currentTarget.style.background = "var(--border)"
+                if (!submitting) e.currentTarget.style.background = "var(--border)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--surface)"
+                e.currentTarget.style.background = "var(--surface)";
               }}
             >
               Save as Draft
@@ -1094,7 +1124,7 @@ export default function CreateAuctionPage() {
                 borderBottom: "1px solid var(--border)",
               }}
             >
-               Preview
+              Preview
             </h3>
             <div
               style={{
@@ -1115,9 +1145,18 @@ export default function CreateAuctionPage() {
               ["Item Name", item.trim() || "—"],
               ["Category", categoryLabel === "—" ? "Not selected" : categoryLabel],
               ["Condition", condition || "Not selected"],
-              ["Starting Price", startPrice ? `${parseInt(startPrice, 10).toLocaleString()} sats` : "Not set"],
-              ["Reserve Price", reservePrice ? `${parseInt(reservePrice, 10).toLocaleString()} sats` : "None"],
-              ["Buy Now Price", buyNowPrice ? `${parseInt(buyNowPrice, 10).toLocaleString()} sats` : "None"],
+              [
+                "Starting Price",
+                startPrice ? `${parseInt(startPrice, 10).toLocaleString()} sats` : "Not set",
+              ],
+              [
+                "Reserve Price",
+                reservePrice ? `${parseInt(reservePrice, 10).toLocaleString()} sats` : "None",
+              ],
+              [
+                "Buy Now Price",
+                buyNowPrice ? `${parseInt(buyNowPrice, 10).toLocaleString()} sats` : "None",
+              ],
               ["Duration", durationLabel],
               ["Shipping", shipping],
             ].map(([label, value]) => (
@@ -1132,7 +1171,14 @@ export default function CreateAuctionPage() {
                 }}
               >
                 <span style={{ color: "var(--muted)" }}>{label}</span>
-                <span style={{ fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-word" }}>
+                <span
+                  style={{
+                    fontWeight: 500,
+                    textAlign: "right",
+                    maxWidth: "60%",
+                    wordBreak: "break-word",
+                  }}
+                >
                   {value}
                 </span>
               </div>
@@ -1214,7 +1260,7 @@ export default function CreateAuctionPage() {
             justifyContent: "center",
           }}
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowModal(false)
+            if (e.target === e.currentTarget) setShowModal(false);
           }}
         >
           <div
@@ -1260,28 +1306,36 @@ export default function CreateAuctionPage() {
                   transition: "background 0.15s",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--border)"
-                  e.currentTarget.style.color = "var(--fg)"
+                  e.currentTarget.style.background = "var(--border)";
+                  e.currentTarget.style.color = "var(--fg)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg)"
-                  e.currentTarget.style.color = "var(--muted)"
+                  e.currentTarget.style.background = "var(--bg)";
+                  e.currentTarget.style.color = "var(--muted)";
                 }}
               >
-                <span className="material-icons" style={{ fontSize: 16 }}>close</span>
+                <span className="material-icons" style={{ fontSize: 16 }}>
+                  close
+                </span>
               </button>
             </div>
             <div style={{ padding: "20px 28px 28px" }}>
               <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 16 }}>
-                This will be published to Nostr. Please review.
+                This listing will be registered on the auction server. Please review.
               </p>
               <table style={{ width: "100%" }}>
                 <tbody>
                   {[
                     ["Item Name", item.trim()],
                     ["Starting Price", `${parseInt(startPrice, 10).toLocaleString()} sats`],
-                    ["Reserve Price", reservePrice ? `${parseInt(reservePrice, 10).toLocaleString()} sats` : "None"],
-                    ["Buy Now Price", buyNowPrice ? `${parseInt(buyNowPrice, 10).toLocaleString()} sats` : "None"],
+                    [
+                      "Reserve Price",
+                      reservePrice ? `${parseInt(reservePrice, 10).toLocaleString()} sats` : "None",
+                    ],
+                    [
+                      "Buy Now Price",
+                      buyNowPrice ? `${parseInt(buyNowPrice, 10).toLocaleString()} sats` : "None",
+                    ],
                     ["Duration", durationLabel],
                     ["Category", categoryLabel],
                     ["Condition", condition || "—"],
@@ -1343,12 +1397,12 @@ export default function CreateAuctionPage() {
                     transition: "all 0.15s",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = "var(--muted)"
-                    e.currentTarget.style.background = "var(--bg)"
+                    e.currentTarget.style.borderColor = "var(--muted)";
+                    e.currentTarget.style.background = "var(--bg)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = "var(--border)"
-                    e.currentTarget.style.background = "var(--surface)"
+                    e.currentTarget.style.borderColor = "var(--border)";
+                    e.currentTarget.style.background = "var(--surface)";
                   }}
                 >
                   Back to Edit
@@ -1403,10 +1457,12 @@ export default function CreateAuctionPage() {
             transition: "all 0.4s ease",
           }}
         >
-          <span className="material-icons" style={{ fontSize: 18 }}>{toast.icon}</span>
+          <span className="material-icons" style={{ fontSize: 18 }}>
+            {toast.icon}
+          </span>
           <span>{toast.msg}</span>
         </div>
       )}
     </div>
-  )
+  );
 }

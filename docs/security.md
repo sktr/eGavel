@@ -12,12 +12,12 @@ auditing this software.
 
 ## Trust model
 
-| Party | Can do | Cannot do |
-|-------|--------|-----------|
-| Bidder | Lock a bid; instantly refund when outbid (with server co-sign) | Spend another party's funds |
-| Seller | Claim the winner's proofs after settlement (with server co-sign) | Move funds alone |
-| Server | Verify bids, pick the winner, co-sign claims/refunds | Move funds alone (2-of-3 enforced cryptographically) |
-| Mint | Hold and swap e-cash | Steal proofs (bearer instruments, but see "Mint dependency" below) |
+| Party  | Can do                                                           | Cannot do                                                          |
+| ------ | ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Bidder | Lock a bid; instantly refund when outbid (with server co-sign)   | Spend another party's funds                                        |
+| Seller | Claim the winner's proofs after settlement (with server co-sign) | Move funds alone                                                   |
+| Server | Verify bids, pick the winner, co-sign claims/refunds             | Move funds alone (2-of-3 enforced cryptographically)               |
+| Mint   | Hold and swap e-cash                                             | Steal proofs (bearer instruments, but see "Mint dependency" below) |
 
 The server's honesty for **auction fairness** (did it accept my bid, did it
 settle correctly?) is NOT cryptographically enforced. It rests on the OSS

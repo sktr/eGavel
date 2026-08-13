@@ -1,23 +1,20 @@
-import { Hono } from "hono"
-import { cors } from "hono/cors"
-import { getPublicKey } from "nostr-tools"
-import { nip19 } from "nostr-tools"
-import { hexToBytes } from "nostr-tools/utils"
-import type { Db } from "./db/index.js"
-import { createAuctionRoutes, type AuctionRoutesConfig } from "./routes/auctions.js"
-import { rateLimit } from "./lib/rate-limit.js"
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { bytesToHex, hexToBytes } from "./lib/hex.js";
+import type { Db } from "./db/index.js";
+import { createAuctionRoutes, type AuctionRoutesConfig } from "./routes/auctions.js";
+import { rateLimit } from "./lib/rate-limit.js";
 
 export interface AppConfig extends AuctionRoutesConfig {}
 
 /** Derive the x-only server pubkey from a signing key (nsec or hex). */
 export function getServerPubkey(key: string | undefined): string | null {
-  if (!key) return null
+  if (!key || !/^[0-9a-fA-F]{64}$/.test(key)) return null;
   try {
-    if (!key.startsWith("nsec")) return getPublicKey(hexToBytes(key))
-    const { data } = nip19.decode(key)
-    return getPublicKey(data as Uint8Array)
+    return bytesToHex(schnorr.getPublicKey(hexToBytes(key)));
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -28,44 +25,45 @@ export function getServerPubkey(key: string | undefined): string | null {
  * Worker bindings (env).
  */
 export function createApp(db: Db, config: AppConfig = {}) {
-  const app = new Hono()
+  const app = new Hono();
 
-  app.use("*", cors())
+  app.use("*", cors());
 
   // Log every request with its status so 4xx/5xx errors are diagnosable.
   app.use("*", async (c, next) => {
-    await next()
+    await next();
     try {
-      const status = c.res.status
+      const status = c.res.status;
       if (status >= 400) {
-        const body = await c.res.clone().text()
-        console.log(`${c.req.method} ${c.req.path} -> ${status} body=${body.slice(0, 300)}`)
+        const body = await c.res.clone().text();
+        console.log(`${c.req.method} ${c.req.path} -> ${status} body=${body.slice(0, 300)}`);
       } else {
-        console.log(`${c.req.method} ${c.req.path} -> ${status}`)
+        console.log(`${c.req.method} ${c.req.path} -> ${status}`);
       }
     } catch (err) {
-      console.error("request log failed:", err)
+      console.error("request log failed:", err);
     }
-  })
+  });
 
-  app.use("/api/bids", rateLimit({ windowMs: 60_000, max: 30 }))
-  app.use("/api/auctions", rateLimit({ windowMs: 60_000, max: 10 }))
-  app.use("/api/auctions/*/co-sign", rateLimit({ windowMs: 60_000, max: 20 }))
-  app.use("/api/auctions/*/claim-data", rateLimit({ windowMs: 60_000, max: 30 }))
-  app.use("/api/auctions/*/shipping", rateLimit({ windowMs: 60_000, max: 30 }))
-  app.use("/api/bids/*/refund-data", rateLimit({ windowMs: 60_000, max: 30 }))
+  app.use("/api/bids", rateLimit({ windowMs: 60_000, max: 30 }));
+  app.use("/api/auctions", rateLimit({ windowMs: 60_000, max: 10 }));
+  app.use("/api/auctions/*/co-sign", rateLimit({ windowMs: 60_000, max: 20 }));
+  app.use("/api/auctions/*/claim-data", rateLimit({ windowMs: 60_000, max: 30 }));
+  app.use("/api/auctions/*/shipping", rateLimit({ windowMs: 60_000, max: 30 }));
+  app.use("/api/bids/*/refund-data", rateLimit({ windowMs: 60_000, max: 30 }));
 
-  const serverPubkey = getServerPubkey(config.serverKey)
+  const serverKey = config.serverKey ?? process.env.SERVER_PRIVATE_KEY;
+  const serverPubkey = getServerPubkey(serverKey);
   if (!serverPubkey) {
     console.warn(
       "WARNING: server signing key is not set — the server cannot co-sign or verify bids. " +
         "Set SERVER_PRIVATE_KEY (Node) / the SERVER_PRIVATE_KEY binding (Worker).",
-    )
+    );
   }
 
-  app.get("/health", (c) => c.json({ ok: true, pubkey: serverPubkey }))
+  app.get("/health", (c) => c.json({ ok: true, pubkey: serverPubkey }));
 
-  app.route("/api", createAuctionRoutes(db, config))
+  app.route("/api", createAuctionRoutes(db, { ...config, serverKey }));
 
-  return app
+  return app;
 }

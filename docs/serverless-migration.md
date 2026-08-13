@@ -9,13 +9,13 @@ app to Vercel, per ROADMAP #2.
 
 The blocking piece is the **data layer**, not the HTTP layer:
 
-| Concern | Today | On Workers |
-|---------|-------|------------|
-| Hono | ✓ | ✓ (Workers-native) |
-| SQL | better-sqlite3 (synchronous API) | **D1 (asynchronous API)** |
-| Db interface | `getAuction()`, `saveBid()` … all synchronous | all methods must become async |
-| Scheduler | `setInterval` + in-process per-auction lock (`auction-lock.ts`) | **Cron Trigger** or Durable Object alarms; the in-process `Map` lock does not work across isolates |
-| Native module | better-sqlite3 | none (D1 is a managed service) |
+| Concern       | Today                                                           | On Workers                                                                                         |
+| ------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Hono          | ✓                                                               | ✓ (Workers-native)                                                                                 |
+| SQL           | better-sqlite3 (synchronous API)                                | **D1 (asynchronous API)**                                                                          |
+| Db interface  | `getAuction()`, `saveBid()` … all synchronous                   | all methods must become async                                                                      |
+| Scheduler     | `setInterval` + in-process per-auction lock (`auction-lock.ts`) | **Cron Trigger** or Durable Object alarms; the in-process `Map` lock does not work across isolates |
+| Native module | better-sqlite3                                                  | none (D1 is a managed service)                                                                     |
 
 Every route, `processBid`, `claim`, and the scheduler currently call the Db
 synchronously. Converting the Db interface to async ripples through the whole
@@ -47,22 +47,22 @@ server — that is the core of the work.
 ## Step-by-step
 
 1. [x] Refactor `Db` to async; keep better-sqlite3 implementation; run the
-      existing server tests unchanged (they call the same methods, now async).
-      — done (2026-08-13, commit 76e0810)
+       existing server tests unchanged (they call the same methods, now async).
+       — done (2026-08-13, commit 76e0810)
 2. [x] Add `wrangler.jsonc` + `src/worker.ts` Workers entry with a D1 binding;
-      implement `D1Db` against the same interface; local dev via `wrangler dev`.
-      — done (2026-08-13): Worker serves /health, listing create/list, and
-      bid acceptance against a local D1 (miniflare); env injected via config
-      (`createApp(db, { serverKey, feeBps })`).
+       implement `D1Db` against the same interface; local dev via `wrangler dev`.
+       — done (2026-08-13): Worker serves /health, listing create/list, and
+       bid acceptance against a local D1 (miniflare); env injected via config
+       (`createApp(db, { serverKey, feeBps })`).
 3. [x] Scheduler REMOVED — the design was re-examined and polling was dropped
-      for event-driven settlement: anti-sniping extension happens at bid time
-      in `processBid`, and an auction is settled lazily when it is read
-      (`settleIfDue` in the list/detail/bids routes) via an atomic D1
-      conditional UPDATE. No Cron Trigger / Durable Object needed.
-      — done (2026-08-13)
+       for event-driven settlement: anti-sniping extension happens at bid time
+       in `processBid`, and an auction is settled lazily when it is read
+       (`settleIfDue` in the list/detail/bids routes) via an atomic D1
+       conditional UPDATE. No Cron Trigger / Durable Object needed.
+       — done (2026-08-13)
 4. [ ] Port DB schema to D1 migrations; add `wrangler d1 migrations apply`.
 5. [ ] Deploy web to Vercel (set `NEXT_PUBLIC_API_URL` to the worker URL);
-      keep `SSR_API_URL` pointing at the worker.
+       keep `SSR_API_URL` pointing at the worker.
 6. [ ] (later) R2 image uploads.
 
 ## Risks / notes

@@ -1,18 +1,18 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useRef } from "react"
-import type { Auction, PublicBid } from "@cashu-auction/shared"
-import { DetailBidPanel } from "./detail-bid-panel"
-import { useIdentity } from "../../../lib/identity"
-import { refundBid } from "../../../lib/claim"
-import { bytesToHex } from "nostr-tools/utils"
+import { useState, useEffect, useRef } from "react";
+import type { Auction, PublicBid } from "@cashu-auction/shared";
+import { DetailBidPanel } from "./detail-bid-panel";
+import { useIdentity } from "../../../lib/identity";
+import { refundBid } from "../../../lib/claim";
+import { bytesToHex } from "../../../lib/hex";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
-const POLL_MS = 4000
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
+const POLL_MS = 4000;
 
 function shortId(s: string) {
-  if (s.length <= 16) return s
-  return s.slice(0, 8) + "..." + s.slice(-6)
+  if (s.length <= 16) return s;
+  return s.slice(0, 8) + "..." + s.slice(-6);
 }
 
 /**
@@ -25,66 +25,66 @@ export function LiveBids({
   bids: initialBids,
   serverNpub,
 }: {
-  auction: Auction
-  bids: PublicBid[]
-  serverNpub: string
+  auction: Auction;
+  bids: PublicBid[];
+  serverNpub: string;
 }) {
-  const [auction, setAuction] = useState(initialAuction)
-  const [bids, setBids] = useState(initialBids)
-  const { identity } = useIdentity()
-  const failedRefundsRef = useRef(new Set<string>())
+  const [auction, setAuction] = useState(initialAuction);
+  const [bids, setBids] = useState(initialBids);
+  const { identity } = useIdentity();
+  const failedRefundsRef = useRef(new Set<string>());
 
   // Auto-refund outbid bids on THIS auction: when a bidder is watching the
   // detail page and their bid gets outbid, the funds return immediately
   // (bidder + server co-sign, 2-of-3). The dashboard already does this; this
   // covers the natural "watching the auction" flow.
   useEffect(() => {
-    if (!identity) return
-    const skHex = bytesToHex(identity.secretKey)
-    let cancelled = false
+    if (!identity) return;
+    const skHex = bytesToHex(identity.secretKey);
+    let cancelled = false;
     const run = async () => {
       for (const b of bids) {
-        if (cancelled) return
-        if (b.bidder_npub !== identity.pubkey) continue
-        if (b.status !== "outbid") continue
-        if (failedRefundsRef.current.has(b.id)) continue
+        if (cancelled) return;
+        if (b.bidder_npub !== identity.pubkey) continue;
+        if (b.status !== "outbid") continue;
+        if (failedRefundsRef.current.has(b.id)) continue;
         try {
-          await refundBid(b.id, b.bidder_npub, skHex)
+          await refundBid(b.id, b.bidder_npub, skHex);
         } catch {
-          failedRefundsRef.current.add(b.id)
+          failedRefundsRef.current.add(b.id);
         }
       }
-    }
-    run()
+    };
+    run();
     return () => {
-      cancelled = true
-    }
-  }, [bids, identity])
+      cancelled = true;
+    };
+  }, [bids, identity]);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     const poll = async () => {
       try {
         const [aRes, bRes] = await Promise.all([
           fetch(`${API_BASE}/auctions/${initialAuction.id}`, { cache: "no-store" }),
           fetch(`${API_BASE}/auctions/${initialAuction.id}/bids`, { cache: "no-store" }),
-        ])
-        if (cancelled) return
-        if (aRes.ok) setAuction((await aRes.json()) as Auction)
-        if (bRes.ok) setBids((await bRes.json()) as PublicBid[])
+        ]);
+        if (cancelled) return;
+        if (aRes.ok) setAuction((await aRes.json()) as Auction);
+        if (bRes.ok) setBids((await bRes.json()) as PublicBid[]);
       } catch {
         // transient network error — keep the last good data
       }
-    }
+    };
 
-    const first = setTimeout(poll, 400)
-    const timer = setInterval(poll, POLL_MS)
+    const first = setTimeout(poll, 400);
+    const timer = setInterval(poll, POLL_MS);
     return () => {
-      cancelled = true
-      clearTimeout(first)
-      clearInterval(timer)
-    }
-  }, [initialAuction.id])
+      cancelled = true;
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [initialAuction.id]);
 
   return (
     <>
@@ -156,5 +156,5 @@ export function LiveBids({
         )}
       </div>
     </>
-  )
+  );
 }

@@ -19,10 +19,10 @@ Bids are locked with a **2-of-3 P2PK** lock — the seller, the auction server, 
 
 ## Trust model (honest description)
 
-| Party | What they can do |
-|-------|------------------|
-| Bidder | Locks a bid. Instant refund when outbid (bidder + server co-signature). |
-| Seller | Claims after settlement (seller + server co-signature) and receives the proceeds minus the fee. |
+| Party  | What they can do                                                                                                              |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Bidder | Locks a bid. Instant refund when outbid (bidder + server co-signature).                                                       |
+| Seller | Claims after settlement (seller + server co-signature) and receives the proceeds minus the fee.                               |
 | Server | Verifies bids, picks the winner, co-signs claims/refunds. **Cannot move funds alone** (enforced cryptographically by 2-of-3). |
 
 - **Your account is a client-generated key backed by a 12-word BIP-39 recovery phrase.** The private key never leaves the browser; restore it on any device with the phrase (see the Backup section on the dashboard). No passwords, no registration.

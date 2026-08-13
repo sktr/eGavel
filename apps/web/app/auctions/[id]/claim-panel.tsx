@@ -1,55 +1,54 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import type { Auction } from "@cashu-auction/shared"
-import { useIdentity } from "../../../lib/identity"
-import { claimAuction } from "../../../lib/claim"
-import { bytesToHex } from "nostr-tools/utils"
+import { useState } from "react";
+import type { Auction } from "@cashu-auction/shared";
+import { useIdentity } from "../../../lib/identity";
+import { claimAuction } from "../../../lib/claim";
+import { bytesToHex } from "../../../lib/hex";
 
 export function ClaimPanel({
   auction,
   isSeller,
   isWinner,
 }: {
-  auction: Auction
-  isSeller: boolean
-  isWinner: boolean
+  auction: Auction;
+  isSeller: boolean;
+  isWinner: boolean;
 }) {
-  const { identity } = useIdentity()
-  const [status, setStatus] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const { identity } = useIdentity();
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const canClaim =
-    isSeller && auction.state === "SETTLED" && auction.winner_npub !== null
+  const canClaim = isSeller && auction.state === "SETTLED" && auction.winner_npub !== null;
 
   const claim = async () => {
-    setBusy(true)
-    setError(null)
-    setStatus(null)
+    setBusy(true);
+    setError(null);
+    setStatus(null);
     try {
       if (!identity) {
-        throw new Error("identity not loaded")
+        throw new Error("identity not loaded");
       }
       if (identity.pubkey !== auction.seller_pubkey) {
-        throw new Error("claim requires the in-app key that created this auction")
+        throw new Error("claim requires the in-app key that created this auction");
       }
       const result = await claimAuction(
         auction.id,
         auction.seller_pubkey,
         bytesToHex(identity.secretKey),
-      )
+      );
       setStatus(
         `Claimed ${(auction.winning_amount ?? 0).toLocaleString()} sats to your wallet (${result.proofs.length} proof${result.proofs.length === 1 ? "" : "s"})${result.fee > 0 ? ` — platform fee ${result.fee} sats` : ""}.`,
-      )
+      );
     } catch (err) {
-      setError(String(err))
+      setError(String(err));
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
-  if (!canClaim) return null
+  if (!canClaim) return null;
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -73,7 +72,9 @@ export function ClaimPanel({
         {busy ? "Claiming…" : `Claim ${(auction.winning_amount ?? 0).toLocaleString()} sats`}
       </button>
       {error && <p style={{ color: "var(--red)", fontSize: 13, margin: "6px 0 0" }}>{error}</p>}
-      {status && <p style={{ color: "var(--accent2)", fontSize: 13, margin: "6px 0 0" }}>{status}</p>}
+      {status && (
+        <p style={{ color: "var(--accent2)", fontSize: 13, margin: "6px 0 0" }}>{status}</p>
+      )}
     </div>
-  )
+  );
 }
