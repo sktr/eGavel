@@ -51,6 +51,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             --border:      oklch(92% 0.005 250);
             --accent:      #8B5CF6;
             --accent-soft: #F0ECFA;
+            --red:         oklch(55% 0.18 30);
             --success:     oklch(42% 0.12 145);
             --amber:       oklch(55% 0.16 85);
             --glow:        rgba(139,92,246,0.1);
@@ -79,6 +80,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             --border:      #332D28;
             --accent:      #8B5CF6;
             --accent-soft: #2A2535;
+            --red:         oklch(62% 0.16 30);
             --success:     oklch(60% 0.15 145);
             --amber:       oklch(70% 0.16 85);
             --glow:        rgba(139,92,246,0.12);
