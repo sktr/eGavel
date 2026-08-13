@@ -45,13 +45,13 @@ Generate a server signing key (`apps/server/.env`) — the server's key in the 2
 
 ```bash
 cd apps/server
-node -e "const { generateSecretKey, nip19 } = require('nostr-tools'); console.log('NOSTR_PRIVATE_KEY=' + nip19.nsecEncode(generateSecretKey()))"
+node -e "const { generateSecretKey, nip19 } = require('nostr-tools'); console.log('SERVER_PRIVATE_KEY=' + nip19.nsecEncode(generateSecretKey()))"
 ```
 
 Write `apps/server/.env` (see `.env.example`):
 
 ```bash
-NOSTR_PRIVATE_KEY=nsec1...        # server signing key generated above
+SERVER_PRIVATE_KEY=nsec1...        # server signing key generated above
 PORT=3001
 DB_PATH=data/auction.db
 ALLOW_TEST_BIDS=1                 # dev only (allows the test://local mint)
@@ -74,7 +74,7 @@ pnpm dev        # server :3001 / web :3000
 
 ```bash
 cp .env.example apps/server/.env   # if not present
-NOSTR_PRIVATE_KEY=nsec1... docker compose up --build
+SERVER_PRIVATE_KEY=nsec1... docker compose up --build
 ```
 
 - Server: `http://localhost:3001` · Web: `http://localhost:3000`

@@ -350,14 +350,14 @@ describe("change-return route", async () => {
 
   beforeEach(async () => {
     db = initDb()
-    process.env.NOSTR_PRIVATE_KEY = "ab".repeat(32)
+    process.env.SERVER_PRIVATE_KEY = "ab".repeat(32)
     await db.saveAuction(makeAuction({ state: "SETTLED", winner_npub: BIDDER }))
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
   })
 
   afterEach(async () => {
-    delete process.env.NOSTR_PRIVATE_KEY
+    delete process.env.SERVER_PRIVATE_KEY
   })
 
   it("returns the stored change proofs to the winner", async () => {
@@ -444,7 +444,7 @@ describe("co-sign route", async () => {
     sellerPubkey = getPublicKey(sellerSk)
     serverSkHex = Buffer.from(generateSecretKey()).toString("hex")
     serverPubkeyXOnly = getPublicKey(hexToBytes(serverSkHex))
-    process.env.NOSTR_PRIVATE_KEY = serverSkHex
+    process.env.SERVER_PRIVATE_KEY = serverSkHex
 
     const auction = makeAuction({ seller_pubkey: sellerPubkey, state: "SETTLED", winner_npub: BIDDER })
     await db.saveAuction(auction)
@@ -482,7 +482,7 @@ describe("co-sign route", async () => {
   })
 
   afterEach(async () => {
-    delete process.env.NOSTR_PRIVATE_KEY
+    delete process.env.SERVER_PRIVATE_KEY
   })
 
   it("co-signs the winning secret with a valid seller signature", async () => {

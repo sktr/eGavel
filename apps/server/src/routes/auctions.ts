@@ -21,7 +21,8 @@ export interface AuctionRoutesConfig {
 
 export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   const router = new Hono()
-  const serverKey = config.serverKey ?? process.env.NOSTR_PRIVATE_KEY
+  const serverKey =
+    config.serverKey ?? process.env.SERVER_PRIVATE_KEY ?? process.env.NOSTR_PRIVATE_KEY
 
   function serverPubkey(): string | null {
     const key = serverKey

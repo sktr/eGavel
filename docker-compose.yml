@@ -1,13 +1,13 @@
 # Local deployment: docker compose up
-# Set NOSTR_PRIVATE_KEY first (e.g. in a .env file or your shell):
-#   NOSTR_PRIVATE_KEY=nsec1... docker compose up
+# Set SERVER_PRIVATE_KEY first (e.g. in a .env file or your shell):
+#   SERVER_PRIVATE_KEY=nsec1... docker compose up
 services:
   server:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
     environment:
-      NOSTR_PRIVATE_KEY: ${NOSTR_PRIVATE_KEY:?set NOSTR_PRIVATE_KEY in .env}
+      SERVER_PRIVATE_KEY: ${SERVER_PRIVATE_KEY:?set SERVER_PRIVATE_KEY in .env}
       PORT: "3001"
       DB_PATH: /data/auction.db
       ALLOW_TEST_BIDS: "0"

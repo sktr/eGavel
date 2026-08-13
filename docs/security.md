@@ -77,7 +77,7 @@ only about **money safety**.
 5. **Legacy data.** Bids created before the proof double-lock guard are not in
    `bid_proofs`; their proofs could in theory be re-submitted (NUT-07 would
    still catch already-spent ones). New bids are fully guarded.
-6. **Server key custody.** `NOSTR_PRIVATE_KEY` is the server's co-signing key.
+6. **Server key custody.** `SERVER_PRIVATE_KEY` is the server's co-signing key.
    If leaked, an attacker still cannot move funds alone (needs a second
    party), but they can grief (co-sign refunds of outbid bids they control,
    or refuse to co-sign). Protect it like any signing key.
@@ -87,7 +87,7 @@ only about **money safety**.
 ## Deployment checklist
 
 - `ALLOW_TEST_BIDS=0`
-- `NOSTR_PRIVATE_KEY` from a secure store (not committed; never in the repo)
+- `SERVER_PRIVATE_KEY` from a secure store (not committed; never in the repo)
 - `AUCTION_FEE_BPS` set deliberately
 - HTTPS in front of the API (TLS is mandatory for mint/bid traffic)
 - SQLite backups (`data/auction.db`) — proof_data must be persisted

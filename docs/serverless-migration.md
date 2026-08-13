@@ -38,7 +38,7 @@ server — that is the core of the work.
 4. **Migrations**: D1 is schema-first (`wrangler d1 migrations apply`); port
    the idempotent ALTERs from `initDb()` into numbered migration files.
    `bid_proofs`, `change_returns`, `fees` tables all carry over as-is.
-5. **Secrets**: `NOSTR_PRIVATE_KEY` → Workers secret. `/health` pubkey is
+5. **Secrets**: `SERVER_PRIVATE_KEY` → Workers secret. `/health` pubkey is
    derived the same way.
 6. **Images (R2)** — follow-up: uploads via `PUT` to a signed R2 URL, store the
    URL in `auctions.image`; requires a small web form change (currently

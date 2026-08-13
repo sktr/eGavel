@@ -59,7 +59,7 @@ export function createApp(db: Db, config: AppConfig = {}) {
   if (!serverPubkey) {
     console.warn(
       "WARNING: server signing key is not set — the server cannot co-sign or verify bids. " +
-        "Set NOSTR_PRIVATE_KEY (Node) / the NOSTR_PRIVATE_KEY binding (Worker).",
+        "Set SERVER_PRIVATE_KEY (Node) / the SERVER_PRIVATE_KEY binding (Worker).",
     )
   }
 
