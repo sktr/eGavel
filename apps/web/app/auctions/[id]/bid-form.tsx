@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { bytesToHex } from "../../../lib/hex"
+import { DEV_TOOLS } from "../../../lib/dev-tools"
 import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import type { Auction } from "@cashu-auction/shared"
@@ -53,6 +54,9 @@ export function BidForm({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [testMode, setTestMode] = useState(false)
+  const [receiveToken, setReceiveToken] = useState("")
+  const [receiveStatus, setReceiveStatus] = useState<string | null>(null)
+  const [receiveError, setReceiveError] = useState<string | null>(null)
 
   // ── Faucet / mint state ─────────────────────────────
   const [mintAmount, setMintAmount] = useState("100")
@@ -128,6 +132,25 @@ export function BidForm({
       setMintMessage("invoice copied!")
     }
   }, [mintQuote])
+
+  // ── Receive a Cashu token (paste to fund the wallet) ──
+  async function handleReceive() {
+    setReceiveStatus(null)
+    setReceiveError(null)
+    const token = receiveToken.trim()
+    if (!token) {
+      setReceiveError("paste a Cashu token string")
+      return
+    }
+    try {
+      const res = await wallet.receive(token)
+      setReceiveStatus(`Received ${res.amount.toLocaleString()} sats (${res.mint})`)
+      setReceiveToken("")
+      wallet.refresh()
+    } catch (err) {
+      setReceiveError(String(err))
+    }
+  }
 
   // ── Place bid ────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
@@ -359,7 +382,8 @@ export function BidForm({
           Advanced Settings
         </summary>
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
-          {/* Test mode toggle */}
+          {/* Test mode toggle — dev-only */}
+          {DEV_TOOLS && (
           <label
             style={{
               display: "flex",
@@ -379,6 +403,7 @@ export function BidForm({
             <span>Test Mode</span>
             <span style={{ color: "var(--muted)", fontSize: 12 }}>(no real tokens needed)</span>
           </label>
+          )}
 
           {/* Wallet status (non-test mode only) */}
           {!testMode && (
@@ -427,8 +452,30 @@ export function BidForm({
             </div>
           )}
 
-          {/* Mint URL (non-test mode) */}
-          {!testMode && (
+          {/* Receive token — the real funding path */}
+          <div>
+            <label htmlFor="receive-token" style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>
+              Receive token
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                id="receive-token"
+                type="text"
+                value={receiveToken}
+                onChange={(e) => setReceiveToken(e.target.value)}
+                placeholder="cashuA... (paste a token from any Cashu wallet)"
+                style={{ flex: 1 }}
+              />
+              <button type="button" onClick={handleReceive} style={{ padding: "8px 16px", fontSize: 13, whiteSpace: "nowrap" }}>
+                Receive
+              </button>
+            </div>
+            {receiveStatus && <p style={{ fontSize: 12, color: "var(--accent2)", marginTop: 4 }}>{receiveStatus}</p>}
+            {receiveError && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{receiveError}</p>}
+          </div>
+
+          {/* Mint URL (dev-only; production binds the wallet to the auction's mint) */}
+          {DEV_TOOLS && !testMode && (
             <div>
               <label htmlFor="mint" style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>
                 Mint URL
@@ -462,8 +509,8 @@ export function BidForm({
             </div>
           )}
 
-                    {/* Get Sats (testnet faucet) — unified: enter sats, get them */}
-          {!testMode && (
+                    {/* Get Sats faucet — dev-only */}
+          {DEV_TOOLS && !testMode && (
             <details style={{ fontSize: 13 }}>
               <summary suppressHydrationWarning style={{ cursor: "pointer", color: "var(--muted)", padding: "4px 0" }}>
                 Get Sats
