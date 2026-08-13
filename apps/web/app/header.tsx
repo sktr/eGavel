@@ -39,7 +39,7 @@ export function Header() {
   return (
     <div className="container" style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
       <nav style={{
-        display: "flex", alignItems: "center", gap: 24,
+        display: "flex", alignItems: "center", gap: "clamp(16px, 5vw, 24px)",
         padding: "16px 0", borderBottom: "1px solid var(--border)", flexWrap: "nowrap"
       }}>
         <a href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
@@ -50,7 +50,7 @@ export function Header() {
             <span className="material-icons" style={{ fontSize: 16, color: "#fff" }}>gavel</span>
           </span>
           <span style={{
-            fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 600,
+            fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4vw, 20px)", fontWeight: 600,
             letterSpacing: "-0.02em", color: "var(--fg)", whiteSpace: "nowrap",
           }}>
             cashu auction
