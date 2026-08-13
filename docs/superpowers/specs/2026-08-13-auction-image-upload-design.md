@@ -124,16 +124,21 @@ Behavior:
 
 ### 5.1 New shared placeholder (`apps/web/components/item-placeholder.tsx`)
 
-Category → icon + tinted background map:
+Category → icon + tinted background map (categories from `create/page.tsx`):
 
-| Category | Material icon | Tint |
-|----------|---------------|------|
-| Art | `palette` | pink |
-| Collectibles | `diamond` | purple |
-| Digital | `bolt` | blue |
-| Hardware | `memory` | grey |
-| Books | `menu_book` | amber |
-| (none/other) | `inventory_2` | neutral |
+| Category (value) | Material icon | Tint |
+|------------------|---------------|------|
+| `art` | `palette` | pink |
+| `collectibles` | `diamond` | purple |
+| `watches` | `watch` | blue |
+| `bags` | `checkroom` | brown |
+| `jewelry` | `diamond` | purple |
+| `wine` | `wine_bar` | red |
+| `cars` | `directions_car` | blue |
+| `furniture` | `chair` | amber |
+| `electronics` | `memory` | grey |
+| `other` | `inventory_2` | neutral |
+| (none) | `inventory_2` | neutral |
 
 - When the category is unknown/empty, show the **item-name initial**
   (e.g. "Rolex" → "R") as the primary visual instead of a generic icon.
@@ -156,6 +161,9 @@ and item name. Remove the `[ {a.item} ]` text.
     limit), click to swap the main image; selected thumbnail keeps the accent
     border (existing structure preserved).
   - Without images: hide the thumbnails row entirely.
+  - Thumbnail clicking requires client state, so the gallery (main image +
+    thumbnails) becomes a small client component
+    (`apps/web/app/auctions/[id]/gallery.tsx`) imported by the server page.
 - The "Similar items" placeholder section (line ~509) is left as-is unless it
   is trivial to fix; it is out of scope for this spec.
 
@@ -213,7 +221,8 @@ Improve automatically via `AuctionCard`. Empty-state copy is unchanged.
 | `apps/web/components/item-placeholder.tsx` | new placeholder component |
 | `apps/web/app/create/page.tsx` | upload pipeline + preview |
 | `apps/web/app/auction-card.tsx` | image vs placeholder |
-| `apps/web/app/auctions/[id]/page.tsx` | main image + dynamic thumbnails |
+| `apps/web/app/auctions/[id]/gallery.tsx` | new client gallery (main image + thumbnails) |
+| `apps/web/app/auctions/[id]/page.tsx` | use gallery, drop inline gallery |
 | `apps/web/app/page.tsx` | dynamic hero, hidden when empty |
 | `apps/server/tests/*` | server tests |
 | `apps/web` tests | `compressImage` tests |
