@@ -1,10 +1,12 @@
 import type { Auction } from "@egavel/shared"
 import { AuctionCard } from "./auction-card"
 
-const API_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
+const API_BASE = (process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
+  .replace(/\/+$/, "")
+  .replace(/\/api$/, "")
 
 export async function AuctionList() {
-  const res = await fetch(`${API_BASE}/auctions`, { cache: "no-store" })
+  const res = await fetch(`${API_BASE}/api/auctions`, { cache: "no-store" })
   if (!res.ok) {
     return <p style={{ color: "var(--muted)", fontSize: 14 }}>Could not load auctions.</p>
   }

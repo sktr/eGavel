@@ -2,12 +2,14 @@ import type { Auction } from "@egavel/shared"
 import { AuctionList } from "./auction-list"
 import { ItemPlaceholder } from "../components/item-placeholder"
 
-const API_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
+const API_BASE = (process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
+  .replace(/\/+$/, "")
+  .replace(/\/api$/, "")
 
 export default async function Home() {
   let featured: Auction | null = null
   try {
-    const res = await fetch(`${API_BASE}/auctions?filter=active`, { cache: "no-store" })
+    const res = await fetch(`${API_BASE}/api/auctions?filter=active`, { cache: "no-store" })
     if (res.ok) {
       const active = (await res.json()) as Auction[]
       featured =
