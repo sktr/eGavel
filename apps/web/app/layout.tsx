@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { Header } from "./header"
 import { RecoveryPhraseDialog } from "./recovery-dialog"
+import { MaterialIconsTranslationGuard } from "../components/material-icons-translation-guard"
 import { ThemeProvider } from "@wrksz/themes/next"
 
 export const metadata = {
@@ -10,7 +11,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" translate="no" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <style>{`
           @font-face{
@@ -146,6 +147,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider attribute="class" storage="cookie" disableTransitionOnChange="color 0s">
+          <MaterialIconsTranslationGuard />
           <Header />
           <RecoveryPhraseDialog />
           {children}
