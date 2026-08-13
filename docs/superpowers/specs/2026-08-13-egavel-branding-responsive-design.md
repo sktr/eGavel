@@ -93,6 +93,9 @@ pill keeps "0 sats" visible on mobile (pubkey stays hidden). The dropdown
   `className="resp-grid-form"`.
 - Condition/shipping grid (`gridTemplateColumns: "1fr 1fr"`, ~line 660): add
   `className="resp-grid-2col"`.
+  - Note: this is actually the **Pricing** grid (start price / buy-now in
+    two columns); it is the only `1fr 1fr` grid with `gap: 16`, so the
+    target is unambiguous. On mobile the two price inputs stack.
 - Confirmation modal grid (`gridTemplateColumns: "1fr 1fr"`, ~line 1248):
   add `className="resp-grid-2col"`.
 
