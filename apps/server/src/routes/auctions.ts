@@ -51,6 +51,21 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     return c.json(settled);
   });
 
+  // ── Delete listing: seller removes a bid-less auction (a mistaken listing) ──
+  router.delete("/auctions/:id", async (c) => {
+    const id = c.req.param("id")!
+    const auction = await db.getAuction(id)
+    if (!auction) return c.json({ error: "not found" }, 404)
+    const sellerPubkey = c.req.query("seller_pubkey") ?? ""
+    if (canonicalPubkey(sellerPubkey) !== canonicalPubkey(auction.seller_pubkey)) {
+      return c.json({ error: "NOT_SELLER" }, 400)
+    }
+    const bids = await db.getAllBids(id)
+    if (bids.length > 0) return c.json({ error: "HAS_BIDS" }, 400)
+    await db.deleteAuction(id)
+    return c.json({ ok: true })
+  })
+
   // ── Create listing: HTTP-direct ──
   router.post("/auctions", async (c) => {
     let body: Record<string, unknown>;

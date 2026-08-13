@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import type { Auction, PublicBid } from "@cashu-auction/shared";
 import { DetailBidPanel } from "./detail-bid-panel";
 import { useIdentity } from "../../../lib/identity";
+import { useRouter } from "next/navigation";
 import { refundBid } from "../../../lib/claim";
 import { bytesToHex } from "../../../lib/hex";
 
@@ -32,6 +33,34 @@ export function LiveBids({
   const [auction, setAuction] = useState(initialAuction);
   const [bids, setBids] = useState(initialBids);
   const { identity } = useIdentity();
+  const router = useRouter();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Seller can remove a mistaken listing as long as no one has bid.
+  const canDelete =
+    identity !== null &&
+    identity.pubkey === auction.seller_pubkey &&
+    auction.state === "ACTIVE" &&
+    bids.length === 0;
+
+  async function handleDelete() {
+    setDeleteError(null);
+    if (!identity) return;
+    if (!window.confirm("Delete this listing? It has no bids yet, so no funds are affected.")) return;
+    try {
+      const res = await fetch(`${API_BASE}/auctions/${auction.id}?seller_pubkey=${identity.pubkey}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "delete failed");
+      }
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setDeleteError(String(err));
+    }
+  }
   const failedRefundsRef = useRef(new Set<string>());
 
   // Auto-refund outbid bids on THIS auction: when a bidder is watching the
@@ -62,6 +91,8 @@ export function LiveBids({
   }, [bids, identity]);
 
   useEffect(() => {
+    // Stop live polling once the auction is decided.
+    if (auction.state === "SETTLED" || auction.state === "CLOSED") return;
     let cancelled = false;
     const poll = async () => {
       try {
@@ -84,10 +115,40 @@ export function LiveBids({
       clearTimeout(first);
       clearInterval(timer);
     };
-  }, [initialAuction.id]);
+  }, [initialAuction.id, auction.state]);
 
   return (
     <>
+      {canDelete && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 12,
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          {deleteError && <span style={{ fontSize: 12, color: "var(--red)" }}>{deleteError}</span>}
+          <button
+            type="button"
+            onClick={handleDelete}
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              background: "var(--surface)",
+              color: "var(--red)",
+              padding: "6px 14px",
+              fontSize: 12,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              lineHeight: 1.4,
+            }}
+          >
+            Delete listing
+          </button>
+        </div>
+      )}
       <DetailBidPanel auction={auction} bids={bids} serverNpub={serverNpub} />
 
       {/* Bid History */}

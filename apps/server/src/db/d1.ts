@@ -198,6 +198,10 @@ export function createD1Db(d1: D1Database): Db {
       return n > 0
     },
 
+    async deleteAuction(auctionId) {
+      await d1.prepare("DELETE FROM auctions WHERE id = ?").bind(auctionId).run()
+    },
+
     async exec(sql: string) {
       await d1.exec(sql)
     },

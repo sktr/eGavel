@@ -407,6 +407,61 @@ describe("change-return route", async () => {
   });
 });
 
+describe("DELETE /api/auctions/:id (seller removes a bid-less listing)", async () => {
+  let db: Db
+  let app: Hono
+
+  beforeEach(async () => {
+    db = initDb()
+    app = new Hono()
+    app.route("/api", createAuctionRoutes(db))
+  })
+
+  it("lets the seller delete an active auction with no bids", async () => {
+    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: SELLER }))
+    const res = await app.request(
+      `http://localhost/api/auctions/a1?seller_pubkey=${SELLER}`,
+      { method: "DELETE" },
+    )
+    expect(res.status).toBe(200)
+    expect(await db.getAuction("a1")).toBeNull()
+  })
+
+  it("rejects a non-seller (NOT_SELLER)", async () => {
+    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: SELLER }))
+    const res = await app.request(
+      "http://localhost/api/auctions/a1?seller_pubkey=02attacker",
+      { method: "DELETE" },
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toBe("NOT_SELLER")
+  })
+
+  it("rejects deletion once bids exist (HAS_BIDS)", async () => {
+    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: SELLER }))
+    await db.saveBid({
+      id: "b1",
+      auction_id: "a1",
+      max_amount: 500,
+      current_amount: 210,
+      bidder_npub: "03cafebabe",
+      Y: "Y-1",
+      received_at: Date.now(),
+      status: "verified",
+      proof_data: null,
+    })
+    const res = await app.request(
+      `http://localhost/api/auctions/a1?seller_pubkey=${SELLER}`,
+      { method: "DELETE" },
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toBe("HAS_BIDS")
+    expect(await db.getAuction("a1")).not.toBeNull()
+  })
+})
+
 describe("computeClaimSplit (proxy-bidding change return)", async () => {
   it("splits locked max into seller, fee, and winner change", async () => {
     // locked 1000 (the max), winning 800, 5% fee

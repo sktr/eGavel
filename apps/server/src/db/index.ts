@@ -21,6 +21,8 @@ export interface Db {
   unlockProofs: (bidId: string, Ys: string[]) => Promise<void>
   /** Atomic state transition ACTIVE/EXTENDED → SETTLED. Returns true if this call performed the transition. */
   settleAuction: (auctionId: string, winnerNpub: string | null, winningAmount: number) => Promise<boolean>
+  /** Remove a listing (only valid for auctions with no bids). */
+  deleteAuction: (auctionId: string) => Promise<void>
   exec: (sql: string) => Promise<void>
 }
 
@@ -294,6 +296,10 @@ export function initDb(): Db {
         )
         .run(winnerNpub, winningAmount, auctionId)
       return res.changes > 0
+    },
+
+    async deleteAuction(auctionId) {
+      db.prepare("DELETE FROM auctions WHERE id = ?").run(auctionId)
     },
 
     async exec(sql: string) {
