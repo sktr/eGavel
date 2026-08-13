@@ -181,7 +181,7 @@ export function useWallet(mintUrl: string) {
     ): Promise<MintQuoteBolt11Response> => {
       const wallet = walletRef.current
       if (!wallet) throw new Error("Wallet not initialized")
-      return wallet.createMintQuoteBolt11(amount, "Cashu Auction bid")
+      return wallet.createMintQuoteBolt11(amount, "eGavel bid")
     },
     [mintUrl],
   )
