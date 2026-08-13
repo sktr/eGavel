@@ -3,6 +3,7 @@ import { Header } from "./header"
 import { RecoveryPhraseDialog } from "./recovery-dialog"
 import { MaterialIconsTranslationGuard } from "../components/material-icons-translation-guard"
 import { ThemeProvider } from "@wrksz/themes/next"
+import { IdentityProvider } from "../lib/identity"
 
 export const metadata = {
   title: "eGavel",
@@ -150,16 +151,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider attribute="class" storage="cookie" disableTransitionOnChange="color 0s">
-          <MaterialIconsTranslationGuard />
-          <Header />
-          <RecoveryPhraseDialog />
-          {children}
-          <footer style={{
-            borderTop: "1px solid var(--border)",
-            maxWidth: 1200,
-            margin: "var(--space-2xl) auto 0",
-            padding: "var(--space-xl) 24px",
-          }}>
+          <IdentityProvider>
+            <MaterialIconsTranslationGuard />
+            <Header />
+            <RecoveryPhraseDialog />
+            {children}
+            <footer style={{
+              borderTop: "1px solid var(--border)",
+              maxWidth: 1200,
+              margin: "var(--space-2xl) auto 0",
+              padding: "var(--space-xl) 24px",
+            }}>
             <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontSize: 13, flexWrap: "wrap", gap: "var(--space-md)" }}>
               <span>© 2025 eGavel</span>
               <div style={{ display: "flex", gap: "var(--space-lg)" }}>
@@ -168,6 +170,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
           </footer>
+          </IdentityProvider>
         </ThemeProvider>
       </body>
     </html>

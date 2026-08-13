@@ -88,9 +88,9 @@ export function ConnectDialog({
               setMode("device");
               setError(null);
             }}
-            style={{ marginTop: 3 }}
+            style={{ marginTop: 4, flexShrink: 0 }}
           />
-          <span>
+          <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: "block", fontSize: 14, fontWeight: 500 }}>
               Use the account on this device
             </span>
@@ -117,9 +117,9 @@ export function ConnectDialog({
               setMode("restore");
               setError(null);
             }}
-            style={{ marginTop: 3 }}
+            style={{ marginTop: 4, flexShrink: 0 }}
           />
-          <span>
+          <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: "block", fontSize: 14, fontWeight: 500 }}>
               Restore from a recovery phrase
             </span>

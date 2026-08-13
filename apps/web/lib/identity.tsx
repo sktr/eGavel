@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { hexToBytes } from "./hex";
 import {
   createAccount,
@@ -22,6 +22,28 @@ export interface Identity {
   recoveryPhrase: string | null;
 }
 
+interface IdentityContextValue {
+  identity: Identity | null;
+  isLoaded: boolean;
+  showBackupPrompt: boolean;
+  login: () => void;
+  logout: () => void;
+  acknowledgeBackup: () => void;
+  restore: (input: string) => { ok: boolean; error?: string };
+  deleteAccount: () => void;
+}
+
+const IdentityContext = createContext<IdentityContextValue>({
+  identity: null,
+  isLoaded: false,
+  showBackupPrompt: false,
+  login: () => {},
+  logout: () => {},
+  acknowledgeBackup: () => {},
+  restore: () => ({ ok: false, error: "not initialized" }),
+  deleteAccount: () => {},
+});
+
 function toIdentity(account: Account): Identity {
   return {
     pubkey: account.pubkey,
@@ -30,7 +52,7 @@ function toIdentity(account: Account): Identity {
   };
 }
 
-export function useIdentity() {
+export function IdentityProvider({ children }: { children: ReactNode }) {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   // true while a freshly created account hasn't had its phrase acknowledged
@@ -126,7 +148,7 @@ export function useIdentity() {
     }
   }, []);
 
-  return {
+  const providerValue: IdentityContextValue = {
     identity,
     isLoaded,
     showBackupPrompt,
@@ -136,4 +158,14 @@ export function useIdentity() {
     restore,
     deleteAccount,
   };
+
+  return (
+    <IdentityContext.Provider value={providerValue}>
+      {children}
+    </IdentityContext.Provider>
+  );
+}
+
+export function useIdentity(): IdentityContextValue {
+  return useContext(IdentityContext);
 }
