@@ -70,9 +70,6 @@ export function DetailBidPanel({
         border: "1px solid var(--border)",
         borderRadius: "var(--radius-lg)",
         padding: 24,
-        position: "sticky",
-        top: 88,
-        alignSelf: "start",
       }}
     >
       {/* Current highest bid */}
