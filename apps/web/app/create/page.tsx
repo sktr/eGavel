@@ -4,6 +4,8 @@ import { useState, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useIdentity } from "../../lib/identity";
 import { DEV_TOOLS } from "../../lib/dev-tools";
+import { compressImage } from "../../lib/image";
+import { ItemPlaceholder } from "../../components/item-placeholder";
 
 const DURATIONS = [
   { value: "1d", label: "1 day" },
@@ -169,7 +171,10 @@ export default function CreateAuctionPage() {
       if (category) body.category = category;
       if (condition) body.condition = condition;
       if (shipping) body.shipping = shipping;
-      if (images.length > 0) body.image = images[0];
+      if (images.length > 0) {
+        body.image = images[0];
+        body.images = images;
+      }
 
       const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
         .replace(/\/+$/, "")
@@ -207,11 +212,12 @@ export default function CreateAuctionPage() {
     }
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (files) {
-      const newNames = Array.from(files).map((f) => f.name);
-      setImages((prev) => [...prev, ...newNames].slice(0, 10));
+      const results = await Promise.all(Array.from(files).map((f) => compressImage(f)));
+      const ok = results.filter((r): r is string => r !== null);
+      setImages((prev) => [...prev, ...ok].slice(0, 4));
     }
     if (fileRef.current) fileRef.current.value = "";
   }
@@ -381,7 +387,7 @@ export default function CreateAuctionPage() {
               }}
             >
               Item Image{" "}
-              <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>(max 10)</span>
+              <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>(max 4)</span>
             </label>
             <input
               ref={fileRef}
@@ -443,9 +449,9 @@ export default function CreateAuctionPage() {
                   flexWrap: "wrap",
                 }}
               >
-                {images.map((name, i) => (
+                {images.map((src, i) => (
                   <div
-                    key={`${name}-${i}`}
+                    key={`${src.slice(0, 24)}-${i}`}
                     style={{
                       width: 80,
                       height: 80,
@@ -453,7 +459,6 @@ export default function CreateAuctionPage() {
                       background: "#f3f4f6",
                       border: "1px solid var(--border)",
                       display: "flex",
-                      flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
                       color: "var(--muted)",
@@ -461,21 +466,13 @@ export default function CreateAuctionPage() {
                       position: "relative",
                       overflow: "hidden",
                     }}
-                    title={name}
+                    title={`Image ${i + 1}`}
                   >
-                    <span className="material-icons" style={{ fontSize: 18 }}>
-                      image
-                    </span>
-                    <span
-                      style={{
-                        marginTop: 2,
-                        lineHeight: 1.2,
-                        textAlign: "center",
-                        padding: "0 4px",
-                      }}
-                    >
-                      {name.length > 12 ? name.slice(0, 10) + "…" : name}
-                    </span>
+                    <img
+                      src={src}
+                      alt={`Image ${i + 1}`}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
                     <button
                       type="button"
                       onClick={(e) => {
@@ -506,7 +503,7 @@ export default function CreateAuctionPage() {
                     </button>
                   </div>
                 ))}
-                {images.length < 10 && (
+                {images.length < 4 && (
                   <div
                     onClick={() => fileRef.current?.click()}
                     style={{
@@ -1133,15 +1130,20 @@ export default function CreateAuctionPage() {
                 aspectRatio: "16/10",
                 background: "#f3f4f6",
                 borderRadius: "var(--radius)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--muted)",
-                fontSize: 12,
                 marginBottom: 16,
+                overflow: "hidden",
+                position: "relative",
               }}
             >
-              {images.length > 0 ? "[ First Image ]" : "[ No Image ]"}
+              {images[0] ? (
+                <img
+                  src={images[0]}
+                  alt="Preview"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                <ItemPlaceholder category={category} name={item} size={32} />
+              )}
             </div>
             {[
               ["Item Name", item.trim() || "—"],
