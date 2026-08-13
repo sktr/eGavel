@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vite-plus/test"
 import { initDb, type Db } from "../src/db/index.js"
 import { processBid } from "../src/process-bid.js"
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 
 const SELLER = "02deadbeef"
 const SERVER = "04server"

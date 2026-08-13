@@ -1,4 +1,4 @@
-import type { Bid, PublicBid } from "@cashu-auction/shared"
+import type { Bid, PublicBid } from "@egavel/shared"
 
 /**
  * Converts a bid into its public API shape. max_amount, Y and proof_data

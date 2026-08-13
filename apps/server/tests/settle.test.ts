@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vite-plus/test"
 import { initDb, type Db } from "../src/db/index.js"
 import { settleIfDue } from "../src/lib/settle.js"
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, Bid } from "@egavel/shared"
 
 function makeAuction(overrides: Partial<Auction> = {}): Auction {
   return {

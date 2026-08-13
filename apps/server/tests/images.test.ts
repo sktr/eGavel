@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { initDb, type Db } from "../src/db/index.js"
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 import { Hono } from "hono"
 import { createAuctionRoutes } from "../src/routes/auctions.js"
 

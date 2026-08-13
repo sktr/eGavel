@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { initDb, type Db } from "../src/db/index.js"
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, Bid } from "@egavel/shared"
 
 function legacyAuction(id: string): Auction {
   return {

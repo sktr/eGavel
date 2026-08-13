@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi, afterEach } from "vite-plus/test"
 import { initDb, type Db } from "../src/db/index.js"
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 import { canonicalPubkey } from "../src/lib/canonical.js"
 
 beforeEach(() => {

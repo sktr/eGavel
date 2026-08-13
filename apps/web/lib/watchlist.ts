@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-const STORAGE_KEY = "cashu-auction-watchlist"
+const STORAGE_KEY = "egavel-watchlist"
 
 export function loadWatchlist(): string[] {
   try {

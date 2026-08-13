@@ -13,7 +13,7 @@ import {
   type Account,
 } from "./key-store";
 
-const LOGGED_OUT_KEY = "cashu-auction-logged-out";
+const LOGGED_OUT_KEY = "egavel-logged-out";
 
 export interface Identity {
   pubkey: string;

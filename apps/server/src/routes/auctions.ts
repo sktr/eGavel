@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes } from "../lib/hex.js";
 import { Wallet, OutputData } from "@cashu/cashu-ts";
-import type { Auction } from "@cashu-auction/shared";
+import type { Auction } from "@egavel/shared";
 import type { Db } from "../db/index.js";
 import { processBid } from "../process-bid.js";
 import type { BidPayload } from "../verify/index.js";

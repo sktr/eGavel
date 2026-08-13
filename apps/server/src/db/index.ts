@@ -1,5 +1,5 @@
 import Database from "better-sqlite3"
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, Bid } from "@egavel/shared"
 
 export interface Db {
   getActiveAuctions: () => Promise<Auction[]>

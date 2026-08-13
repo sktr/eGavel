@@ -1,7 +1,7 @@
 import { Mint } from "@cashu/cashu-ts"
 import { getSecretKind, getDataField, getTag } from "@cashu/cashu-ts"
 import { hashToCurve } from "@cashu/cashu-ts"
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 import { canonicalPubkey } from "../lib/canonical.js"
 import { hasValidDleq } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"

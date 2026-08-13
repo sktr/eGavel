@@ -1,4 +1,4 @@
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 import type { Db } from "../db/index.js"
 
 /**

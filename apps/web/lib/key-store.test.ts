@@ -12,7 +12,7 @@ import {
   clearAccount,
 } from "./key-store"
 
-const BACKUP_SEEN_KEY = "cashu-auction-backup-seen"
+const BACKUP_SEEN_KEY = "egavel-backup-seen"
 
 describe("key-store (BIP-39 recovery phrase)", () => {
   beforeEach(() => {
@@ -65,7 +65,7 @@ describe("key-store (BIP-39 recovery phrase)", () => {
   })
 
   it("loads a legacy account (raw secret key, no words)", () => {
-    localStorage.setItem("cashu-auction-identity", JSON.stringify({ secretKey: "ab".repeat(32) }))
+    localStorage.setItem("egavel-identity", JSON.stringify({ secretKey: "ab".repeat(32) }))
     const loaded = loadAccount()
     expect(loaded).not.toBeNull()
     expect(loaded!.words).toBeNull()

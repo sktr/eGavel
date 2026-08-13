@@ -34,8 +34,8 @@ export interface Account {
   words: string | null;
 }
 
-const STORAGE_KEY = "cashu-auction-identity";
-const BACKUP_SEEN_KEY = "cashu-auction-backup-seen";
+const STORAGE_KEY = "egavel-identity";
+const BACKUP_SEEN_KEY = "egavel-backup-seen";
 
 interface StoredIdentity {
   secretKey: string;

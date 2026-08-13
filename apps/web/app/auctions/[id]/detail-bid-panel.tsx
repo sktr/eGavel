@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import type { Auction, PublicBid } from "@cashu-auction/shared"
+import type { Auction, PublicBid } from "@egavel/shared"
 import { BidForm } from "./bid-form"
 import { useWatchlist } from "../../../lib/watchlist"
 import { useIdentity } from "../../../lib/identity"

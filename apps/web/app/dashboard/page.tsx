@@ -5,13 +5,13 @@ import { useIdentity } from "../../lib/identity";
 import { useWatchlist } from "../../lib/watchlist";
 import { refundBid, collectChange } from "../../lib/claim";
 import { bytesToHex } from "../../lib/hex";
-import type { Auction, PublicBid } from "@cashu-auction/shared";
+import type { Auction, PublicBid } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
 import { BackupSection } from "../backup-section";
 
 // Root (no /api suffix) — the code below adds "/api" explicitly. This matches
 // the convention in lib/claim.ts and checkout.tsx so NEXT_PUBLIC_API_URL can
-// point at the Worker origin (https://cashu-auction-api.sktr1211.workers.dev).
+// point at the Worker origin (https://egavel-api.sktr1211.workers.dev).
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
   .replace(/\/+$/, "")
   .replace(/\/api$/, "");

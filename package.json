@@ -1,14 +1,14 @@
 {
-  "name": "cashu-auction",
+  "name": "egavel",
   "private": true,
   "scripts": {
     "dev": "pnpm --recursive --parallel run dev",
-    "dev:server": "pnpm --filter @cashu-auction/server run dev",
-    "dev:web": "pnpm --filter @cashu-auction/web run dev",
+    "dev:server": "pnpm --filter @egavel/server run dev",
+    "dev:web": "pnpm --filter @egavel/web run dev",
     "build": "pnpm --recursive run build",
     "lint": "pnpm --recursive run lint",
     "typecheck": "pnpm --recursive run typecheck",
-    "test": "pnpm --filter @cashu-auction/server run test",
+    "test": "pnpm --filter @egavel/server run test",
     "clean": "pnpm --recursive exec rm -rf dist .next node_modules"
   },
   "engines": {

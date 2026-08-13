@@ -1,6 +1,6 @@
 "use client"
 
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 import { ItemPlaceholder } from "../components/item-placeholder"
 
 function timeLeft(ms: number): string {

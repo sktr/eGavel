@@ -1,4 +1,4 @@
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 import { AuctionCard } from "../auction-card"
 import { FilterBar } from "./filter-bar"
 

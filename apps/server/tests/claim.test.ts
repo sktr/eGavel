@@ -6,7 +6,7 @@ import { initDb, type Db } from "../src/db/index.js";
 import { validateClaim, computeClaimSplit } from "../src/claim.js";
 import { createAuctionRoutes } from "../src/routes/auctions.js";
 import { signSecret, verifySecretSignature } from "../src/lib/schnorr.js";
-import type { Auction, Bid } from "@cashu-auction/shared";
+import type { Auction, Bid } from "@egavel/shared";
 
 const SELLER = "02deadbeef";
 const SERVER = "04server";

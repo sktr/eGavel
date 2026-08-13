@@ -1,4 +1,4 @@
-import type { Bid } from "@cashu-auction/shared"
+import type { Bid } from "@egavel/shared"
 import type { Db } from "./db/index.js"
 import { verifyBid, type BidPayload } from "./verify/index.js"
 import { withAuctionLock } from "./lib/auction-lock.js"

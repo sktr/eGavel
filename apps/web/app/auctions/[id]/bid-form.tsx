@@ -6,7 +6,7 @@ import { bytesToHex } from "../../../lib/hex"
 import { DEV_TOOLS } from "../../../lib/dev-tools"
 import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
-import type { Auction } from "@cashu-auction/shared"
+import type { Auction } from "@egavel/shared"
 import { useWallet } from "../../../lib/wallet"
 import { useIdentity } from "../../../lib/identity"
 

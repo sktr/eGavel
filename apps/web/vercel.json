@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm --filter @cashu-auction/shared build && pnpm --filter @cashu-auction/web build",
+  "buildCommand": "pnpm --filter @egavel/shared build && pnpm --filter @egavel/web build",
   "framework": "nextjs",
   "installCommand": "corepack pnpm install --frozen-lockfile"
 }

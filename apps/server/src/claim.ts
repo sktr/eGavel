@@ -1,4 +1,4 @@
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, Bid } from "@egavel/shared"
 import { canonicalPubkey } from "./lib/canonical.js"
 import { parseP2PKSecret } from "./verify/index.js"
 

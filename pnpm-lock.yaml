@@ -216,12 +216,12 @@ importers:
 
   apps/server:
     dependencies:
-      '@cashu-auction/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@cashu/cashu-ts':
         specifier: ^4.5.0
         version: 4.5.1
+      '@egavel/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.14(hono@4.12.26)
@@ -265,12 +265,12 @@ importers:
 
   apps/web:
     dependencies:
-      '@cashu-auction/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@cashu/cashu-ts':
         specifier: ^4.5.0
         version: 4.5.1
+      '@egavel/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@noble/curves':
         specifier: ^2.3.0
         version: 2.3.0

@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { Auction, Bid } from "@cashu-auction/shared"
+import type { Auction, Bid } from "@egavel/shared"
 import type { Db } from "./index.js"
 
 /**

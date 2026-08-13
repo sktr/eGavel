@@ -1,4 +1,4 @@
-import type { Auction, PublicBid } from "@cashu-auction/shared"
+import type { Auction, PublicBid } from "@egavel/shared"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
 import { Gallery } from "./gallery"

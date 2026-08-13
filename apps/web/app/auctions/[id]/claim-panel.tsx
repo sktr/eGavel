@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Auction } from "@cashu-auction/shared";
+import type { Auction } from "@egavel/shared";
 import { useIdentity } from "../../../lib/identity";
 import { claimAuction } from "../../../lib/claim";
 import { bytesToHex } from "../../../lib/hex";

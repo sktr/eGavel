@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import type { Auction, PublicBid } from "@cashu-auction/shared";
+import type { Auction, PublicBid } from "@egavel/shared";
 import { DetailBidPanel } from "./detail-bid-panel";
 import { useIdentity } from "../../../lib/identity";
 import { useRouter } from "next/navigation";
