@@ -48,7 +48,10 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     // Lazy settle: any auction past E+grace settles the moment it is read.
     const settled = [];
     for (const a of auctions) settled.push(await settleIfDue(db, a));
-    return c.json(settled);
+    const listed = settled.map((a) =>
+      a.images ? { ...a, images: a.images.slice(0, 1) } : a,
+    );
+    return c.json(listed);
   });
 
   // ── Delete listing: seller removes a bid-less auction (a mistaken listing) ──
@@ -95,6 +98,24 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       return c.json({ error: "end_time must be in the future" }, 400);
     }
 
+    // Images: optional array of data URLs, max 4, each ≤ 2MB.
+    let images: string[] | undefined;
+    if (body.images !== undefined) {
+      if (
+        !Array.isArray(body.images) ||
+        body.images.length > 4 ||
+        body.images.some(
+          (img) => typeof img !== "string" || img.length > 2_000_000,
+        )
+      ) {
+        return c.json(
+          { error: "images must be an array of at most 4 strings, each ≤ 2MB" },
+          400,
+        );
+      }
+      images = body.images as string[];
+    }
+
     const auction: Auction = {
       id: `${sellerPubkey}-${Date.now()}`,
       item,
@@ -121,7 +142,11 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         ? { condition: body.condition }
         : {}),
       ...(typeof body.shipping === "string" && body.shipping ? { shipping: body.shipping } : {}),
-      ...(typeof body.image === "string" && body.image ? { image: body.image } : {}),
+      ...(images
+        ? { images, image: images[0] }
+        : typeof body.image === "string" && body.image
+          ? { image: body.image }
+          : {}),
     };
     await db.saveAuction(auction);
     return c.json(auction);

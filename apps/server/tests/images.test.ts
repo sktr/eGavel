@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test"
 import fs from "node:fs"
 import { initDb, type Db } from "../src/db/index.js"
 import type { Auction } from "@cashu-auction/shared"
+import { Hono } from "hono"
+import { createAuctionRoutes } from "../src/routes/auctions.js"
 
 function auction(id: string, overrides: Partial<Auction> = {}): Auction {
   return {
@@ -67,5 +69,102 @@ describe("db images column", async () => {
     expect((await db.getActiveAuctions())[0]!.images).toEqual(imgs)
     expect((await db.getAllAuctions())[0]!.images).toEqual(imgs)
     expect((await db.getAuctionsBySeller("02deadbeef"))[0]!.images).toEqual(imgs)
+  })
+})
+
+describe("POST /api/auctions with images", async () => {
+  let db: Db
+  let app: Hono
+  let testPath = ""
+  const origPath = process.env.DB_PATH
+
+  beforeEach(async () => {
+    testPath = `data/test-images-api-${Date.now()}.db`
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+    process.env.DB_PATH = testPath
+    db = initDb()
+    app = new Hono()
+    app.route("/api", createAuctionRoutes(db))
+  })
+
+  afterEach(async () => {
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+    if (origPath === undefined) delete process.env.DB_PATH
+    else process.env.DB_PATH = origPath
+  })
+
+  function validBody(overrides: Record<string, unknown> = {}) {
+    return {
+      item: "test item",
+      description: "desc",
+      start_price: 100,
+      end_time: Date.now() + 3600_000,
+      seller_pubkey: "02deadbeef",
+      mint_url: "https://mint.example",
+      ...overrides,
+    }
+  }
+
+  it("persists an images array and derives legacy image", async () => {
+    const imgs = ["data:image/webp;base64,AAA", "data:image/webp;base64,BBB"]
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ images: imgs })),
+    })
+    expect(res.status).toBe(200)
+    const auction = (await res.json()) as Auction
+    expect(auction.images).toEqual(imgs)
+    expect(auction.image).toBe(imgs[0])
+    expect((await db.getAuction(auction.id))?.images).toEqual(imgs)
+  })
+
+  it("rejects more than 4 images", async () => {
+    const imgs = Array.from({ length: 5 }, (_, i) => `data:image/webp;base64,${i}`)
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ images: imgs })),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it("rejects an oversized image string", async () => {
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ images: ["data:image/webp;base64," + "x".repeat(2_000_001)] })),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it("list endpoints truncate images to the first element", async () => {
+    const imgs = ["data:image/webp;base64,AAA", "data:image/webp;base64,BBB"]
+    await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ images: imgs })),
+    })
+    const list = (await (await app.request("http://localhost/api/auctions")).json()) as Auction[]
+    expect(list[0]!.images).toEqual([imgs[0]])
+    const active = (await (await app.request("http://localhost/api/auctions?filter=active")).json()) as Auction[]
+    expect(active[0]!.images).toEqual([imgs[0]])
+  })
+
+  it("detail endpoint returns all images", async () => {
+    const imgs = ["data:image/webp;base64,AAA", "data:image/webp;base64,BBB"]
+    const created = (await (
+      await app.request("http://localhost/api/auctions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody({ images: imgs })),
+      })
+    ).json()) as Auction
+    const detail = (await (await app.request(`http://localhost/api/auctions/${created.id}`)).json()) as Auction
+    expect(detail.images).toEqual(imgs)
   })
 })
