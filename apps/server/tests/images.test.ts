@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test"
 import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { initDb, type Db } from "../src/db/index.js"
 import type { Auction } from "@cashu-auction/shared"
 import { Hono } from "hono"
@@ -28,7 +30,7 @@ function auction(id: string, overrides: Partial<Auction> = {}): Auction {
 describe("db images column", async () => {
   let db: Db
   const origPath = process.env.DB_PATH
-  const testPath = `data/test-images-${Date.now()}.db`
+  const testPath = path.join(os.tmpdir(), `test-images-${Date.now()}.db`)
 
   beforeEach(async () => {
     process.env.DB_PATH = testPath
@@ -79,7 +81,7 @@ describe("POST /api/auctions with images", async () => {
   const origPath = process.env.DB_PATH
 
   beforeEach(async () => {
-    testPath = `data/test-images-api-${Date.now()}.db`
+    testPath = path.join(os.tmpdir(), `test-images-api-${Date.now()}.db`)
     for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
       if (fs.existsSync(f)) fs.unlinkSync(f)
     }

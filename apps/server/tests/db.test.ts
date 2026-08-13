@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test"
 import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { initDb, type Db } from "../src/db/index.js"
 import type { Auction, Bid } from "@cashu-auction/shared"
 
@@ -39,7 +41,7 @@ function bid(id: string, max: number): Bid {
 describe("db proxy-bidding schema", async () => {
   let db: Db
   const origPath = process.env.DB_PATH
-  const testPath = `data/test-proxy-${Date.now()}.db`
+  const testPath = path.join(os.tmpdir(), `test-proxy-${Date.now()}.db`)
 
   beforeEach(async () => {
     process.env.DB_PATH = testPath
@@ -100,7 +102,7 @@ describe("db proxy-bidding schema", async () => {
 describe("db shipping text migration", async () => {
   let db: Db
   const origPath = process.env.DB_PATH
-  const testPath = `data/test-shipping-${Date.now()}.db`
+  const testPath = path.join(os.tmpdir(), `test-shipping-${Date.now()}.db`)
 
   beforeEach(async () => {
     process.env.DB_PATH = testPath
