@@ -1,6 +1,7 @@
 import type { Auction, PublicBid } from "@cashu-auction/shared"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
+import { Gallery } from "./gallery"
 
 const API_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
 
@@ -29,8 +30,6 @@ export default async function AuctionPage({
   const { id } = await params
   const [auction, bids] = await Promise.all([fetchAuction(id), fetchBids(id)])
   if (!auction) return <p>auction not found</p>
-
-  const isOpen = auction.state === "ACTIVE" || auction.state === "EXTENDED"
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
@@ -62,75 +61,7 @@ export default async function AuctionPage({
         }}
       >
         {/* ===== LEFT COLUMN: Gallery ===== */}
-        <div>
-          {/* Main image */}
-          <div
-            style={{
-              aspectRatio: "4 / 3",
-              background: "var(--placeholder)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--muted)",
-              fontSize: 14,
-              marginBottom: 8,
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <span className="material-icons" style={{ fontSize: 40 }}>image</span>
-            {isOpen && (
-              <span
-                style={{
-                  position: "absolute",
-                  top: 16,
-                  left: 16,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "6px 14px",
-                  borderRadius: 999,
-                  font: "600 12px/1.3 -apple-system, sans-serif",
-                  letterSpacing: "0.02em",
-                  background: "var(--accent-soft)",
-                  color: "var(--accent)",
-                }}
-              >
-                <span className="material-icons" style={{ fontSize: 14 }}>local_fire_department</span> {auction.state === "EXTENDED" ? "Extended" : "Active"}
-              </span>
-            )}
-          </div>
-
-          {/* Thumbnails row */}
-          <div style={{ display: "flex", gap: 8 }}>
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                suppressHydrationWarning
-                style={{
-                  width: 72,
-                  height: 56,
-                  background: "var(--placeholder)",
-                  border: i === 0
-                    ? "2px solid var(--accent)"
-                    : "1px solid var(--border)",
-                  borderRadius: 4,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--muted)",
-                  fontSize: 10,
-                  cursor: "pointer",
-                  boxSizing: "border-box",
-                }}
-              >
-                [ {i + 1} ]
-              </div>
-            ))}
-          </div>
-        </div>
+        <Gallery auction={auction} />
 
         {/* ===== RIGHT COLUMN: Info + Bid ===== */}
         <div>
