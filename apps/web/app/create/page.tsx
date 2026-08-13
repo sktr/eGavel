@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useIdentity } from "../../lib/identity";
+import { DEV_TOOLS } from "../../lib/dev-tools";
 
 const DURATIONS = [
   { value: "1d", label: "1 day" },
@@ -74,7 +75,7 @@ export default function CreateAuctionPage() {
   const [condition, setCondition] = useState<string | null>(null);
   const [shipping, setShipping] = useState("Home delivery");
   const [agreeTerms, setAgreeTerms] = useState(false);
-  const [mintUrl, setMintUrl] = useState("https://testnut.cashu.space");
+  const [mintUrl, setMintUrl] = useState(DEV_TOOLS ? "https://testnut.cashu.space" : "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
@@ -155,7 +156,7 @@ export default function CreateAuctionPage() {
         start_price: price,
         end_time: endTime,
         seller_pubkey: identity.pubkey,
-        mint_url: mintUrl || "https://testnut.cashu.space",
+        mint_url: mintUrl.trim(),
       };
       if (reservePrice) {
         const rp = parseInt(reservePrice, 10);
@@ -195,7 +196,7 @@ export default function CreateAuctionPage() {
       setCondition(null);
       setShipping("Home delivery");
       setAgreeTerms(false);
-      setMintUrl("https://testnut.cashu.space");
+      setMintUrl(DEV_TOOLS ? "https://testnut.cashu.space" : "");
       setImages([]);
       setFieldErrors({});
 
@@ -258,7 +259,7 @@ export default function CreateAuctionPage() {
     setCondition(null);
     setShipping("Home delivery");
     setAgreeTerms(false);
-    setMintUrl("https://testnut.cashu.space");
+    setMintUrl(DEV_TOOLS ? "https://testnut.cashu.space" : "");
     setImages([]);
     setFieldErrors({});
     showToast("Draft discarded", "delete");
@@ -994,14 +995,14 @@ export default function CreateAuctionPage() {
                 color: "var(--muted)",
               }}
             >
-              Cashu Mint URL
+              Cashu Mint URL (bidders hold ecash on this mint)
             </label>
             <input
               id="mintUrl"
               type="url"
               value={mintUrl}
               onChange={(e) => setMintUrl(e.target.value)}
-              placeholder="https://testnut.cashu.space"
+              placeholder={DEV_TOOLS ? "https://testnut.cashu.space" : "https://your-mint.example"}
               style={{
                 ...inputTextStyle,
                 fontSize: 13,
