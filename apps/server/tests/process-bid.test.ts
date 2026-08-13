@@ -209,9 +209,31 @@ describe("processBid (proxy bidding)", async () => {
 
   it("does not settle early for a normal high bid below buy_now_price", async () => {
     const auction = makeAuction({ buy_now_price: 1000 })
-    await db.saveAuction(auction)
+    db.saveAuction(auction)
     const result = await processBid(payload(auction, 500, "n4"), db, SERVER)
     expect(result.ok).toBe(true)
     expect((await db.getAuction("a1"))!.state).toBe("ACTIVE")
+  })
+
+  it("extends the auction by 5 minutes for a bid in the last 5 minutes (anti-sniping)", async () => {
+    const endTime = Date.now() + 60_000 // 1 minute left
+    const auction = makeAuction({ end_time: endTime })
+    db.saveAuction(auction)
+    await processBid(payload(auction, 300, "n-snipe"), db, SERVER)
+
+    const after = (await db.getAuction("a1"))!
+    expect(after.state).toBe("EXTENDED")
+    expect(after.end_time).toBe(endTime + 5 * 60_000)
+  })
+
+  it("does not extend for a bid earlier than the last 5 minutes", async () => {
+    const endTime = Date.now() + 3600_000
+    const auction = makeAuction({ end_time: endTime })
+    db.saveAuction(auction)
+    await processBid(payload(auction, 300, "n-nosnipe"), db, SERVER)
+
+    const after = (await db.getAuction("a1"))!
+    expect(after.state).toBe("ACTIVE")
+    expect(after.end_time).toBe(endTime)
   })
 })

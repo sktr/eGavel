@@ -316,6 +316,34 @@ describe("POST /api/auctions/:id/shipping (Schnorr-signed payload)", async () =>
   })
 })
 
+describe("lazy settle on read", async () => {
+  let db: Db
+  let app: Hono
+
+  beforeEach(async () => {
+    db = initDb()
+    app = new Hono()
+    app.route("/api", createAuctionRoutes(db))
+  })
+
+  it("settles a past-due auction when it is fetched", async () => {
+    await db.saveAuction(makeAuction({ state: "ACTIVE", end_time: Date.now() - 60_000 }))
+    const res = await app.request("http://localhost/api/auctions/a1")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Auction
+    expect(body.state).toBe("SETTLED")
+  })
+
+  it("settles past-due auctions in the list, leaving live ones active", async () => {
+    await db.saveAuction(makeAuction({ id: "a1", state: "ACTIVE", end_time: Date.now() - 60_000 }))
+    await db.saveAuction(makeAuction({ id: "a2", state: "ACTIVE", end_time: Date.now() + 3600_000 }))
+    const res = await app.request("http://localhost/api/auctions")
+    const body = (await res.json()) as Auction[]
+    expect(body.find((a) => a.id === "a1")!.state).toBe("SETTLED")
+    expect(body.find((a) => a.id === "a2")!.state).toBe("ACTIVE")
+  })
+})
+
 describe("change-return route", async () => {
   let db: Db
   let app: Hono

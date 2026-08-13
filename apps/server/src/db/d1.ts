@@ -187,6 +187,17 @@ export function createD1Db(d1: D1Database): Db {
       await d1.prepare(`DELETE FROM bid_proofs WHERE bid_id = ? AND Y IN (${placeholders})`).bind(bidId, ...Ys).run()
     },
 
+    async settleAuction(auctionId, winnerNpub, winningAmount) {
+      const n = await changes(
+        d1
+          .prepare(
+            "UPDATE auctions SET state = 'SETTLED', winner_npub = ?, winning_amount = ? WHERE id = ? AND state IN ('ACTIVE','EXTENDED')",
+          )
+          .bind(winnerNpub, winningAmount, auctionId),
+      )
+      return n > 0
+    },
+
     async exec(sql: string) {
       await d1.exec(sql)
     },

@@ -3,6 +3,7 @@ import type { Db } from "./db/index.js"
 import { verifyBid, type BidPayload } from "./verify/index.js"
 import { withAuctionLock } from "./lib/auction-lock.js"
 import { computeStandingPrice } from "./lib/standing-price.js"
+import { ANTI_SNIPING_WINDOW, EXTEND_BY } from "./lib/settle.js"
 
 export type ProcessBidResult =
   | { ok: true; buyNow?: boolean }
@@ -119,6 +120,18 @@ export async function processBid(
       await db.saveBid(bid)
       await db.saveAuction(auction)
       return { ok: true, buyNow: true }
+    }
+
+    // ── Anti-sniping (event-driven): a bid in the last 5 minutes of the
+    // current end time extends the auction by 5 minutes ──
+    if (
+      bid.received_at > auction.end_time - ANTI_SNIPING_WINDOW &&
+      bid.received_at <= auction.end_time
+    ) {
+      auction.state = "EXTENDED"
+      auction.end_time = auction.end_time + EXTEND_BY
+      auction.last_extended_at = Date.now()
+      await db.saveAuction(auction)
     }
 
     return { ok: true }

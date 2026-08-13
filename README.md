@@ -100,7 +100,7 @@ packages/shared shared types
 - **Bid flow**: the client creates a 2-of-3 P2PK proof bundle (locking the full max) → `POST /api/bids` → the server validates (NUT-06/NUT-07) → computes the standing price from all bidders' maxes (second-highest max + minimum increment, `min-increment` table)
 - **Refunds**: outbid detection (polling) → bidder signature + server co-sign → mint swap
 - **Claim**: seller signature + server co-sign → the server splits the outputs into `[seller, operator fee, winner change]` (change = locked max − standing price; the winner collects via `GET /api/auctions/:id/change`)
-- **Timing**: settle at `end_time + 30s` (grace); anti-sniping extends by 5 minutes for bids in the last 5 minutes before E
+- **Timing**: event-driven — anti-sniping extends by 5 minutes at bid time for bids in the last 5 minutes before E; an auction settles (lazy) the first time it is read after `end_time + 30s` (grace)
 - **Shipping**: the winner posts a Schnorr-signed payload to `POST /api/auctions/:id/shipping` (the server verifies the signature against the winner key)
 
 ## Design docs

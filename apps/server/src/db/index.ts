@@ -19,6 +19,8 @@ export interface Db {
   getChange: (auctionId: string) => Promise<{ bidder_npub: string; amount: number; proofs: string } | null>
   tryLockProofs: (bidId: string, auctionId: string, Ys: string[]) => Promise<string[]>
   unlockProofs: (bidId: string, Ys: string[]) => Promise<void>
+  /** Atomic state transition ACTIVE/EXTENDED → SETTLED. Returns true if this call performed the transition. */
+  settleAuction: (auctionId: string, winnerNpub: string | null, winningAmount: number) => Promise<boolean>
   exec: (sql: string) => Promise<void>
 }
 
@@ -283,6 +285,15 @@ export function initDb(): Db {
       if (Ys.length === 0) return
       const placeholders = Ys.map(() => "?").join(", ")
       db.prepare(`DELETE FROM bid_proofs WHERE bid_id = ? AND Y IN (${placeholders})`).run(bidId, ...Ys)
+    },
+
+    async settleAuction(auctionId, winnerNpub, winningAmount) {
+      const res = db
+        .prepare(
+          "UPDATE auctions SET state = 'SETTLED', winner_npub = ?, winning_amount = ? WHERE id = ? AND state IN ('ACTIVE','EXTENDED')",
+        )
+        .run(winnerNpub, winningAmount, auctionId)
+      return res.changes > 0
     },
 
     async exec(sql: string) {

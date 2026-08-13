@@ -54,8 +54,12 @@ server — that is the core of the work.
       — done (2026-08-13): Worker serves /health, listing create/list, and
       bid acceptance against a local D1 (miniflare); env injected via config
       (`createApp(db, { serverKey, feeBps })`).
-3. [ ] Replace the scheduler with a Cron Trigger / Durable Object; port the
-      settle logic; rework `withAuctionLock` (DO or transactions).
+3. [x] Scheduler REMOVED — the design was re-examined and polling was dropped
+      for event-driven settlement: anti-sniping extension happens at bid time
+      in `processBid`, and an auction is settled lazily when it is read
+      (`settleIfDue` in the list/detail/bids routes) via an atomic D1
+      conditional UPDATE. No Cron Trigger / Durable Object needed.
+      — done (2026-08-13)
 4. [ ] Port DB schema to D1 migrations; add `wrangler d1 migrations apply`.
 5. [ ] Deploy web to Vercel (set `NEXT_PUBLIC_API_URL` to the worker URL);
       keep `SSR_API_URL` pointing at the worker.

@@ -12,6 +12,7 @@ import { verifySecretSignature, signSecret } from "../lib/schnorr.js"
 import { canonicalPubkey } from "../lib/canonical.js"
 import { toPublicBid } from "../lib/public-bid.js"
 import { auctionFeeBps } from "../lib/auction-fee.js"
+import { settleIfDue } from "../lib/settle.js"
 
 export interface AuctionRoutesConfig {
   serverKey?: string
@@ -38,13 +39,15 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   router.get("/auctions", async (c) => {
     const filter = c.req.query("filter")
     const sellerPubkey = c.req.query("seller_pubkey")
-    if (sellerPubkey) {
-      return c.json(await db.getAuctionsBySeller(sellerPubkey))
-    }
-    if (filter === "active") {
-      return c.json(await db.getActiveAuctions())
-    }
-    return c.json(await db.getAllAuctions())
+    const auctions = sellerPubkey
+      ? await db.getAuctionsBySeller(sellerPubkey)
+      : filter === "active"
+        ? await db.getActiveAuctions()
+        : await db.getAllAuctions()
+    // Lazy settle: any auction past E+grace settles the moment it is read.
+    const settled = []
+    for (const a of auctions) settled.push(await settleIfDue(db, a))
+    return c.json(settled)
   })
 
   // ── Create listing: HTTP-direct (no Nostr relay dependency) ──
@@ -100,7 +103,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   router.get("/auctions/:id", async (c) => {
     const auction = await db.getAuction(c.req.param("id")!)
     if (!auction) return c.json({ error: "not found" }, 404)
-    return c.json(auction)
+    return c.json(await settleIfDue(db, auction))
   })
 
   router.get("/auctions/:id/bids", async (c) => {
