@@ -38,24 +38,6 @@ const CONDITIONS = [
   "Junk / For Parts",
 ] as const;
 
-const SHIPPING_OPTIONS = [
-  {
-    value: "Home delivery",
-    title: "Courier",
-    desc: "Nationwide, insured — buyer pays shipping",
-  },
-  {
-    value: "Home delivery (shipping included)",
-    title: "Courier (Free Shipping)",
-    desc: "Nationwide, insured — seller pays shipping",
-  },
-  {
-    value: "In-person handoff",
-    title: "Hand Delivery",
-    desc: "In-person handover — Tokyo area",
-  },
-] as const;
-
 const FOCUS_STYLE = {
   borderColor: "var(--accent)",
   boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent)",
@@ -75,7 +57,7 @@ export default function CreateAuctionPage() {
   const [duration, setDuration] = useState("5d");
   const [category, setCategory] = useState("");
   const [condition, setCondition] = useState<string | null>(null);
-  const [shipping, setShipping] = useState("Home delivery");
+  const [shipping, setShipping] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [mintUrl, setMintUrl] = useState(DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin");
   const [submitting, setSubmitting] = useState(false);
@@ -199,7 +181,7 @@ export default function CreateAuctionPage() {
       setDuration("5d");
       setCategory("");
       setCondition(null);
-      setShipping("Home delivery");
+      setShipping("");
       setAgreeTerms(false);
       setMintUrl(DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin");
       setImages([]);
@@ -263,7 +245,7 @@ export default function CreateAuctionPage() {
     setDuration("5d");
     setCategory("");
     setCondition(null);
-    setShipping("Home delivery");
+    setShipping("");
     setAgreeTerms(false);
     setMintUrl(DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin");
     setImages([]);
@@ -858,9 +840,10 @@ export default function CreateAuctionPage() {
             </div>
           </div>
 
-          {/* Shipping */}
+          {/* Shipping Method (optional free text) */}
           <div style={{ marginBottom: 24 }}>
             <label
+              htmlFor="shippingMethod"
               style={{
                 display: "block",
                 fontSize: 14,
@@ -868,73 +851,19 @@ export default function CreateAuctionPage() {
                 marginBottom: 8,
               }}
             >
-              Shipping Method
+              Shipping Method{" "}
+              <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>(optional)</span>
             </label>
-            <div
-              style={{
-                display: "flex",
-                gap: 16,
-                flexWrap: "wrap",
-              }}
-            >
-              {SHIPPING_OPTIONS.map((opt) => (
-                <div
-                  key={opt.value}
-                  onClick={() => setShipping(opt.value)}
-                  onMouseEnter={(e) => {
-                    if (opt.value !== shipping) {
-                      e.currentTarget.style.borderColor = "var(--accent)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (opt.value !== shipping) {
-                      e.currentTarget.style.borderColor = "var(--border)";
-                    }
-                  }}
-                  style={{
-                    flex: 1,
-                    minWidth: 140,
-                    border: `1px solid ${opt.value === shipping ? "var(--accent)" : "var(--border)"}`,
-                    borderRadius: "var(--radius)",
-                    padding: 16,
-                    cursor: "pointer",
-                    transition: "border-color .15s",
-                    background:
-                      opt.value === shipping
-                        ? "color-mix(in srgb, var(--accent) 4%, transparent)"
-                        : "var(--surface)",
-                  }}
-                >
-                  <label style={{ display: "block", cursor: "pointer" }}>
-                    <input
-                      type="radio"
-                      name="shipping"
-                      checked={shipping === opt.value}
-                      onChange={() => setShipping(opt.value)}
-                      style={{ display: "none" }}
-                    />
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 14,
-                      }}
-                    >
-                      {opt.title}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "var(--muted)",
-                        marginTop: 4,
-                        whiteSpace: "pre-line",
-                      }}
-                    >
-                      {opt.desc}
-                    </div>
-                  </label>
-                </div>
-              ))}
-            </div>
+            <input
+              id="shippingMethod"
+              type="text"
+              value={shipping}
+              onChange={(e) => setShipping(e.target.value)}
+              placeholder="e.g. Ships worldwide, insured, buyer pays shipping"
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              style={inputTextStyle}
+            />
           </div>
 
           {/* Agreement */}
@@ -1162,7 +1091,7 @@ export default function CreateAuctionPage() {
                 buyNowPrice ? `${parseInt(buyNowPrice, 10).toLocaleString()} sats` : "None",
               ],
               ["Duration", durationLabel],
-              ["Shipping", shipping],
+              ["Shipping", shipping || "—"],
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -1343,7 +1272,7 @@ export default function CreateAuctionPage() {
                     ["Duration", durationLabel],
                     ["Category", categoryLabel],
                     ["Condition", condition || "—"],
-                    ["Shipping", shipping],
+                    ["Shipping", shipping || "—"],
                     ["Mint URL", mintUrl],
                   ].map(([label, value]) => (
                     <tr key={label}>
