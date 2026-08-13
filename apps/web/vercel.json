@@ -1,0 +1,4 @@
+{
+  "buildCommand": "pnpm --filter @cashu-auction/shared build && pnpm --filter @cashu-auction/web build",
+  "framework": "nextjs"
+}

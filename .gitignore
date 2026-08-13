@@ -20,3 +20,4 @@ exports/
 .superpowers/
 .wrangler/
 .dev.vars
+.vercel
