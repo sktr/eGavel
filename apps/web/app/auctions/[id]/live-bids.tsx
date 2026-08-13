@@ -8,7 +8,12 @@ import { useRouter } from "next/navigation";
 import { refundBid } from "../../../lib/claim";
 import { bytesToHex } from "../../../lib/hex";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
+// Root (no /api suffix) — the code below adds "/api" explicitly. Matches the
+// convention in lib/claim.ts and checkout.tsx so NEXT_PUBLIC_API_URL can point
+// at the Worker origin without a trailing path.
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
+  .replace(/\/+$/, "")
+  .replace(/\/api$/, "");
 const POLL_MS = 4000;
 
 function shortId(s: string) {
@@ -48,7 +53,7 @@ export function LiveBids({
     if (!identity) return;
     if (!window.confirm("Delete this listing? It has no bids yet, so no funds are affected.")) return;
     try {
-      const res = await fetch(`${API_BASE}/auctions/${auction.id}?seller_pubkey=${identity.pubkey}`, {
+      const res = await fetch(`${API_BASE}/api/auctions/${auction.id}?seller_pubkey=${identity.pubkey}`, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -97,8 +102,8 @@ export function LiveBids({
     const poll = async () => {
       try {
         const [aRes, bRes] = await Promise.all([
-          fetch(`${API_BASE}/auctions/${initialAuction.id}`, { cache: "no-store" }),
-          fetch(`${API_BASE}/auctions/${initialAuction.id}/bids`, { cache: "no-store" }),
+          fetch(`${API_BASE}/api/auctions/${initialAuction.id}`, { cache: "no-store" }),
+          fetch(`${API_BASE}/api/auctions/${initialAuction.id}/bids`, { cache: "no-store" }),
         ]);
         if (cancelled) return;
         if (aRes.ok) setAuction((await aRes.json()) as Auction);
