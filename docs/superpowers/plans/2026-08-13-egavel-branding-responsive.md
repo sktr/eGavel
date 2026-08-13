@@ -23,7 +23,7 @@
     .resp-grid-row > :last-child { grid-column: 1 / -1; text-align: right !important; }
   }
   ```
-- create page: form grid `1fr 360px` → `resp-grid-form`; condition grid `1fr 1fr` → `resp-grid-2col`; modal grid `1fr 1fr` → `resp-grid-2col`.
+- create page: form grid `1fr 360px` → `resp-grid-form`; Pricing grid `1fr 1fr` → `resp-grid-2col`; modal grid `1fr 1fr` → `resp-grid-2col`.
 - Top hero: `resp-grid-2col` (mobile `1fr` regardless of `featured`).
 - Detail page: `resp-grid-2col` (gallery stays first via source order).
 - Dashboard: 3 rows `56px 1fr auto` → `resp-grid-row`.
@@ -190,7 +190,7 @@ In `apps/web/app/layout.tsx`, inside the global `<style>` block (near the existi
 
 (a) `apps/web/app/create/page.tsx`:
 - Form grid (the `div` with `gridTemplateColumns: "1fr 360px"`, ~line 313): add `className="resp-grid-form"` to that div.
-- Condition grid (`gridTemplateColumns: "1fr 1fr"` with `gap: 16`, ~line 658): add `className="resp-grid-2col"`.
+- Pricing grid (`gridTemplateColumns: "1fr 1fr"` with `gap: 16`, ~line 658): add `className="resp-grid-2col"`.
 - Confirmation modal grid (`gridTemplateColumns: "1fr 1fr"` with `gap: 12, marginTop: 20`, ~line 1247): add `className="resp-grid-2col"`.
 
 (b) `apps/web/app/page.tsx` — the hero `<section>` (~line 28): add `className="resp-grid-2col"`.
