@@ -9,6 +9,7 @@ import type { Proof } from "@cashu/cashu-ts"
 import type { Auction } from "@egavel/shared"
 import { useWallet } from "../../../lib/wallet"
 import { useIdentity } from "../../../lib/identity"
+import { QRCodeSVG } from "qrcode.react"
 
 const TEST_MINT_URL = "test://local"
 
@@ -567,23 +568,60 @@ export function BidForm({
                   </div>
                 ) : mintStep === "awaiting" && mintQuote ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <textarea
-                      readOnly
-                      rows={2}
-                      value={mintQuote.request}
-                      style={{
-                        width: "100%",
-                        border: "1px solid var(--border)",
-                        borderRadius: "var(--radius)",
-                        padding: "8px 12px",
-                        fontSize: 11,
-                        fontFamily: "var(--font-mono)",
-                        background: "var(--bg)",
-                        color: "var(--fg)",
-                        resize: "none",
-                      }}
-                    />
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {/* QR code — scan with a phone wallet (PC display use case) */}
+                    <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+                      <QRCodeSVG
+                        value={`lightning:${mintQuote.request}`}
+                        size={168}
+                        bgColor="transparent"
+                        fgColor="var(--fg)"
+                      />
+                    </div>
+                    {/* Collapsible raw invoice */}
+                    <details>
+                      <summary style={{ fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
+                        Show invoice text
+                      </summary>
+                      <textarea
+                        readOnly
+                        rows={3}
+                        value={mintQuote.request}
+                        style={{
+                          width: "100%",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius)",
+                          padding: "8px 12px",
+                          fontSize: 11,
+                          fontFamily: "var(--font-mono)",
+                          background: "var(--bg)",
+                          color: "var(--fg)",
+                          resize: "none",
+                          marginTop: 4,
+                        }}
+                      />
+                    </details>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      {/* One-tap wallet launch on mobile */}
+                      <a
+                        href={`lightning:${mintQuote.request}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius)",
+                          background: "var(--surface)",
+                          color: "var(--fg)",
+                          padding: "6px 14px",
+                          fontSize: 12,
+                          textDecoration: "none",
+                          fontFamily: "inherit",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        <span className="material-icons" style={{ fontSize: 14 }}>bolt</span>
+                        Pay with wallet
+                      </a>
                       <button
                         type="button"
                         onClick={handleCopyInvoice}
