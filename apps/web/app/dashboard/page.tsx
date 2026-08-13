@@ -436,15 +436,7 @@ export default function DashboardPage() {
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
       {/* ===== Page Header ===== */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          paddingTop: 40,
-          marginBottom: 24,
-        }}
-      >
+      <div style={{ marginBottom: 24 }}>
         <h1
           style={{
             fontFamily: "var(--font-display)",
@@ -455,16 +447,6 @@ export default function DashboardPage() {
         >
           Dashboard
         </h1>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>
-          Last login:{" "}
-          {new Date().toLocaleString("en-US", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
       </div>
 
       {/* ===== Profile Card ===== */}
@@ -508,19 +490,6 @@ export default function DashboardPage() {
             }}
           >
             {identity?.pubkey ? shortId(identity.pubkey) : "User"}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 16,
-              fontSize: 13,
-              color: "var(--muted)",
-              marginTop: 4,
-              flexWrap: "wrap",
-            }}
-          >
-            <span>Rating 4.8 (128 reviews)</span>
-            <span>Joined: 2024/03/12</span>
           </div>
         </div>
         {/* Stats */}
@@ -578,50 +547,10 @@ export default function DashboardPage() {
             <div style={{ fontSize: 12, color: "var(--muted)" }}>Watching</div>
           </div>
         </div>
-        {/* Edit button */}
-        <button
-          style={{
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            background: "var(--surface)",
-            color: "var(--fg)",
-            padding: "8px 20px",
-            fontSize: 13,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          Edit Profile
-        </button>
       </div>
 
       {/* ===== Account Backup (recovery phrase) ===== */}
       <BackupSection />
-
-      {/* ===== Tab Navigation ===== */}
-      <div
-        style={{
-          display: "flex",
-          borderBottom: "1px solid var(--border)",
-          marginBottom: 24,
-        }}
-      >
-        {["Bidding", "Won", "Listed", "Watchlist", "Bid History", "Settings"].map((tab) => (
-          <div
-            key={tab}
-            style={{
-              padding: "8px 16px",
-              fontSize: 14,
-              color: tab === "Bidding" ? "var(--accent)" : "var(--muted)",
-              borderBottom: tab === "Bidding" ? "2px solid var(--accent)" : "2px solid transparent",
-              fontWeight: tab === "Bidding" ? 500 : 400,
-              cursor: "default",
-            }}
-          >
-            {tab}
-          </div>
-        ))}
-      </div>
 
       {/* ===== Watching ===== */}
       {ids.length > 0 && (
@@ -667,12 +596,6 @@ export default function DashboardPage() {
         >
           Active Bids
         </h2>
-        <a href="#" style={{ fontSize: 13, color: "var(--muted)", textDecoration: "none" }}>
-          View all{" "}
-          <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle" }}>
-            arrow_forward
-          </span>
-        </a>
       </div>
 
       <div
@@ -949,12 +872,6 @@ export default function DashboardPage() {
         >
           My Listings
         </h2>
-        <a href="/create" style={{ fontSize: 13, color: "var(--muted)", textDecoration: "none" }}>
-          View all{" "}
-          <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle" }}>
-            arrow_forward
-          </span>
-        </a>
       </div>
 
       <div
@@ -1149,12 +1066,6 @@ export default function DashboardPage() {
         >
           Watchlist
         </h2>
-        <a href="#" style={{ fontSize: 13, color: "var(--muted)", textDecoration: "none" }}>
-          View all{" "}
-          <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle" }}>
-            arrow_forward
-          </span>
-        </a>
       </div>
 
       <div
