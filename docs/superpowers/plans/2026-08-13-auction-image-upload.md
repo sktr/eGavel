@@ -142,10 +142,9 @@ export interface Auction {
   images TEXT
 ```
 
-(b) Add to the idempotent migration loop (after the `image TEXT` entry):
+(b) Add to the idempotent migration loop (the loop already contains the `image TEXT` entry at `apps/server/src/db/index.ts:149` — add only this new line after it):
 
 ```ts
-    "ALTER TABLE auctions ADD COLUMN image TEXT",
     "ALTER TABLE auctions ADD COLUMN images TEXT",
 ```
 
@@ -355,16 +354,24 @@ import type { Auction } from "@cashu-auction/shared"
 describe("POST /api/auctions with images", async () => {
   let db: Db
   let app: Hono
+  let testPath = ""
   const origPath = process.env.DB_PATH
 
   beforeEach(async () => {
-    process.env.DB_PATH = `data/test-images-api-${Date.now()}.db`
+    testPath = `data/test-images-api-${Date.now()}.db`
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+    process.env.DB_PATH = testPath
     db = initDb()
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
   })
 
   afterEach(async () => {
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
     if (origPath === undefined) delete process.env.DB_PATH
     else process.env.DB_PATH = origPath
   })
@@ -547,13 +554,14 @@ class FakeFileReader {
   }
 }
 
-function fakeCanvas() {
-  return {
-    width: 0,
-    height: 0,
-    getContext: () => ({ drawImage: vi.fn() }),
-    toDataURL: (type: string, quality: number) => `data:${type};base64,fake-${quality}`,
-  }
+// Single shared canvas instance: compressImage mutates the element it gets from
+// createElement, and the tests assert on that same mutated object — so every
+// createElement("canvas") call must return the SAME instance, not a fresh one.
+const fakeCanvasEl = {
+  width: 0,
+  height: 0,
+  getContext: () => ({ drawImage: vi.fn() }),
+  toDataURL: (type: string, quality: number) => `data:${type};base64,fake-${quality}`,
 }
 
 describe("compressImage", () => {
@@ -561,8 +569,10 @@ describe("compressImage", () => {
     vi.stubGlobal("FileReader", FakeFileReader)
     vi.stubGlobal("Image", FakeImage)
     vi.stubGlobal("document", {
-      createElement: (tag: string) => (tag === "canvas" ? fakeCanvas() : {}),
+      createElement: (tag: string) => (tag === "canvas" ? fakeCanvasEl : {}),
     })
+    fakeCanvasEl.width = 0
+    fakeCanvasEl.height = 0
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -932,7 +942,7 @@ import { ItemPlaceholder } from "../../components/item-placeholder"
 
 (d) Update the label copy "(max 10)" → "(max 4)" (line 384).
 
-(e) Replace the upload thumbnail rendering (currently lines 446–508, the `images.map((name, i) => (...))` block) — render the real `<img>` instead of the icon + filename text, keep the remove button:
+(e) Replace the upload thumbnail rendering (currently lines 446–509: the `images.map((name, i) => (...))` block **plus** the add-tile condition `{images.length < 10 && (` at line 509) — render the real `<img>` instead of the icon + filename text, keep the remove button, and change the add-tile cap from `< 10` to `< 4`. The replacement below covers the whole 446–529 block through the add-tile's closing `)}`:
 
 ```tsx
                 {images.map((src, i) => (
@@ -1023,6 +1033,8 @@ Run: `pnpm --filter @cashu-auction/web run typecheck`
 Expected: no type errors.
 
 Manual browser check: on `/create`, select an image file → a real thumbnail preview appears (max 4); the sidebar Preview shows the first image (or the category placeholder); submit → the listing card on `/` shows the uploaded image.
+
+Note: `handleSaveDraft` (unchanged, `create/page.tsx:223–246`) persists the `images` state — which now holds up to 4 WebP data URLs (~100 KB each) instead of filenames. Repeated draft saves approach localStorage's ~5 MB quota. Out of scope for this spec; do not fix here.
 
 - [ ] **Step 3: Commit**
 
@@ -1161,12 +1173,16 @@ import { Gallery } from "./gallery"
         <Gallery auction={auction} />
 ```
 
+(c) Delete the now-unused `const isOpen = ...` in `apps/web/app/auctions/[id]/page.tsx` (currently line 33) — the Active/Extended badge moved into `Gallery`, so this constant is dead code.
+
 - [ ] **Step 3: Verify**
 
 Run: `pnpm --filter @cashu-auction/web run typecheck`
 Expected: no type errors.
 
 Manual browser check: open `/auctions/{id}` — main image shows the first image (or placeholder); thumbnails render per image and switch on click; no `[ 1 ]…[ 4 ]` boxes; with no images the thumbnail row is absent.
+
+Coverage note: Tasks 1–2 exercise only the better-sqlite3 `Db` via `initDb()`. There is no `createD1Db` test harness in this repo, so the D1 `parseRow` and the 19-column/19-placeholder INSERT (Task 1 Step 5(a)) ship untested — a placeholder-count mismatch there would only surface in production. Verify the D1 INSERT bind count against its `?` count by eye during Task 1 Step 5.
 
 - [ ] **Step 4: Commit**
 
@@ -1327,6 +1343,8 @@ Run: `pnpm --filter @cashu-auction/web run typecheck`
 Expected: no type errors.
 
 Manual browser check: with active auctions, the hero shows the soonest-ending listing's image and name, linking to its page. With zero active auctions (fresh DB), the hero is single-column — no empty `[ Featured Auction ]` box.
+
+Note: `Home` adds a second fetch on `/` (`?filter=active`) alongside `AuctionList`'s own fetch. This matches the plan's stated approach; if the extra round-trip matters later, derive the soonest-ending auction from `AuctionList`'s fetch instead.
 
 - [ ] **Step 3: Commit**
 
