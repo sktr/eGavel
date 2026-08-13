@@ -12,7 +12,7 @@ import { useIdentity } from "../../../lib/identity"
 
 const TEST_MINT_URL = "test://local"
 
-const DEFAULT_MINT = "https://testnut.cashu.space"
+const DEFAULT_MINT = DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin"
 
 export function BidForm({
   auction,
