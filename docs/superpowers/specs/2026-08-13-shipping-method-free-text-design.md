@@ -22,11 +22,13 @@ Problems:
    global, international audience (Cashu is a worldwide e-cash protocol). A
    handover option scoped to Tokyo makes no sense to users outside Japan.
 2. **The choice is meaningless in practice.** The selected value is stored on
-   the auction (`shipping` TEXT) and displayed on the detail page's details
-   table. It does not affect payment, escrow, or any logic — who pays
-   shipping is never enforced. A fixed 3-choice list therefore adds no value
-   over a free-text description and actively constrains what a seller can
-   state (e.g. "ships from EU only", "no international shipping").
+   the auction (`shipping` TEXT) and shown only in the create-page previews —
+   it is **not** rendered on the detail page's details table (the table has
+   rows for Start Price / Status / Start Date / End Date / Seller / Winner /
+   Winning Amount only). It does not affect payment, escrow, or any logic —
+   who pays shipping is never enforced. A fixed 3-choice list therefore adds
+   no value over a free-text description and actively constrains what a
+   seller can state (e.g. "ships from EU only", "no international shipping").
 3. **The stored values are Japan-centric strings** that will age poorly.
 
 Additionally, the address-exchange flow after an auction settles was
@@ -96,11 +98,12 @@ Translate the three legacy option values to neutral, locale-agnostic text:
 ## 5. Display
 
 - Detail page (`apps/web/app/auctions/[id]/page.tsx`) and dashboard: **no
-  change** — they render `auction.shipping` as text; migrated rows show the
-  new wording, new listings show the seller's free text.
-- No other consumer of the `shipping` field exists (verified: it is stored
-  via `body.shipping`, displayed in the details table, and echoed in the
-  create-page preview).
+  change**. The detail page does not currently render the auction's
+  `shipping` field (its details table has no Shipping row) — this spec does
+  not add one; that is a possible follow-up. The dashboard's "Shipping"
+  section is the winner's address relay, unrelated to this field.
+- Consumers of `auction.shipping`: the create-page sidebar preview and the
+  confirmation modal only (verified by grep). Both render `shipping || "—"`.
 
 ## 6. Address exchange flow (unchanged, for the record)
 

@@ -267,3 +267,16 @@ git commit -m "fix: final verification fixes"
 ```
 
 (Only commit if there are actual changes from the verification steps.)
+
+- [ ] **Step 5: Note the production deployment step (data migration)**
+
+`0002_shipping_text.sql` is a **data** migration (UPDATEs), not just a schema
+change. In production it must be applied to the D1 database or legacy strings
+silently stay in place:
+
+```bash
+pnpm --filter @cashu-auction/server exec wrangler d1 migrations apply cashu-auction-db --remote
+```
+
+Run this as part of the deploy (before or alongside `wrangler deploy`). Do not
+skip it — a skipped data migration fails silently, unlike a schema migration.
