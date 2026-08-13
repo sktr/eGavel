@@ -1,6 +1,7 @@
 "use client"
 
 import type { Auction } from "@cashu-auction/shared"
+import { ItemPlaceholder } from "../components/item-placeholder"
 
 function timeLeft(ms: number): string {
   const diff = ms - Date.now()
@@ -26,9 +27,17 @@ export function AuctionCard({ a }: { a: Auction }) {
       <div style={{
         aspectRatio: "4/3", background: "var(--placeholder)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        color: "var(--muted)", fontSize: 13,
+        color: "var(--muted)", fontSize: 13, overflow: "hidden",
       }}>
-        [ {a.item} ]
+        {a.images?.[0] ? (
+          <img
+            src={a.images[0]}
+            alt={a.item}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+        ) : (
+          <ItemPlaceholder category={a.category} name={a.item} size={36} />
+        )}
       </div>
       <div style={{ padding: "var(--space-md)" }}>
         <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
