@@ -542,7 +542,7 @@ export default function DashboardPage() {
                 lineHeight: 1.2,
               }}
             >
-              {auctions.length}
+              {ids.length}
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>Watching</div>
           </div>
