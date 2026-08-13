@@ -17,31 +17,50 @@ export function createD1Db(d1: D1Database): Db {
       0
   }
 
+  function parseRow(row: Auction): Auction {
+    if (typeof row.images === "string") {
+      try {
+        row.images = JSON.parse(row.images) as string[]
+      } catch {
+        delete row.images
+      }
+    }
+    if (!Array.isArray(row.images)) {
+      if (typeof row.image === "string" && /^(data:|https?:\/\/)/.test(row.image)) {
+        row.images = [row.image]
+      } else {
+        delete row.images
+      }
+    }
+    return row
+  }
+
   return {
     async getActiveAuctions() {
       const { results } = await d1
         .prepare("SELECT * FROM auctions WHERE state = 'ACTIVE' OR state = 'EXTENDED'")
         .all<Auction>()
-      return results
+      return results.map(parseRow)
     },
 
     async getAllAuctions() {
       const { results } = await d1
         .prepare("SELECT * FROM auctions ORDER BY end_time DESC")
         .all<Auction>()
-      return results
+      return results.map(parseRow)
     },
 
     async getAuction(id: string) {
-      return d1.prepare("SELECT * FROM auctions WHERE id = ?").bind(id).first<Auction>()
+      const row = await d1.prepare("SELECT * FROM auctions WHERE id = ?").bind(id).first<Auction>()
+      return row ? parseRow(row) : null
     },
 
     async saveAuction(auction: Auction) {
       await d1
         .prepare(
           `INSERT OR REPLACE INTO auctions
-            (id, item, description, start_price, reserve_price, buy_now_price, end_time, seller_pubkey, state, start_time, last_extended_at, winner_npub, winning_amount, mint_url, category, condition, shipping, image)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, item, description, start_price, reserve_price, buy_now_price, end_time, seller_pubkey, state, start_time, last_extended_at, winner_npub, winning_amount, mint_url, category, condition, shipping, image, images)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           auction.id,
@@ -61,7 +80,8 @@ export function createD1Db(d1: D1Database): Db {
           auction.category ?? null,
           auction.condition ?? null,
           auction.shipping ?? null,
-          auction.image ?? null,
+          auction.images?.[0] ?? auction.image ?? null,
+          auction.images ? JSON.stringify(auction.images) : null,
         )
         .run()
     },
@@ -110,7 +130,7 @@ export function createD1Db(d1: D1Database): Db {
         .prepare("SELECT * FROM auctions WHERE seller_pubkey = ? ORDER BY end_time DESC")
         .bind(sellerPubkey)
         .all<Auction>()
-      return results
+      return results.map(parseRow)
     },
 
     async getBidsByBidder(bidderPubkey: string) {

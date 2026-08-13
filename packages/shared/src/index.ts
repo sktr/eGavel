@@ -23,7 +23,10 @@ export interface Auction {
   category?: string
   condition?: string
   shipping?: string
+  /** Legacy single image (data URL or remote URL). Kept for backward compatibility. */
   image?: string
+  /** All listing images as data URLs (max 4). */
+  images?: string[]
 }
 
 export interface Bid {

@@ -52,7 +52,8 @@ export function initDb(): Db {
       category TEXT,
       condition TEXT,
       shipping TEXT,
-      image TEXT
+      image TEXT,
+      images TEXT
     );
 
     CREATE TABLE IF NOT EXISTS bids (
@@ -147,6 +148,7 @@ export function initDb(): Db {
     "ALTER TABLE auctions ADD COLUMN condition TEXT",
     "ALTER TABLE auctions ADD COLUMN shipping TEXT",
     "ALTER TABLE auctions ADD COLUMN image TEXT",
+    "ALTER TABLE auctions ADD COLUMN images TEXT",
   ]) {
     try {
       db.exec(col)
@@ -157,29 +159,45 @@ export function initDb(): Db {
 
   const insertAuction = db.prepare(`
     INSERT OR REPLACE INTO auctions
-      (id, item, description, start_price, reserve_price, buy_now_price, end_time, seller_pubkey, state, start_time, last_extended_at, winner_npub, winning_amount, mint_url, category, condition, shipping, image)
+      (id, item, description, start_price, reserve_price, buy_now_price, end_time, seller_pubkey, state, start_time, last_extended_at, winner_npub, winning_amount, mint_url, category, condition, shipping, image, images)
     VALUES
-      (@id, @item, @description, @start_price, @reserve_price, @buy_now_price, @end_time, @seller_pubkey, @state, @start_time, @last_extended_at, @winner_npub, @winning_amount, @mint_url, @category, @condition, @shipping, @image)
+      (@id, @item, @description, @start_price, @reserve_price, @buy_now_price, @end_time, @seller_pubkey, @state, @start_time, @last_extended_at, @winner_npub, @winning_amount, @mint_url, @category, @condition, @shipping, @image, @images)
   `)
+
+  function parseRow(row: Auction): Auction {
+    if (typeof row.images === "string") {
+      try {
+        row.images = JSON.parse(row.images) as string[]
+      } catch {
+        delete row.images
+      }
+    }
+    if (!Array.isArray(row.images)) {
+      if (typeof row.image === "string" && /^(data:|https?:\/\/)/.test(row.image)) {
+        row.images = [row.image]
+      } else {
+        delete row.images
+      }
+    }
+    return row
+  }
 
   return {
     async getActiveAuctions() {
-      return db
-        .prepare(
-          "SELECT * FROM auctions WHERE state = 'ACTIVE' OR state = 'EXTENDED'",
-        )
-        .all() as Auction[]
+      return (db
+        .prepare("SELECT * FROM auctions WHERE state = 'ACTIVE' OR state = 'EXTENDED'")
+        .all() as Auction[]).map(parseRow)
     },
 
     async getAllAuctions() {
-      return db
+      return (db
         .prepare("SELECT * FROM auctions ORDER BY end_time DESC")
-        .all() as Auction[]
+        .all() as Auction[]).map(parseRow)
     },
 
     async getAuction(id: string) {
-      return (db.prepare("SELECT * FROM auctions WHERE id = ?").get(id) ??
-        null) as Auction | null
+      const row = db.prepare("SELECT * FROM auctions WHERE id = ?").get(id) as Auction | undefined
+      return row ? parseRow(row) : null
     },
 
     async saveAuction(auction: Auction) {
@@ -193,7 +211,8 @@ export function initDb(): Db {
         category: auction.category ?? null,
         condition: auction.condition ?? null,
         shipping: auction.shipping ?? null,
-        image: auction.image ?? null,
+        image: auction.images?.[0] ?? auction.image ?? null,
+        images: auction.images ? JSON.stringify(auction.images) : null,
       })
     },
 
@@ -219,9 +238,9 @@ export function initDb(): Db {
     },
 
     async getAuctionsBySeller(sellerPubkey: string) {
-      return db
+      return (db
         .prepare("SELECT * FROM auctions WHERE seller_pubkey = ? ORDER BY end_time DESC")
-        .all(sellerPubkey) as Auction[]
+        .all(sellerPubkey) as Auction[]).map(parseRow)
     },
 
     async getBidsByBidder(bidderPubkey: string) {
