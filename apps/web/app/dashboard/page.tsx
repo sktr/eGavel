@@ -436,7 +436,7 @@ export default function DashboardPage() {
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
       {/* ===== Page Header ===== */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ paddingTop: 40, marginBottom: 24 }}>
         <h1
           style={{
             fontFamily: "var(--font-display)",
