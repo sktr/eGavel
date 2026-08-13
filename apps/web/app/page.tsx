@@ -24,6 +24,7 @@ export default async function Home() {
     <main style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
       {/* Hero */}
       <section
+        className="resp-grid-2col"
         style={{
           display: "grid",
           gridTemplateColumns: featured ? "1fr 1fr" : "1fr",

@@ -135,6 +135,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           @media (max-width: 639px) {
             .header-mobile-hide { display: none !important; }
           }
+
+          @media (max-width: 639px) {
+            .resp-grid-2col { grid-template-columns: 1fr !important; }
+            .resp-grid-form { grid-template-columns: 1fr !important; }
+            .resp-grid-row { grid-template-columns: 56px 1fr !important; }
+            .resp-grid-row > :last-child { grid-column: 1 / -1; text-align: right !important; }
+          }
         `}</style>
       </head>
       <body>

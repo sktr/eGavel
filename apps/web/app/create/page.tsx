@@ -311,6 +311,7 @@ export default function CreateAuctionPage() {
 
       {/* Form grid: two columns */}
       <div
+        className="resp-grid-form"
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 360px",
@@ -655,6 +656,7 @@ export default function CreateAuctionPage() {
               Pricing
             </label>
             <div
+              className="resp-grid-2col"
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
@@ -1243,6 +1245,7 @@ export default function CreateAuctionPage() {
                 </tbody>
               </table>
               <div
+                className="resp-grid-2col"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "1fr 1fr",

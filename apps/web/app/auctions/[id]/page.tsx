@@ -53,6 +53,7 @@ export default async function AuctionPage({
 
       {/* Detail grid — 2 columns */}
       <div
+        className="resp-grid-2col"
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",

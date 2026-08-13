@@ -717,7 +717,7 @@ export default function DashboardPage() {
           );
           if (recoverable) {
             return (
-              <div key={b.id} style={rowStyle}>
+              <div key={b.id} className="resp-grid-row" style={rowStyle}>
                 {row}
               </div>
             );
@@ -726,6 +726,7 @@ export default function DashboardPage() {
             <a
               key={b.id}
               href={`/auctions/${b.auction_id}`}
+              className="resp-grid-row"
               style={{ ...rowStyle, color: "inherit", textDecoration: "none" }}
             >
               {row}
@@ -833,7 +834,7 @@ export default function DashboardPage() {
                 );
                 if (recoverable) {
                   return (
-                    <div key={b.id} style={rowStyle}>
+                    <div key={b.id} className="resp-grid-row" style={rowStyle}>
                       {row}
                     </div>
                   );
@@ -842,6 +843,7 @@ export default function DashboardPage() {
                   <a
                     key={b.id}
                     href={`/auctions/${b.auction_id}`}
+                    className="resp-grid-row"
                     style={{ ...rowStyle, color: "inherit", textDecoration: "none" }}
                   >
                     {row}
@@ -898,6 +900,7 @@ export default function DashboardPage() {
             <a
               key={a.id}
               href={`/auctions/${a.id}`}
+              className="resp-grid-row"
               style={{
                 display: "grid",
                 gridTemplateColumns: "56px 1fr auto",
