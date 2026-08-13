@@ -3,7 +3,12 @@ import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
 import { Gallery } from "./gallery"
 
-const API_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"
+// Root (no /api suffix) — the code below adds "/api" explicitly. Matches the
+// convention used across the app so SSR_API_URL / NEXT_PUBLIC_API_URL can point
+// at the Worker origin (https://egavel-api.sktr1211.workers.dev).
+const API_BASE = (process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
+  .replace(/\/+$/, "")
+  .replace(/\/api$/, "")
 
 function shortId(s: string) {
   if (s.length <= 16) return s
@@ -11,13 +16,13 @@ function shortId(s: string) {
 }
 
 async function fetchAuction(id: string): Promise<Auction | null> {
-  const res = await fetch(`${API_BASE}/auctions/${id}`, { cache: "no-store" })
+  const res = await fetch(`${API_BASE}/api/auctions/${id}`, { cache: "no-store" })
   if (!res.ok) return null
   return res.json() as Promise<Auction>
 }
 
 async function fetchBids(id: string): Promise<PublicBid[]> {
-  const res = await fetch(`${API_BASE}/auctions/${id}/bids`, { cache: "no-store" })
+  const res = await fetch(`${API_BASE}/api/auctions/${id}/bids`, { cache: "no-store" })
   if (!res.ok) return []
   return res.json() as Promise<PublicBid[]>
 }
