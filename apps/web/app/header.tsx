@@ -51,7 +51,7 @@ export function Header() {
             width: 28, height: 28, borderRadius: 8, background: "var(--accent)",
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>
-            <span className="material-icons" style={{ fontSize: 16, color: "#fff" }}>gavel</span>
+            <img src="/gavel-icon.svg" alt="" width="16" height="16" style={{ display: "block" }} />
           </span>
           <span style={{
             fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4vw, 20px)", fontWeight: 600,
