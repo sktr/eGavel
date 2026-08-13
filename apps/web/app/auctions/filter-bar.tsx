@@ -33,23 +33,6 @@ export function FilterBar({
         <strong style={{ color: "var(--fg)", fontWeight: 600 }}>{total}</strong> items
       </span>
 
-      {/* Active category pill */}
-      <span
-        style={{
-          background: "var(--accent)", color: "#fff", borderRadius: 100,
-          padding: "4px 14px", fontSize: 13,
-          display: "inline-flex", alignItems: "center", gap: 6,
-        }}
-      >
-        All Categories
-        <button
-          style={{ background: "none", border: "none", color: "inherit", fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 0 }}
-          onClick={() => {}}
-        >
-          <span className="material-icons" style={{ fontSize: 16 }}>close</span>
-        </button>
-      </span>
-
       {/* Sort */}
       <select
         value={currentSort}

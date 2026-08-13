@@ -24,22 +24,6 @@ export async function AuctionList() {
 
   return (
     <div>
-      {/* Categories */}
-      <div style={{
-        display: "flex", gap: 8, flexWrap: "wrap",
-        paddingBottom: 40, borderBottom: "1px solid var(--border)", marginBottom: 40
-      }}>
-        {["All", "Art", "Collectibles", "Digital", "Hardware", "Books"].map((cat) => (
-          <span key={cat} style={{
-            border: "1px solid var(--border)", borderRadius: 100,
-            padding: "6px 16px", fontSize: 14, color: "var(--muted)",
-            background: "var(--surface)", cursor: "pointer",
-          }}>
-            {cat}
-          </span>
-        ))}
-      </div>
-
       {/* Featured */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em" }}>
