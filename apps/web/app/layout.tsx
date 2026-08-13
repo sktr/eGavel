@@ -10,14 +10,14 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ja" suppressHydrationWarning>
+    <html lang="en" translate="no" suppressHydrationWarning>
       <head>
         <style>{`
           @font-face{
             font-family:'Material Icons';
             font-style:normal;
             font-weight:400;
-            font-display:swap;
+            font-display:block;
             src:url(/fonts/material-icons.woff2) format('woff2');
           }
 
@@ -159,7 +159,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <span>© 2025 eGavel</span>
               <div style={{ display: "flex", gap: "var(--space-lg)" }}>
                 <a href="/how-it-works" style={{ color: "var(--muted)", textDecoration: "none" }}>How it Works</a>
-                <a href="https://github.com" style={{ color: "var(--muted)", textDecoration: "none" }}>GitHub</a>
+                <a href="https://github.com/sktr/egavel" style={{ color: "var(--muted)", textDecoration: "none" }}>GitHub</a>
               </div>
             </div>
           </footer>
