@@ -42,23 +42,18 @@ export function Header() {
         display: "flex", alignItems: "center", gap: "clamp(16px, 5vw, 24px)",
         padding: "16px 0", borderBottom: "1px solid var(--border)", flexWrap: "nowrap"
       }}>
-        <a href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
+        <a
+          href="/"
+          aria-label="eGavel home"
+          style={{ display: "flex", alignItems: "center", textDecoration: "none" }}
+        >
           <span style={{
             width: 28, height: 28, borderRadius: 8, background: "var(--accent)",
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>
             <span className="material-icons" style={{ fontSize: 16, color: "#fff" }}>gavel</span>
           </span>
-          <span style={{
-            fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4vw, 20px)", fontWeight: 600,
-            letterSpacing: "-0.02em", color: "var(--fg)", whiteSpace: "nowrap",
-          }}>
-            cashu auction
-          </span>
         </a>
-        <div style={{ display: "flex", gap: 24, listStyle: "none" }}>
-          <a href="/" style={{ color: "var(--muted)", fontSize: 14, textDecoration: "none" }}>Auctions</a>
-        </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -97,12 +92,12 @@ export function Header() {
                   {identity.pubkey.slice(0, 12)}…
                 </span>
                 {!loading && (
-                  <span className="header-mobile-hide" style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600 }}>
+                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600 }}>
                     {total.toLocaleString()}
                     <span style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)" }}> sats</span>
                   </span>
                 )}
-                <span className="header-mobile-hide material-icons" style={{ fontSize: 14, color: "var(--muted)" }}>
+                <span className="material-icons" style={{ fontSize: 14, color: "var(--muted)" }}>
                   {open ? "expand_less" : "expand_more"}
                 </span>
               </button>
