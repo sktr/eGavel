@@ -2,6 +2,7 @@ import type { Auction, PublicBid } from "@egavel/shared"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
 import { Gallery } from "./gallery"
+import { DeleteListingButton } from "./delete-listing-button"
 
 // Root (no /api suffix) — the code below adds "/api" explicitly. Matches the
 // convention used across the app so SSR_API_URL / NEXT_PUBLIC_API_URL can point
@@ -71,39 +72,55 @@ export default async function AuctionPage({
 
         {/* ===== RIGHT COLUMN: Info + Bid ===== */}
         <div>
-          {/* Item title */}
-          <h1
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: "clamp(22px, 2.5vw, 28px)",
-              fontWeight: 600,
-              letterSpacing: "-0.02em",
-              marginBottom: 8,
-              lineHeight: 1.2,
-            }}
-          >
-            {auction.item}
-          </h1>
-
-          {/* Item meta */}
+          {/* Item title + meta on one line */}
           <div
             style={{
               display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
               gap: 16,
-              color: "var(--muted)",
-              fontSize: 13,
-              marginBottom: 24,
+              marginBottom: 16,
+              flexWrap: "wrap",
             }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>inventory_2</span> {auction.state}
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>visibility</span> {bids.length} bids
-            </span>
-            {auction.mint_url === "" && (
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>Legacy listing — bidding disabled</span>
-            )}
+            <h1
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(22px, 2.5vw, 28px)",
+                fontWeight: 600,
+                letterSpacing: "-0.02em",
+                lineHeight: 1.2,
+              }}
+            >
+              {auction.item}
+            </h1>
+            <div
+              style={{
+                display: "flex",
+                gap: 16,
+                alignItems: "center",
+                flexShrink: 0,
+                color: "var(--muted)",
+                fontSize: 13,
+                paddingTop: 6,
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>inventory_2</span> {auction.state}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>visibility</span> {bids.length} bids
+              </span>
+              {auction.mint_url === "" && (
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>Legacy listing — bidding disabled</span>
+              )}
+              <DeleteListingButton
+                auctionId={auction.id}
+                sellerPubkey={auction.seller_pubkey}
+                state={auction.state}
+                bidsCount={bids.length}
+              />
+            </div>
           </div>
 
           {/* Live bid panel + history (polls the server) */}

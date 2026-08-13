@@ -1,0 +1,86 @@
+"use client"
+
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { useIdentity } from "../../../lib/identity"
+
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
+  .replace(/\/+$/, "")
+  .replace(/\/api$/, "")
+
+/**
+ * Seller-only "Delete listing" button for bid-less auctions. Shown next to
+ * the auction meta row (state / bid count) when the current identity is the
+ * seller and no bids exist yet.
+ */
+export function DeleteListingButton({
+  auctionId,
+  sellerPubkey,
+  state,
+  bidsCount,
+}: {
+  auctionId: string
+  sellerPubkey: string
+  state: string
+  bidsCount: number
+}) {
+  const { identity } = useIdentity()
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const canDelete =
+    identity !== null &&
+    identity.pubkey === sellerPubkey &&
+    state === "ACTIVE" &&
+    bidsCount === 0
+
+  if (!canDelete) return null
+
+  async function handleDelete() {
+    setError(null)
+    if (!identity) return
+    if (!window.confirm("Delete this listing? It has no bids yet, so no funds are affected.")) return
+    setBusy(true)
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/auctions/${auctionId}?seller_pubkey=${identity.pubkey}`,
+        { method: "DELETE" },
+      )
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? "delete failed")
+      }
+      router.push("/")
+      router.refresh()
+    } catch (err) {
+      setError(String(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {error && <span style={{ fontSize: 12, color: "var(--red)" }}>{error}</span>}
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={busy}
+        style={{
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          background: "var(--surface)",
+          color: "var(--red)",
+          padding: "6px 14px",
+          fontSize: 12,
+          cursor: busy ? "not-allowed" : "pointer",
+          fontFamily: "inherit",
+          lineHeight: 1.4,
+          opacity: busy ? 0.5 : 1,
+        }}
+      >
+        Delete listing
+      </button>
+    </>
+  )
+}

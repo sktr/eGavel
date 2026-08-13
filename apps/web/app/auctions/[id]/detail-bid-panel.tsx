@@ -69,7 +69,7 @@ export function DetailBidPanel({
         background: "var(--surface)",
         border: "1px solid var(--border)",
         borderRadius: "var(--radius-lg)",
-        padding: 24,
+        padding: 28,
       }}
     >
       {/* Current highest bid */}
@@ -78,23 +78,25 @@ export function DetailBidPanel({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "baseline",
-          marginBottom: 12,
+          marginBottom: 20,
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>
+        <span style={{ fontSize: 14, color: "var(--muted)", fontWeight: 500 }}>
           Current Bid
         </span>
         <span
           style={{
             fontFamily: "var(--font-display)",
-            fontSize: 28,
+            fontSize: 34,
             fontWeight: 600,
             letterSpacing: "-0.02em",
             color: "var(--fg)",
           }}
         >
           {highestBid.toLocaleString()}{" "}
-          <span style={{ fontSize: 16, fontWeight: 400, color: "var(--muted)" }}>
+          <span style={{ fontSize: 17, fontWeight: 400, color: "var(--muted)" }}>
             sats
           </span>
         </span>
