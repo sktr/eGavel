@@ -61,7 +61,7 @@ server — that is the core of the work.
        conditional UPDATE. No Cron Trigger / Durable Object needed.
        — done (2026-08-13)
 4. [x] DB schema ported to D1 migrations and applied to the remote database.
-5. [x] Worker deployed to Cloudflare (cashu-auction-api.sktr1211.workers.dev);
+5. [x] Worker deployed to Cloudflare (egavel-api.sktr1211.workers.dev);
        SERVER_PRIVATE_KEY set as a secret; /health and listing create/list
        verified on the deployed Worker. — done (2026-08-13)
 6. [ ] Deploy web to Vercel (set `NEXT_PUBLIC_API_URL` to the worker URL);

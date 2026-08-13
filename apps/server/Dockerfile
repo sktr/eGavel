@@ -12,12 +12,12 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/server/package.json ./apps/server/
-RUN pnpm install --frozen-lockfile --filter @cashu-auction/server...
+RUN pnpm install --frozen-lockfile --filter @egavel/server...
 
 # Build shared types + server
 COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
-RUN pnpm --filter @cashu-auction/shared build && pnpm --filter @cashu-auction/server build
+RUN pnpm --filter @egavel/shared build && pnpm --filter @egavel/server build
 
 ENV PORT=3001 NODE_ENV=production
 RUN mkdir -p /app/data

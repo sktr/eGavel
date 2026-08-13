@@ -1,6 +1,6 @@
 # Issue tracker: GitHub Issues
 
-Issues for this repo live in [GitHub Issues](https://github.com/sktr/cashu-auction/issues).
+Issues for this repo live in [GitHub Issues](https://github.com/sktr/egavel/issues).
 
 ## When a skill says "fetch the relevant ticket"
 

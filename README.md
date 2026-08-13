@@ -84,7 +84,7 @@ SERVER_PRIVATE_KEY=nsec1... docker compose up --build
 ### Tests
 
 ```bash
-pnpm --filter @cashu-auction/server test   # server 95 tests
+pnpm --filter @egavel/server test   # server 95 tests
 cd apps/web && npx vitest run               # web 18 tests
 ```
 

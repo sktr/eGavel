@@ -24,19 +24,19 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared types
-        run: pnpm --filter @cashu-auction/shared build
+        run: pnpm --filter @egavel/shared build
 
       - name: Server tests
-        run: pnpm --filter @cashu-auction/server test
+        run: pnpm --filter @egavel/server test
 
       - name: Web tests
-        run: pnpm --filter @cashu-auction/web exec vitest run
+        run: pnpm --filter @egavel/web exec vitest run
 
       - name: Server typecheck
-        run: pnpm --filter @cashu-auction/server exec tsc --noEmit
+        run: pnpm --filter @egavel/server exec tsc --noEmit
 
       - name: Web typecheck
-        run: pnpm --filter @cashu-auction/web exec tsc --noEmit
+        run: pnpm --filter @egavel/web exec tsc --noEmit
 
       - name: Server build
-        run: pnpm --filter @cashu-auction/server build
+        run: pnpm --filter @egavel/server build

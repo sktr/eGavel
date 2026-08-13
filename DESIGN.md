@@ -121,9 +121,9 @@ Cashu Auction is a peer-to-peer auction platform built on Cashu e-cash.
 | Page | File | Key Sections |
 |------|------|-------------|
 | **Listing** | `response.html` | Hero, tabs, active grid, past section |
-| **Detail** | `cashu-auction-detail.html` | Item hero, bid panel, bid history |
-| **Create** | `cashu-auction-create.html` | Form with validation, confirmation modal |
-| **Dashboard** | `cashu-auction-dashboard.html` | Stats grid, active listings, active bids |
+| **Detail** | `egavel-detail.html` | Item hero, bid panel, bid history |
+| **Create** | `egavel-create.html` | Form with validation, confirmation modal |
+| **Dashboard** | `egavel-dashboard.html` | Stats grid, active listings, active bids |
 
 All pages share the same nav, footer, tokens, and component styles.
 </artifact>
