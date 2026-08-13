@@ -208,34 +208,9 @@ export default function CreateAuctionPage() {
     setImages((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleSaveDraft() {
-    try {
-      const draft = {
-        item,
-        description,
-        startPrice,
-        reservePrice,
-        buyNowPrice,
-        duration,
-        category,
-        condition,
-        shipping,
-        agreeTerms,
-        mintUrl,
-        images,
-      };
-      const drafts = JSON.parse(localStorage.getItem("auction_drafts") || "[]");
-      drafts.push({ ...draft, savedAt: Date.now() });
-      localStorage.setItem("auction_drafts", JSON.stringify(drafts));
-      showToast("Draft saved", "edit");
-    } catch {
-      showToast("Failed to save draft", "warning");
-    }
-  }
-
   function handleCancel() {
     if (item || description || startPrice) {
-      if (!confirm("Discard draft?")) return;
+      if (!confirm("Discard changes?")) return;
     }
     setItem("");
     setDescription("");
@@ -250,7 +225,7 @@ export default function CreateAuctionPage() {
     setMintUrl(DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin");
     setImages([]);
     setFieldErrors({});
-    showToast("Draft discarded", "delete");
+    showToast("Form cleared", "delete");
   }
 
   function errStyle(field: string) {
@@ -332,19 +307,6 @@ export default function CreateAuctionPage() {
         >
           Create Listing
         </h1>
-        <a
-          href="/create/drafts"
-          style={{
-            fontSize: 14,
-            color: "var(--muted)",
-            textDecoration: "none",
-          }}
-        >
-          View Drafts{" "}
-          <span className="material-icons" style={{ fontSize: 14, verticalAlign: "middle" }}>
-            arrow_forward
-          </span>
-        </a>
       </div>
 
       {/* Form grid: two columns */}
@@ -984,30 +946,6 @@ export default function CreateAuctionPage() {
               }}
             >
               {submitting ? "Publishing…" : "Publish"}
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              disabled={submitting}
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius)",
-                background: "var(--surface)",
-                color: "var(--fg)",
-                padding: "12px 32px",
-                fontSize: 15,
-                fontFamily: "inherit",
-                cursor: submitting ? "not-allowed" : "pointer",
-                transition: "background .15s",
-              }}
-              onMouseEnter={(e) => {
-                if (!submitting) e.currentTarget.style.background = "var(--border)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--surface)";
-              }}
-            >
-              Save as Draft
             </button>
             <button
               type="button"
