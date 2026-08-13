@@ -131,6 +131,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           @media(prefers-reduced-motion:reduce){
             *,*::before,*::after{transition-duration:0s!important;animation-duration:0s!important}
           }
+
+          @media (max-width: 639px) {
+            .header-mobile-hide { display: none !important; }
+          }
         `}</style>
       </head>
       <body>

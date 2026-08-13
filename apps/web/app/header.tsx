@@ -93,16 +93,16 @@ export function Header() {
                 <span className="material-icons" style={{ fontSize: 16, color: "var(--accent)" }}>
                   person
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)" }}>
+                <span className="header-mobile-hide" style={{ fontFamily: "var(--font-mono)" }}>
                   {identity.pubkey.slice(0, 12)}…
                 </span>
                 {!loading && (
-                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600 }}>
+                  <span className="header-mobile-hide" style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600 }}>
                     {total.toLocaleString()}
                     <span style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)" }}> sats</span>
                   </span>
                 )}
-                <span className="material-icons" style={{ fontSize: 14, color: "var(--muted)" }}>
+                <span className="header-mobile-hide material-icons" style={{ fontSize: 14, color: "var(--muted)" }}>
                   {open ? "expand_less" : "expand_more"}
                 </span>
               </button>
