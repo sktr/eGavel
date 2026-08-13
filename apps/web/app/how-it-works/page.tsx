@@ -9,7 +9,7 @@ export default function HowItWorksPage() {
       </div>
 
       <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "clamp(28px,4vw,40px)", marginBottom: 8, letterSpacing: "-0.02em" }}>
-        How Cashu Auction Works
+        How eGavel Works
       </h1>
       <p style={{ color: "var(--muted)", fontSize: 16, marginBottom: 48, maxWidth: 560, lineHeight: 1.6 }}>
         Peer-to-peer auctions without custody. Bids are locked as Cashu e-cash with a

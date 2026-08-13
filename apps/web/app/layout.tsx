@@ -4,7 +4,7 @@ import { RecoveryPhraseDialog } from "./recovery-dialog"
 import { ThemeProvider } from "@wrksz/themes/next"
 
 export const metadata = {
-  title: "Cashu Auction",
+  title: "eGavel",
   description: "A non-custodial Cashu e-cash auction platform (2-of-3 P2PK)",
 }
 
@@ -149,7 +149,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             padding: "var(--space-xl) 24px",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontSize: 13, flexWrap: "wrap", gap: "var(--space-md)" }}>
-              <span>© 2025 Cashu Auction</span>
+              <span>© 2025 eGavel</span>
               <div style={{ display: "flex", gap: "var(--space-lg)" }}>
                 <a href="/how-it-works" style={{ color: "var(--muted)", textDecoration: "none" }}>How it Works</a>
                 <a href="https://github.com" style={{ color: "var(--muted)", textDecoration: "none" }}>GitHub</a>
