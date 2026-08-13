@@ -96,3 +96,55 @@ describe("db proxy-bidding schema", async () => {
     expect(verified[0]!.current_amount).toBe(800)
   })
 })
+
+describe("db shipping text migration", async () => {
+  let db: Db
+  const origPath = process.env.DB_PATH
+  const testPath = `data/test-shipping-${Date.now()}.db`
+
+  beforeEach(async () => {
+    process.env.DB_PATH = testPath
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+    db = initDb()
+  })
+
+  afterEach(async () => {
+    if (origPath === undefined) delete process.env.DB_PATH
+    else process.env.DB_PATH = origPath
+  })
+
+  it("rewrites legacy shipping option values to neutral wording", async () => {
+    await db.saveAuction(legacyAuction("a1"))
+    await db.saveAuction(legacyAuction("a2"))
+    await db.saveAuction(legacyAuction("a3"))
+    // Simulate a pre-migration database: the old option values in raw SQL.
+    await db.exec(
+      `UPDATE auctions SET shipping = 'Home delivery' WHERE id = 'a1'; ` +
+        `UPDATE auctions SET shipping = 'Home delivery (shipping included)' WHERE id = 'a2'; ` +
+        `UPDATE auctions SET shipping = 'In-person handoff' WHERE id = 'a3';`,
+    )
+
+    // Re-init → the idempotent migration must rewrite the values.
+    db = initDb()
+
+    expect((await db.getAuction("a1"))!.shipping).toBe("Courier (buyer pays shipping)")
+    expect((await db.getAuction("a2"))!.shipping).toBe("Courier (free shipping)")
+    expect((await db.getAuction("a3"))!.shipping).toBe("In-person handover")
+  })
+
+  it("leaves free-text and empty shipping values untouched", async () => {
+    await db.saveAuction(legacyAuction("a1"))
+    await db.saveAuction(legacyAuction("a2"))
+    await db.exec(
+      `UPDATE auctions SET shipping = 'Ships from EU only' WHERE id = 'a1'; ` +
+        `UPDATE auctions SET shipping = '' WHERE id = 'a2';`,
+    )
+
+    db = initDb()
+
+    expect((await db.getAuction("a1"))!.shipping).toBe("Ships from EU only")
+    expect((await db.getAuction("a2"))!.shipping).toBe("")
+  })
+})

@@ -157,6 +157,15 @@ export function initDb(): Db {
     }
   }
 
+  // Shipping free-text migration (2026-08-13): rewrite the legacy fixed-choice
+  // option values to neutral wording. Naturally idempotent — a re-run finds no
+  // rows matching the old values.
+  db.exec(
+    `UPDATE auctions SET shipping = 'Courier (buyer pays shipping)' WHERE shipping = 'Home delivery';
+     UPDATE auctions SET shipping = 'Courier (free shipping)' WHERE shipping = 'Home delivery (shipping included)';
+     UPDATE auctions SET shipping = 'In-person handover' WHERE shipping = 'In-person handoff';`,
+  )
+
   const insertAuction = db.prepare(`
     INSERT OR REPLACE INTO auctions
       (id, item, description, start_price, reserve_price, buy_now_price, end_time, seller_pubkey, state, start_time, last_extended_at, winner_npub, winning_amount, mint_url, category, condition, shipping, image, images)
