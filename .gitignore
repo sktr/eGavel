@@ -18,3 +18,4 @@ exports/
 .scratch/
 .slim/
 .superpowers/
+.wrangler/

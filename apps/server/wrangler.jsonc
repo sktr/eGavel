@@ -1,0 +1,15 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cashu-auction-api",
+	"main": "src/worker.ts",
+	"compatibility_date": "2025-11-18",
+	"compatibility_flags": ["nodejs_compat"],
+	"d1_databases": [
+		{
+			"binding": "cashu_auction_db",
+			"database_name": "cashu-auction-db",
+			"database_id": "6f10433e-7d40-4162-a973-55127e0d9f0a",
+			"migrations_dir": "migrations"
+		}
+	]
+}

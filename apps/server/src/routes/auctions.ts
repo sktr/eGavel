@@ -13,20 +13,27 @@ import { canonicalPubkey } from "../lib/canonical.js"
 import { toPublicBid } from "../lib/public-bid.js"
 import { auctionFeeBps } from "../lib/auction-fee.js"
 
-function serverPubkey(): string | null {
-  const key = process.env.NOSTR_PRIVATE_KEY
-  if (!key) return null
-  try {
-    if (!key.startsWith("nsec")) return getPublicKey(hexToBytes(key))
-    const { data } = nip19.decode(key)
-    return getPublicKey(data as Uint8Array)
-  } catch {
-    return null
-  }
+export interface AuctionRoutesConfig {
+  serverKey?: string
+  feeBps?: number
 }
 
-export function createAuctionRoutes(db: Db) {
+export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   const router = new Hono()
+  const serverKey = config.serverKey ?? process.env.NOSTR_PRIVATE_KEY
+
+  function serverPubkey(): string | null {
+    const key = serverKey
+    if (!key) return null
+    try {
+      if (!key.startsWith("nsec")) return getPublicKey(hexToBytes(key))
+      const decoded = nip19.decode(key)
+      if (decoded.type !== "nsec") return null
+      return getPublicKey(decoded.data)
+    } catch {
+      return null
+    }
+  }
 
   router.get("/auctions", async (c) => {
     const filter = c.req.query("filter")
@@ -191,11 +198,12 @@ export function createAuctionRoutes(db: Db) {
   })
 
   function skHexForServer(): string {
-    const key = process.env.NOSTR_PRIVATE_KEY
+    const key = serverKey
     if (!key) throw new Error("server key not configured")
     if (key.startsWith("nsec")) {
-      const { data } = nip19.decode(key)
-      return bytesToHex(data as Uint8Array)
+      const decoded = nip19.decode(key)
+      if (decoded.type !== "nsec") throw new Error("invalid nsec")
+      return bytesToHex(decoded.data)
     }
     return key
   }
@@ -242,7 +250,7 @@ export function createAuctionRoutes(db: Db) {
     // Fee split: operator keeps AUCTION_FEE_BPS (default 5%) of the winning
     // amount. Proxy bidding: the winner locked their full MAX, so the excess
     // (locked - winning_amount) is returned to the winner as change.
-    const feeBps = auctionFeeBps()
+    const feeBps = config.feeBps ?? auctionFeeBps()
     const totalInput = bundle.proofs.reduce((a, p) => a + p.amount, 0)
     const winningAmount = auction.winning_amount ?? 0
     const { sellerNet, fee, change } = computeClaimSplit(
@@ -351,11 +359,12 @@ export function createAuctionRoutes(db: Db) {
   })
 
   function getServerPubkeyHex(): string {
-    const key = process.env.NOSTR_PRIVATE_KEY
+    const key = serverKey
     if (!key) return ""
     if (key.startsWith("nsec")) {
-      const { data } = nip19.decode(key)
-      return getPublicKey(data as Uint8Array)
+      const decoded = nip19.decode(key)
+      if (decoded.type !== "nsec") return ""
+      return getPublicKey(decoded.data)
     }
     return getPublicKey(hexToBytes(key))
   }

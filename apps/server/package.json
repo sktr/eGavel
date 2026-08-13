@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:worker": "wrangler dev --port 8788",
+    "deploy:worker": "wrangler deploy"
   },
   "dependencies": {
     "@cashu-auction/shared": "workspace:*",
@@ -24,6 +26,7 @@
     "nostr-tools": "^2.11.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260811.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",

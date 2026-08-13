@@ -49,8 +49,11 @@ server — that is the core of the work.
 1. [x] Refactor `Db` to async; keep better-sqlite3 implementation; run the
       existing server tests unchanged (they call the same methods, now async).
       — done (2026-08-13, commit 76e0810)
-2. [ ] Add `wrangler.toml` + `src/index.ts` Workers entry with a D1 binding;
+2. [x] Add `wrangler.jsonc` + `src/worker.ts` Workers entry with a D1 binding;
       implement `D1Db` against the same interface; local dev via `wrangler dev`.
+      — done (2026-08-13): Worker serves /health, listing create/list, and
+      bid acceptance against a local D1 (miniflare); env injected via config
+      (`createApp(db, { serverKey, feeBps })`).
 3. [ ] Replace the scheduler with a Cron Trigger / Durable Object; port the
       settle logic; rework `withAuctionLock` (DO or transactions).
 4. [ ] Port DB schema to D1 migrations; add `wrangler d1 migrations apply`.
