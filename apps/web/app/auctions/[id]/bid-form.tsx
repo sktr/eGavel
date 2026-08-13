@@ -509,15 +509,18 @@ export function BidForm({
             </div>
           )}
 
-                    {/* Get Sats faucet — dev-only */}
-          {DEV_TOOLS && !testMode && (
+                    {/* Mint sats: dev shows the testnet faucet, production the real
+              Lightning mint flow on the auction's mint */}
+          {!testMode && (
             <details style={{ fontSize: 13 }}>
               <summary suppressHydrationWarning style={{ cursor: "pointer", color: "var(--muted)", padding: "4px 0" }}>
-                Get Sats
+                {DEV_TOOLS ? "Get Sats" : "Mint sats (Lightning)"}
               </summary>
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
                 <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
-                  Enter how many sats you need — they'll be minted straight into your wallet.
+                  {DEV_TOOLS
+                    ? "Enter how many sats you need — they'll be minted straight into your wallet."
+                    : `Pay the Lightning invoice with your wallet — ecash is minted on this auction's mint (${auction.mint_url}).`}
                 </p>
 
                 {mintStep === "idle" || mintStep === "quoting" ? (
@@ -556,7 +559,7 @@ export function BidForm({
                         lineHeight: 1.4,
                       }}
                     >
-                      {mintStep === "quoting" ? "Requesting…" : "Get Sats"}
+                      {mintStep === "quoting" ? "Requesting…" : DEV_TOOLS ? "Get Sats" : "Mint"}
                     </button>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>
                       {wallet.ready ? `balance: ${wallet.balance.toLocaleString()} sats` : "loading wallet…"}
@@ -599,20 +602,24 @@ export function BidForm({
                         Copy Invoice
                       </button>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                        Waiting for payment — testnut auto-pays in a few seconds…
+                        {DEV_TOOLS
+                          ? "Waiting for payment — testnut auto-pays in a few seconds…"
+                          : "Waiting for payment — pay the invoice with your Lightning wallet (Minibits, Alby, Phoenix…)"}
                       </span>
                     </div>
-                    <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
-                      Paying externally?{" "}
-                      <a
-                        href="https://faucet.lightning.community/"
-                        target="_blank"
-                        rel="noopener"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        Lightning Faucet
-                      </a>
-                    </p>
+                    {DEV_TOOLS && (
+                      <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
+                        Paying externally?{" "}
+                        <a
+                          href="https://faucet.lightning.community/"
+                          target="_blank"
+                          rel="noopener"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          Lightning Faucet
+                        </a>
+                      </p>
+                    )}
                   </div>
                 ) : mintStep === "claiming" ? (
                   <p style={{ color: "var(--muted)", margin: 0 }}>Minting tokens…</p>
