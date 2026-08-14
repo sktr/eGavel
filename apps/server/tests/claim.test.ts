@@ -166,7 +166,13 @@ describe("bid-list endpoints (max secrecy)", async () => {
   });
 
   it("never exposes max_amount on /bids (own bid history)", async () => {
-    const res = await app.request("http://localhost/api/bids?bidder_pubkey=03cafebabe");
+    // SEC-2: /bids requires a Schnorr signature from the bidder.
+    const skHex = bytesToHex(schnorr.utils.randomSecretKey());
+    const bidderPubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(skHex)));
+    const sig = signSecret(`bids:${bidderPubkey}`, skHex);
+    const res = await app.request(
+      `http://localhost/api/bids?bidder_pubkey=${bidderPubkey}&bidder_sig=${sig}`,
+    );
     expect(res.status).toBe(200);
     const bids = (await res.json()) as Record<string, unknown>[];
     for (const b of bids) {

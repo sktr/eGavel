@@ -234,8 +234,14 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
 
   router.get("/bids", async (c) => {
     const bidderPubkey = c.req.query("bidder_pubkey");
+    const bidderSig = c.req.query("bidder_sig") ?? "";
     if (!bidderPubkey) {
       return c.json({ error: "bidder_pubkey query param required" }, 400);
+    }
+    // The pubkey alone is not proof of identity — require a Schnorr signature
+    // over `bids:<pubkey>` so a third party cannot read another user's history.
+    if (!verifySecretSignature(bidderSig, `bids:${bidderPubkey}`, canonicalPubkey(bidderPubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400);
     }
     return c.json((await db.getBidsByBidder(bidderPubkey)).map(toPublicBid));
   });
