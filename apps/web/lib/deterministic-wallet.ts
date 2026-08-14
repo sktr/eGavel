@@ -1,6 +1,7 @@
 import { Wallet, type CounterSource } from "@cashu/cashu-ts";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { loadAccount } from "./key-store";
+import { storeProofsInWallet } from "./wallet";
 
 /**
  * NUT-13 deterministic wallet: the account's BIP-39 phrase derives every new
@@ -75,4 +76,58 @@ export function walletOptions(_mintUrl: string): WalletBuildOptions {
 /** Shared constructor — every output-creating site must use this. */
 export function buildWallet(mintUrl: string): Wallet {
   return new Wallet(mintUrl, walletOptions(mintUrl));
+}
+
+export interface RecoverResult {
+  mint: string;
+  recovered: number;
+}
+
+/**
+ * NUT-13 recovery: regenerate deterministic proofs for each mint+keyset via
+ * the mint's NUT-09 restore endpoint, drop spent proofs (NUT-07), and merge
+ * the unspent balance into the wallet store. Never throws — per-mint failures
+ * are reported as recovered: 0.
+ */
+export async function recoverBalanceFromSeed(opts: {
+  mnemonic: string;
+  mintUrls: string[];
+  onProgress?: (msg: string) => void;
+}): Promise<RecoverResult[]> {
+  const { mnemonic, mintUrls, onProgress } = opts;
+  const seed = mnemonicToSeedSync(mnemonic);
+  const results: RecoverResult[] = [];
+
+  for (const mintUrl of mintUrls) {
+    try {
+      const wallet = new Wallet(mintUrl, {
+        unit: "sat",
+        bip39seed: seed,
+        // No counterSource: batchRestore derives from explicit counters; the
+        // wallet's own persistent source is only for future mints.
+      });
+      await wallet.loadMint();
+      const keysets = await fetch(`${mintUrl}/v1/keysets`)
+        .then((r) => r.json())
+        .then((d: { keysets: { id: string }[] }) => d.keysets ?? []);
+      if (keysets.length === 0) throw new Error("no keysets");
+
+      let recovered = 0;
+      for (const ks of keysets) {
+        onProgress?.(`scanning ${mintUrl} (${ks.id})…`);
+        const { proofs } = await wallet.batchRestore(300, 100, 0, ks.id);
+        if (proofs.length === 0) continue;
+        const { unspent } = await wallet.groupProofsByState(proofs);
+        if (unspent.length > 0) {
+          storeProofsInWallet(unspent, mintUrl);
+          recovered += unspent.reduce((a, p) => a + Number(p.amount), 0);
+        }
+      }
+      results.push({ mint: mintUrl, recovered });
+    } catch (err) {
+      onProgress?.(`${mintUrl}: ${err instanceof Error ? err.message : String(err)}`);
+      results.push({ mint: mintUrl, recovered: 0 });
+    }
+  }
+  return results;
 }
