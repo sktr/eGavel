@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes } from "../src/lib/hex.js";

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vite-plus/test"
+import { describe, it, expect } from "vitest"
 import { minBidIncrement } from "../src/lib/min-increment.js"
 
 describe("minBidIncrement", () => {

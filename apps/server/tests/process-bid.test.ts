@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from "vite-plus/test"
+import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { initDb, type Db } from "../src/db/index.js"
 import { processBid } from "../src/process-bid.js"
 import type { Auction } from "@egavel/shared"

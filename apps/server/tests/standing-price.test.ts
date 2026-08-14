@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vite-plus/test"
+import { describe, it, expect } from "vitest"
 import { computeStandingPrice } from "../src/lib/standing-price.js"
 
 describe("computeStandingPrice", () => {
