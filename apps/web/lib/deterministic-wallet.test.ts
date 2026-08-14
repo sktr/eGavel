@@ -13,7 +13,10 @@ import {
   walletOptions,
   recoverBalanceFromSeed,
 } from "./deterministic-wallet";
-import { saveAccount } from "./key-store";
+import { deriveAccountFromWords, saveAccount } from "./key-store";
+
+const MNEMONIC =
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 function proof(secret: string, amount: number): Proof {
   // cashu-ts types Proof.amount as Amount; numbers are the runtime shape
@@ -146,7 +149,10 @@ describe("recoverBalanceFromSeed", () => {
    *     response echoes the request outputs so cashu-ts can pair B_ -> signature
    *   - states:   POST /v1/checkstate { Ys: [sha256(secret)] } -> { states }
    * batchRestore stops only after gapLimit/batchSize=3 consecutive empty
-   * batches, so only the first restore call may return proofs.
+   * batches, so the LAST restore call that can still return proofs is the
+   * 3rd (counter=200): the two calls before and the three after are empty,
+   * which makes cashu-ts report a definite lastCounterWithSignature from a
+   * non-zero batch (200 + indexInBatch).
    */
   function installMintFetchMock(opts: { failHosts?: string[] } = {}) {
     const fail = new Set(opts.failHosts ?? []);
@@ -176,8 +182,8 @@ describe("recoverBalanceFromSeed", () => {
         if (url.endsWith("/v1/keys")) return jsonResponse({ keysets: [{ ...keyset, keys }] });
         if (url.endsWith("/v1/restore")) {
           restoreCalls += 1;
-          if (restoreCalls > 1) return jsonResponse({ outputs: [], signatures: [] });
           const { outputs } = JSON.parse(init?.body ?? "{}") as { outputs: unknown[] };
+          if (restoreCalls !== 3) return jsonResponse({ outputs: [], signatures: [] });
           return jsonResponse({
             outputs: outputs.slice(0, 2),
             signatures: [
@@ -195,14 +201,13 @@ describe("recoverBalanceFromSeed", () => {
         return jsonResponse({ error: "not found" }, 404);
       }),
     );
-    return { calls };
+    return { calls, keysetId };
   }
 
   it("restores unspent proofs and skips spent ones, reporting per-mint amounts", async () => {
-    const { calls } = installMintFetchMock();
+    const { calls, keysetId } = installMintFetchMock();
     const results = await recoverBalanceFromSeed({
-      mnemonic:
-        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      mnemonic: MNEMONIC,
       mintUrls: ["https://mint.example"],
     });
 
@@ -234,13 +239,22 @@ describe("recoverBalanceFromSeed", () => {
     expect(store["https://mint.example"]).toBeDefined();
     expect(store["https://mint.example"]!).toHaveLength(1);
     expect(Number(JSON.parse(store["https://mint.example"]![0]!).amount)).toBe(4);
+
+    // counter-advance invariant: the account's persistent source must sit past
+    // the restored range so the next mint cannot re-derive pre-loss secrets.
+    // The mock returns signatures only on the LAST signed batch (counter=200,
+    // two echoed outputs => lastCounterWithSignature = 200 + 1 = 201), so the
+    // cursor must land on 201 + 1 = 202.
+    const advancedKey = `egavel-wallet-counters:${deriveAccountFromWords(MNEMONIC).pubkey}`;
+    expect(JSON.parse(localStorage.getItem(advancedKey) ?? "{}")).toEqual({
+      [keysetId]: 202,
+    });
   });
 
   it("survives a failing mint and continues with the next", async () => {
     const { calls } = installMintFetchMock({ failHosts: ["mint-down.example"] });
     const results = await recoverBalanceFromSeed({
-      mnemonic:
-        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      mnemonic: MNEMONIC,
       mintUrls: ["https://mint-down.example", "https://mint-ok.example"],
     });
     expect(results).toHaveLength(2);
