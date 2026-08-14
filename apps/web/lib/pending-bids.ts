@@ -132,14 +132,17 @@ export async function placeBid(params: {
 }): Promise<PlaceBidResult> {
   const base = normalizedBase(params.apiBase ?? API_BASE);
   try {
-    const pre = await fetch(`${base}/api/bids`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...params.payload, mode: "pending" }),
-    });
-    // A failed pre-registration is not fatal: the live bid below may still
-    // succeed, and if it too fails the local entry covers recovery.
-    void pre;
+    // Pre-register is best-effort: a rejected or failed pre-register must not
+    // prevent the live bid below (the local entry still covers recovery).
+    try {
+      await fetch(`${base}/api/bids`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...params.payload, mode: "pending" }),
+      });
+    } catch {
+      // ignore — the live bid below still proceeds
+    }
 
     const res = await fetch(`${base}/api/bids`, {
       method: "POST",

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Proof } from "@cashu/cashu-ts";
+import { swapLockedProofs } from "./claim";
+import { storeProofsInWallet } from "./wallet";
 import {
   computeBidId,
   buildPendingEntry,
@@ -8,9 +11,21 @@ import {
   removePendingBid,
   reconcileEntry,
   placeBid,
+  recoverAfterLocktime,
   myBidState,
   type PendingBidEntry,
 } from "./pending-bids";
+
+vi.mock("./claim", () => ({
+  swapLockedProofs: vi.fn(),
+}));
+vi.mock("./wallet", () => ({
+  storeProofsInWallet: vi.fn(),
+}));
+
+const RECOVERED_PROOFS = [
+  { keyset_id: "ks2", C: "r1", secret: "recovered", amount: 500 },
+] as unknown as Proof[];
 
 const SECRET_A = JSON.stringify([
   "P2PK",
@@ -140,6 +155,58 @@ describe("placeBid", () => {
     const result = await placeBid({ payload: JSON.parse(e.payload), entry: e, apiBase: base });
     expect(result.ok).toBe(false);
     expect(loadPendingBids()[0]!.status).toBe("pending");
+  });
+
+  it("still submits the live bid when the pre-register rejects", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    savePendingBid(e);
+    const result = await placeBid({ payload: JSON.parse(e.payload), entry: e, apiBase: base });
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string).mode).toBe("pending");
+    expect(JSON.parse(fetchMock.mock.calls[1]![1]!.body as string).mode).toBeUndefined();
+    expect(loadPendingBids()[0]!.status).toBe("live");
+  });
+});
+
+describe("recoverAfterLocktime", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    vi.mocked(swapLockedProofs).mockResolvedValue(RECOVERED_PROOFS);
+  });
+
+  it("throws before locktime and does not call the swap", async () => {
+    const e = entry({ locktime: Math.floor(Date.now() / 1000) + 3600 });
+    await expect(recoverAfterLocktime(e, "abc123")).rejects.toThrow("locktime not reached");
+    expect(swapLockedProofs).not.toHaveBeenCalled();
+    expect(storeProofsInWallet).not.toHaveBeenCalled();
+  });
+
+  it("swaps the locked proofs and marks the entry refunded after locktime", async () => {
+    const e = entry({ locktime: Math.floor(Date.now() / 1000) - 60 });
+    savePendingBid(e);
+    await recoverAfterLocktime(e, "abc123");
+    expect(swapLockedProofs).toHaveBeenCalledTimes(1);
+    const [proofsArg, amountArg, skArg] = vi.mocked(swapLockedProofs).mock.calls[0]!;
+    expect(amountArg).toBe(500);
+    expect(skArg).toBe("abc123");
+    expect(proofsArg).toHaveLength(1);
+    expect(proofsArg[0]).toEqual(
+      expect.objectContaining({
+        id: "ks1",
+        amount: 500,
+        secret: SECRET_A,
+        C: "c",
+        mint_url: "https://mint.example",
+      }),
+    );
+    expect(storeProofsInWallet).toHaveBeenCalledWith(RECOVERED_PROOFS, "https://mint.example");
+    expect(loadPendingBids()[0]!.status).toBe("refunded");
   });
 });
 
