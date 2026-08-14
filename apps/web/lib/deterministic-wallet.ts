@@ -65,7 +65,7 @@ export type WalletBuildOptions =
  * Pure option builder: with a recovery phrase the wallet derives secrets
  * deterministically (NUT-13); legacy hex-key accounts get a plain wallet.
  */
-export function walletOptions(mintUrl: string): WalletBuildOptions {
+export function walletOptions(_mintUrl: string): WalletBuildOptions {
   const account = loadAccount();
   if (!account?.words) return { unit: "sat" };
   const bip39seed = mnemonicToSeedSync(account.words);
