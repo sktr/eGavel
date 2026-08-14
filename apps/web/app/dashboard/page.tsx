@@ -4,6 +4,14 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useIdentity } from "../../lib/identity";
 import { useWatchlist } from "../../lib/watchlist";
 import { refundBid, collectChange } from "../../lib/claim";
+import {
+  loadPendingBids,
+  updatePendingBidStatus,
+  removePendingBid,
+  reconcileEntry,
+  retryEntry,
+  recoverAfterLocktime,
+} from "../../lib/pending-bids";
 import { bytesToHex } from "../../lib/hex";
 import type { Auction, PublicBid } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
@@ -197,6 +205,8 @@ export default function DashboardPage() {
   >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lockedFunds, setLockedFunds] = useState<ReturnType<typeof loadPendingBids>>([]);
+  const [recovering, setRecovering] = useState<Record<string, boolean>>({});
 
   const fetchAuctionById = useCallback(async (id: string): Promise<Auction | null> => {
     try {
@@ -343,6 +353,81 @@ export default function DashboardPage() {
     };
   }, [bids, identity]);
 
+  // Reconcile local pending-bid entries against the server on load.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = loadPendingBids();
+      if (entries.length === 0) return;
+      const out: typeof entries = [];
+      for (const e of entries) {
+        const st = await reconcileEntry(e);
+        if (cancelled) return;
+        if (st === "live") {
+          updatePendingBidStatus(e.bidId, "live");
+          out.push({ ...e, status: "live" });
+        } else if (st === "refunded") {
+          removePendingBid(e.bidId);
+        } else if (st === "refundable") {
+          // registered as pending or outbid — refundable via refundBid
+          updatePendingBidStatus(e.bidId, "outbid");
+          out.push({ ...e, status: "outbid" });
+        } else {
+          out.push(e); // unregistered — retry or locktime recovery
+        }
+      }
+      setLockedFunds(out);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleRetryLocked = useCallback(async (e: (typeof lockedFunds)[number]) => {
+    setRecovering((r) => ({ ...r, [e.bidId]: true }));
+    try {
+      const result = await retryEntry(e);
+      if (result.ok) {
+        updatePendingBidStatus(e.bidId, "live");
+        setLockedFunds((l) => l.map((x) => (x.bidId === e.bidId ? { ...x, status: "live" } : x)));
+      } else {
+        window.alert(`retry failed: ${result.error}`);
+      }
+    } finally {
+      setRecovering((r) => ({ ...r, [e.bidId]: false }));
+    }
+  }, []);
+
+  const handleRefundLocked = useCallback(async (e: (typeof lockedFunds)[number]) => {
+    if (!identity) return;
+    setRecovering((r) => ({ ...r, [e.bidId]: true }));
+    try {
+      await refundBid(e.bidId, e.bidderPubkey, bytesToHex(identity.secretKey));
+      updatePendingBidStatus(e.bidId, "refunded");
+      removePendingBid(e.bidId);
+      setLockedFunds((l) => l.filter((x) => x.bidId !== e.bidId));
+    } catch (err) {
+      window.alert(`refund failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRecovering((r) => ({ ...r, [e.bidId]: false }));
+    }
+  }, [identity]);
+
+  const handleRecoverLocked = useCallback(async (e: (typeof lockedFunds)[number]) => {
+    if (!identity) return;
+    setRecovering((r) => ({ ...r, [e.bidId]: true }));
+    try {
+      await recoverAfterLocktime(e, bytesToHex(identity.secretKey));
+      updatePendingBidStatus(e.bidId, "refunded");
+      removePendingBid(e.bidId);
+      setLockedFunds((l) => l.filter((x) => x.bidId !== e.bidId));
+    } catch (err) {
+      window.alert(`recovery failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRecovering((r) => ({ ...r, [e.bidId]: false }));
+    }
+  }, [identity]);
+
   if (!isLoaded || loading) {
     return (
       <div
@@ -411,9 +496,15 @@ export default function DashboardPage() {
   const claimable = settledListings.length;
 
   // Info for bid cards: determine status
-  function bidStatus(b: PublicBid): { label: string; variant: "winning" | "outbid" | "won" } {
+  function bidStatus(b: PublicBid): {
+    label: string;
+    variant: "winning" | "outbid" | "won" | "pending";
+  } {
     const auction = auctionLookup[b.auction_id];
     if (!auction) return { label: "Pending", variant: "outbid" };
+    if (b.status === "pending") {
+      return { label: "Confirming", variant: "pending" };
+    }
     if (auction.state === "SETTLED") {
       // The winner's bid stays status "verified" — with proxy bidding the
       // max never equals the winning price, so match on status, not amount.
@@ -622,6 +713,46 @@ export default function DashboardPage() {
             ))}
           </ul>
         </section>
+      )}
+
+      {/* ===== Locked Funds ===== */}
+      {lockedFunds.length > 0 && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, marginBottom: 16 }}>
+            <h2 style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 600, letterSpacing: "-0.02em" }}>
+              Locked Funds
+            </h2>
+          </div>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0 16px", marginBottom: 24 }}>
+            {lockedFunds.map((e) => (
+              <div key={e.bidId} style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", padding: "14px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>
+                  {e.amount.toLocaleString()} sats
+                </span>
+                <span style={{ color: "var(--muted)" }}>
+                  {e.status === "live" ? "Live bid" : e.status === "outbid" ? "Refundable" : e.status === "pending" ? "Confirming" : "Not registered"}
+                </span>
+                {e.status === "unregistered" && (
+                  <>
+                    <button type="button" onClick={() => handleRetryLocked(e)} disabled={recovering[e.bidId]} style={{ padding: "4px 12px", fontSize: 12, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--fg)", cursor: "pointer" }}>
+                      {recovering[e.bidId] ? "Retrying…" : "Retry bid"}
+                    </button>
+                    {Date.now() / 1000 >= e.locktime && (
+                      <button type="button" onClick={() => handleRecoverLocked(e)} disabled={recovering[e.bidId]} style={{ padding: "4px 12px", fontSize: 12, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--red)", cursor: "pointer" }}>
+                        Recover after locktime
+                      </button>
+                    )}
+                  </>
+                )}
+                {(e.status === "outbid" || e.status === "pending") && (
+                  <button type="button" onClick={() => handleRefundLocked(e)} disabled={recovering[e.bidId]} style={{ padding: "4px 12px", fontSize: 12, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--red)", cursor: "pointer" }}>
+                    {recovering[e.bidId] ? "Refunding…" : "Refund now"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* ===== Active Bids ===== */}
