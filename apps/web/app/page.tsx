@@ -59,7 +59,7 @@ export default async function Home() {
               lineHeight: 1.5,
             }}
           >
-            Bid with sats, settle instantly. No custody — your keys, your coins. Funds are locked 2-of-3, so no single party can move them.
+            Bid with sats, settle instantly. Your keys, your coins — no one else can touch them.
           </p>
           <a
             href="/create"
