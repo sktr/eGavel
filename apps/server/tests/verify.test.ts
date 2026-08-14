@@ -40,6 +40,7 @@ function makeP2PKSecret(
   locktime: number,
   refund: string,
   nonce = "abc123",
+  extra: string[][] = [],
 ): string {
   return JSON.stringify([
     "P2PK",
@@ -51,6 +52,7 @@ function makeP2PKSecret(
         ["n_sigs", "2"],
         ["locktime", String(locktime)],
         ["refund", refund],
+        ...extra,
       ],
     },
   ])
@@ -293,29 +295,6 @@ describe("verifyBid", () => {
   })
 })
 
-function make2of2Secret(
-  data: string,
-  locktime: number,
-  refund: string,
-  nonce = "abc123",
-  extra: string[][] = [],
-): string {
-  return JSON.stringify([
-    "P2PK",
-    {
-      nonce,
-      data,
-      tags: [
-        ["pubkeys", SERVER_PUBKEY, refund],
-        ["n_sigs", "2"],
-        ["locktime", String(locktime)],
-        ["refund", refund],
-        ...extra,
-      ],
-    },
-  ])
-}
-
 describe("canonicalPubkey", () => {
   it("normalizes 02-prefixed and x-only keys to the same value", () => {
     const x = "ab".repeat(32)
@@ -325,10 +304,10 @@ describe("canonicalPubkey", () => {
   })
 })
 
-describe("parseP2PKSecret 2-of-2", () => {
+describe("parseP2PKSecret (standard lock)", () => {
   it("extracts pubkeys, nSigs and sigflag", () => {
     const locktime = Math.floor(Date.now() / 1000) + 48 * 3600
-    const secret = make2of2Secret("02seller", locktime, "03bidder", "n1")
+    const secret = makeP2PKSecret("02seller", locktime, "03bidder", "n1")
     const r = parseP2PKSecret(secret) as { pubkeys: string[]; nSigs: number; sigflag: string | null }
     expect(r.pubkeys).toContain(SERVER_PUBKEY)
     expect(r.nSigs).toBe(2)
@@ -337,13 +316,13 @@ describe("parseP2PKSecret 2-of-2", () => {
 
   it("rejects SIG_ALL sigflag", () => {
     const locktime = Math.floor(Date.now() / 1000) + 48 * 3600
-    const secret = make2of2Secret("02seller", locktime, "03bidder", "n2", [["sigflag", "SIG_ALL"]])
+    const secret = makeP2PKSecret("02seller", locktime, "03bidder", "n2", [["sigflag", "SIG_ALL"]])
     const r = parseP2PKSecret(secret)
     expect(r).toHaveProperty("code", "SIGFLAG_NOT_INPUTS")
   })
 })
 
-describe("verifyBid 2-of-2 checks", () => {
+describe("verifyBid lock structure checks", () => {
   const auction = {
     id: "auction-1",
     item: "t",
@@ -374,7 +353,7 @@ describe("verifyBid 2-of-2 checks", () => {
   }
 
   it("rejects when pubkeys lacks the server key", async () => {
-    // NOTE: build the secret from scratch — the `make2of2Secret` helper always emits
+    // NOTE: build the secret from scratch — the `makeP2PKSecret` helper always emits
     // the correct `pubkeys` tag first, and cashu-ts `getTag` returns the FIRST match,
     // so appending an extra `["pubkeys", ...]` tag would NOT override it.
     const secret = JSON.stringify([
@@ -439,7 +418,7 @@ describe("verifyBid 2-of-2 checks", () => {
   })
 
   it("rejects when mint_url does not match the auction", async () => {
-    const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "n5")
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n5")
     const result = await verifyBid(
       bidPayload(secret, { mint_url: "https://other.example" }),
       auction as never,
@@ -451,15 +430,15 @@ describe("verifyBid 2-of-2 checks", () => {
   })
 
   it("rejects legacy auctions with empty mint_url", async () => {
-    const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "n6")
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n6")
     const legacy = { ...auction, mint_url: "" }
     const result = await verifyBid(bidPayload(secret), legacy as never, undefined, SERVER_PUBKEY)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.code).toBe("LEGACY_AUCTION")
   })
 
-  it("accepts a well-formed 2-of-2 bid against the test mint", async () => {
-    const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "n7")
+  it("accepts a well-formed standard P2PK bid against the test mint", async () => {
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n7")
     const result = await verifyBid(
       bidPayload(secret, { mint_url: "test://local" }),
       auction as never,
@@ -474,7 +453,7 @@ describe("verifyBid 2-of-2 checks", () => {
     // which is always < the server's Math.ceil floor → every real bid was rejected
     // with LOCKTIME_TOO_EARLY. This test fails with floor and passes with ceil.
     const exactCeilLocktime = Math.ceil((auction.end_time + 24 * 3600_000) / 1000)
-    const secret = make2of2Secret("02deadbeef", exactCeilLocktime, "03cafebabe", "n-ceil")
+    const secret = makeP2PKSecret("02deadbeef", exactCeilLocktime, "03cafebabe", "n-ceil")
     const result = await verifyBid(
       bidPayload(secret, { mint_url: "test://local" }),
       auction as never,
@@ -485,7 +464,7 @@ describe("verifyBid 2-of-2 checks", () => {
   })
 
   it("rejects test://local bids when ALLOW_TEST_BIDS is off", async () => {
-    const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "n8")
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n8")
     const prev = process.env.ALLOW_TEST_BIDS
     delete process.env.ALLOW_TEST_BIDS
     try {
@@ -523,7 +502,7 @@ describe("verifyBid mint checks", () => {
   const locktime = Math.floor((auction.end_time + 24 * 3600_000) / 1000) + 100
 
   function payload(mintUrl: string) {
-    const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "m1")
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "m1")
     return {
       proofs: [{ id: "keyset1", amount: 200, secret, C: "c" }],
       mint_url: mintUrl,
@@ -615,7 +594,7 @@ describe("verifyBid mint checks", () => {
 
   it("accepts a bid with a DLEQ even when DLEQ verification fails (best-effort)", async () => {
     const auction2 = { ...auction, id: "mint-dleq", mint_url: "https://mint-dleq.example" }
-    const secret = make2of2Secret("02deadbeef", locktime, "03cafebabe", "dq1")
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "dq1")
     const p = {
       proofs: [
         {

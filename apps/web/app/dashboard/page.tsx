@@ -327,7 +327,7 @@ export default function DashboardPage() {
   // Auto-refund outbid bids: when a bid is no longer the highest, the funds
   // return immediately via bidder+server co-sign (2-of-3, spec §6.4).
   // Failed refunds are retried every 5 minutes (transient mint/network
-  // failures self-heal; legacy 2-of-2 bids simply keep failing harmlessly).
+  // failures self-heal). The set is a retry throttle, not a blacklist.
   const failedRefundsRef = useRef(new Set<string>());
   useEffect(() => {
     if (!identity) return;
