@@ -485,6 +485,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (canonicalPubkey(bidderPubkey) !== canonicalPubkey(bid.bidder_npub)) {
       return c.json({ error: "NOT_BIDDER" }, 400);
     }
+    if (bid.status === "refunded") return c.json({ error: "ALREADY_REFUNDED" }, 400);
     if (bid.status !== "outbid" && bid.status !== "pending") {
       return c.json({ error: "NOT_OUTBID" }, 400);
     }

@@ -126,4 +126,25 @@ describe("pending bid refund endpoints", () => {
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toBe("NOT_OUTBID");
   });
+
+  it("refunded endpoint rejects verified bids (NOT_OUTBID, status unchanged)", async () => {
+    await seedBid({ status: "verified" });
+    const res = await app(db).request(
+      `http://localhost/api/bids/a1-y/refunded?bidder_pubkey=${BIDDER}`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("NOT_OUTBID");
+    expect((await db.getBid("a1-y"))!.status).toBe("verified");
+  });
+
+  it("refunded endpoint rejects already-refunded bids (ALREADY_REFUNDED)", async () => {
+    await seedBid({ status: "refunded" });
+    const res = await app(db).request(
+      `http://localhost/api/bids/a1-y/refunded?bidder_pubkey=${BIDDER}`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("ALREADY_REFUNDED");
+  });
 });
