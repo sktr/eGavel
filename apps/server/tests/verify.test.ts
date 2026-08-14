@@ -437,6 +437,32 @@ describe("verifyBid lock structure checks", () => {
     if (!result.ok) expect(result.error.code).toBe("LEGACY_AUCTION")
   })
 
+  it("rejects a mint_url with an unsafe scheme even when it matches the auction (MINT_URL_UNSAFE)", async () => {
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n-unsafe")
+    const unsafe = { ...auction, mint_url: "http://mint.example" }
+    const result = await verifyBid(
+      bidPayload(secret, { mint_url: "http://mint.example" }),
+      unsafe as never,
+      undefined,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe("MINT_URL_UNSAFE")
+  })
+
+  it("rejects a private-IP mint_url even when it matches the auction (MINT_URL_UNSAFE)", async () => {
+    const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n-unsafe2")
+    const unsafe = { ...auction, mint_url: "https://192.168.0.1" }
+    const result = await verifyBid(
+      bidPayload(secret, { mint_url: "https://192.168.0.1" }),
+      unsafe as never,
+      undefined,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe("MINT_URL_UNSAFE")
+  })
+
   it("accepts a well-formed standard P2PK bid against the test mint", async () => {
     const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n7")
     const result = await verifyBid(

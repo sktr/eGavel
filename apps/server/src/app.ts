@@ -29,6 +29,16 @@ export function createApp(db: Db, config: AppConfig = {}) {
 
   app.use("*", cors());
 
+  // Security headers for the API surface (HSTS is ignored over plain http in
+  // dev, which is fine; Cloudflare serves the Worker over https in prod).
+  app.use("*", async (c, next) => {
+    await next();
+    c.res.headers.set("X-Content-Type-Options", "nosniff");
+    c.res.headers.set("X-Frame-Options", "SAMEORIGIN");
+    c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    c.res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  });
+
   // Log every request with its status so 4xx/5xx errors are diagnosable.
   app.use("*", async (c, next) => {
     await next();

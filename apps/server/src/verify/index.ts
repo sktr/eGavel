@@ -5,6 +5,7 @@ import type { Auction } from "@egavel/shared"
 import { canonicalPubkey } from "../lib/canonical.js"
 import { hasValidDleq } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
+import { isValidMintUrl } from "../lib/mint-url.js"
 
 const LOCKTIME_MARGIN_MS = 24 * 60 * 60 * 1000
 const END_TIME_MARGIN_MS = 30_000
@@ -44,6 +45,7 @@ export type VerifyError =
   | { code: "TOO_LATE"; endTime: number; margin: number }
   | { code: "MINT_ERROR"; message: string }
   | { code: "MINT_URL_MISMATCH"; expected: string; actual: string }
+  | { code: "MINT_URL_UNSAFE"; message: string }
   | { code: "LEGACY_AUCTION" }
   | { code: "MINT_UNSUPPORTED"; missing: string[] }
   | { code: "MINT_UNREACHABLE"; message: string }
@@ -224,6 +226,14 @@ export async function verifyBid(
       return {
         ok: false,
         error: { code: "MINT_URL_MISMATCH", expected: auction.mint_url, actual: payload.mint_url },
+      }
+    }
+    // Defense in depth: never fetch from an unsafe mint URL even if a legacy
+    // auction predates the creation-time SSRF guard.
+    if (!isValidMintUrl(payload.mint_url)) {
+      return {
+        ok: false,
+        error: { code: "MINT_URL_UNSAFE", message: payload.mint_url },
       }
     }
   }

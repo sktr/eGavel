@@ -1,4 +1,6 @@
 import type { Auction, PublicBid } from "@egavel/shared"
+import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
 import { Gallery } from "./gallery"
@@ -28,6 +30,44 @@ async function fetchBids(id: string): Promise<PublicBid[]> {
   return res.json() as Promise<PublicBid[]>
 }
 
+// Site origin used for canonical/OGP URLs. Defaults to localhost in dev; set
+// NEXT_PUBLIC_SITE_URL in production (Vercel project `egavel`).
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/+$/, "")
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const auction = await fetchAuction(id)
+  if (!auction) return { title: "Auction not found — eGavel" }
+
+  const image = auction.images?.[0]
+  // SNS crawlers cannot fetch data: URLs — only advertise absolute http(s)
+  // images in og:image so the card actually renders.
+  const ogImage = image && /^https?:\/\//.test(image) ? image : undefined
+  const openGraph: Metadata["openGraph"] = {
+    title: auction.item,
+    description: auction.description?.slice(0, 200) ?? undefined,
+    url: `${SITE_URL}/auctions/${id}`,
+    type: "website",
+    ...(ogImage ? { images: [ogImage] } : {}),
+  }
+
+  return {
+    title: `${auction.item} — eGavel`,
+    description: auction.description?.slice(0, 200) ?? `Auction for ${auction.item}`,
+    alternates: { canonical: `${SITE_URL}/auctions/${id}` },
+    openGraph,
+    twitter: {
+      card: "summary_large_image",
+      title: auction.item,
+      description: auction.description?.slice(0, 200) ?? undefined,
+    },
+  }
+}
+
 export default async function AuctionPage({
   params,
 }: {
@@ -35,7 +75,7 @@ export default async function AuctionPage({
 }) {
   const { id } = await params
   const [auction, bids] = await Promise.all([fetchAuction(id), fetchBids(id)])
-  if (!auction) return <p>auction not found</p>
+  if (!auction) notFound()
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useIdentity } from "../../lib/identity";
 import { useWatchlist } from "../../lib/watchlist";
-import { refundBid, collectChange } from "../../lib/claim";
+import { refundBid, collectChange, signSecretHex } from "../../lib/claim";
 import {
   loadPendingBids,
   updatePendingBidStatus,
@@ -43,12 +43,16 @@ function timeLeft(ms: number) {
 
 // Seller view: fetch the winner's registered shipping address for a settled auction.
 // API_BASE already carries the /api prefix, so it resolves to /api/auctions/:id/shipping.
+// Auth = Schnorr signature over `shipping:<auctionId>` (the pubkey alone is
+// public listing data — the server requires key-ownership proof).
 async function loadShipping(
   auctionId: string,
   sellerPubkeyHex: string,
+  sellerSkHex: string,
 ): Promise<{ address: string | null; note: string | null }> {
+  const sellerSig = signSecretHex(`shipping:${auctionId}`, sellerSkHex);
   const res = await fetch(
-    `${API_BASE}/auctions/${auctionId}/shipping?seller_pubkey=${sellerPubkeyHex}`,
+    `${API_BASE}/auctions/${auctionId}/shipping?seller_pubkey=${sellerPubkeyHex}&seller_sig=${sellerSig}`,
     {
       signal: AbortSignal.timeout(10000),
     },
@@ -371,7 +375,7 @@ export default function DashboardPage() {
     (async () => {
       const map: Record<string, { address: string | null; note: string | null }> = {};
       for (const a of settledListings) {
-        map[a.id] = await loadShipping(a.id, identity.pubkey);
+        map[a.id] = await loadShipping(a.id, identity.pubkey, bytesToHex(identity.secretKey));
       }
       if (!cancelled) setShippingByAuction(map);
     })();

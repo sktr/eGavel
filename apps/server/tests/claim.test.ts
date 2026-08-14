@@ -319,6 +319,79 @@ describe("POST /api/auctions/:id/shipping (Schnorr-signed payload)", async () =>
   });
 });
 
+describe("POST /api/auctions/:id/claim — swap failure never leaks internals", async () => {
+  let db: Db;
+  let app: Hono;
+  let sellerSkHex: string;
+  let sellerPubkey: string;
+
+  beforeEach(async () => {
+    db = initDb();
+    app = new Hono();
+    app.route("/api", createAuctionRoutes(db));
+    sellerSkHex = bytesToHex(schnorr.utils.randomSecretKey());
+    sellerPubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(sellerSkHex)));
+  });
+
+  it("returns a generic 500 message when the claim swap fails (no server key)", async () => {
+    // A settled auction with a winning bid whose proofs exist server-side.
+    const secret = JSON.stringify([
+      "P2PK",
+      {
+        nonce: "claim-err",
+        data: sellerPubkey,
+        tags: [
+          ["pubkeys", "04server", BIDDER],
+          ["n_sigs", "2"],
+          ["locktime", String(Math.floor(Date.now() / 1000) + 3600)],
+          ["refund", BIDDER],
+        ],
+      },
+    ]);
+    await db.saveAuction(
+      makeAuction({
+        state: "SETTLED",
+        seller_pubkey: sellerPubkey,
+        winner_npub: BIDDER,
+        winning_amount: 500,
+      }),
+    );
+    await db.saveBid({
+      id: "a1-y",
+      auction_id: "a1",
+      max_amount: 500,
+      current_amount: 500,
+      bidder_npub: BIDDER,
+      Y: "y",
+      received_at: Date.now(),
+      status: "verified",
+      proof_data: JSON.stringify({
+        proofs: [{ keyset_id: "ks1", C: "c", secret, amount: 500 }],
+        mint_url: "https://mint.example",
+        amount: 500,
+      }),
+    });
+
+    const sellerSig = signSecret(secret, sellerSkHex);
+    const res = await app.request("http://localhost/api/auctions/a1/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secrets: [secret],
+        seller_sigs: [sellerSig],
+      }),
+    });
+
+    // The swap cannot run without a server key → 500 with a generic message.
+    // The response must never contain server internals ("server key not
+    // configured", stack traces, mint URLs).
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("claim swap failed");
+    expect(body.error).not.toMatch(/server key|not configured|mint\.example/i);
+  });
+});
+
 describe("lazy settle on read", async () => {
   let db: Db;
   let app: Hono;
@@ -431,25 +504,31 @@ describe("change-return route", async () => {
 describe("DELETE /api/auctions/:id (seller removes a bid-less listing)", async () => {
   let db: Db
   let app: Hono
+  let sellerSkHex: string
+  let sellerPubkey: string
 
   beforeEach(async () => {
     db = initDb()
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
+    sellerSkHex = bytesToHex(schnorr.utils.randomSecretKey())
+    sellerPubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(sellerSkHex)))
   })
 
+  function deleteUrl(id = "a1") {
+    const sig = signSecret(`delete:${id}`, sellerSkHex)
+    return `http://localhost/api/auctions/${id}?seller_pubkey=${sellerPubkey}&seller_sig=${sig}`
+  }
+
   it("lets the seller delete an active auction with no bids", async () => {
-    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: SELLER }))
-    const res = await app.request(
-      `http://localhost/api/auctions/a1?seller_pubkey=${SELLER}`,
-      { method: "DELETE" },
-    )
+    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: sellerPubkey }))
+    const res = await app.request(deleteUrl(), { method: "DELETE" })
     expect(res.status).toBe(200)
     expect(await db.getAuction("a1")).toBeNull()
   })
 
   it("rejects a non-seller (NOT_SELLER)", async () => {
-    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: SELLER }))
+    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: sellerPubkey }))
     const res = await app.request(
       "http://localhost/api/auctions/a1?seller_pubkey=02attacker",
       { method: "DELETE" },
@@ -460,7 +539,7 @@ describe("DELETE /api/auctions/:id (seller removes a bid-less listing)", async (
   })
 
   it("rejects deletion once bids exist (HAS_BIDS)", async () => {
-    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: SELLER }))
+    await db.saveAuction(makeAuction({ state: "ACTIVE", seller_pubkey: sellerPubkey }))
     await db.saveBid({
       id: "b1",
       auction_id: "a1",
@@ -472,10 +551,7 @@ describe("DELETE /api/auctions/:id (seller removes a bid-less listing)", async (
       status: "verified",
       proof_data: null,
     })
-    const res = await app.request(
-      `http://localhost/api/auctions/a1?seller_pubkey=${SELLER}`,
-      { method: "DELETE" },
-    )
+    const res = await app.request(deleteUrl(), { method: "DELETE" })
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }
     expect(body.error).toBe("HAS_BIDS")

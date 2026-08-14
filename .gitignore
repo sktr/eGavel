@@ -30,3 +30,6 @@ ROADMAP.md
 docs/agents/
 docs/superpowers/
 docs/serverless-migration.md
+
+# Frontend review tooling artifacts (not part of the OSS repo)
+.frontend-review/

@@ -10,10 +10,16 @@ export const metadata = {
   description: "A non-custodial Cashu e-cash auction platform (2-of-3 P2PK)",
 }
 
+export const viewport = {
+  themeColor: "#8B5CF6",
+}
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" href="/gavel-icon.svg" type="image/svg+xml" />
         <link rel="preload" href="/fonts/material-icons.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <style>{`
           @font-face{

@@ -135,6 +135,33 @@ describe("POST /api/auctions with images", async () => {
     expect(res.status).toBe(400)
   })
 
+  it("rejects a non-https mint_url (SSRF guard)", async () => {
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ mint_url: "http://mint.example" })),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it("rejects a private-IP mint_url (SSRF guard)", async () => {
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ mint_url: "https://169.254.169.254" })),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it("rejects a localhost mint_url (SSRF guard)", async () => {
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ mint_url: "https://localhost:3001" })),
+    })
+    expect(res.status).toBe(400)
+  })
+
   it("rejects an oversized image string", async () => {
     const res = await app.request("http://localhost/api/auctions", {
       method: "POST",

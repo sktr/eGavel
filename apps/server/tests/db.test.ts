@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import Database from "better-sqlite3"
 import { initDb, type Db } from "../src/db/index.js"
 import type { Auction, Bid } from "@egavel/shared"
 
@@ -148,5 +149,34 @@ describe("db shipping text migration", async () => {
 
     expect((await db.getAuction("a1"))!.shipping).toBe("Ships from EU only")
     expect((await db.getAuction("a2"))!.shipping).toBe("")
+  })
+})
+
+describe("db index creation (dashboard/seller lookups)", async () => {
+  const origPath = process.env.DB_PATH
+  const testPath = path.join(os.tmpdir(), `test-indexes-${Date.now()}.db`)
+
+  afterEach(() => {
+    if (origPath === undefined) delete process.env.DB_PATH
+    else process.env.DB_PATH = origPath
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+  })
+
+  it("creates the bidder_npub and seller_pubkey indexes in initDb", async () => {
+    process.env.DB_PATH = testPath
+    initDb()
+
+    // Inspect the file through a raw connection (initDb does not expose one).
+    const raw = new Database(testPath)
+    const rows = raw
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'")
+      .all() as Array<{ name: string }>
+    raw.close()
+
+    const names = rows.map((r) => r.name)
+    expect(names).toContain("idx_bids_bidder_npub")
+    expect(names).toContain("idx_auctions_seller_pubkey")
   })
 })

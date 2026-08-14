@@ -438,6 +438,7 @@ export default function CreateAuctionPage() {
                         e.stopPropagation();
                         removeImage(i);
                       }}
+                      aria-label={`Remove image ${i + 1}`}
                       style={{
                         position: "absolute",
                         top: -6,

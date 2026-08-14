@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useIdentity } from "../../../lib/identity"
+import { signSecretHex } from "../../../lib/claim"
+import { bytesToHex } from "../../../lib/hex"
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
   .replace(/\/+$/, "")
@@ -43,8 +45,11 @@ export function DeleteListingButton({
     if (!window.confirm("Delete this listing? It has no bids yet, so no funds are affected.")) return
     setBusy(true)
     try {
+      // Auth = Schnorr signature over `delete:<auctionId>` (the pubkey alone
+      // is public listing data — the server requires key-ownership proof).
+      const sellerSig = signSecretHex(`delete:${auctionId}`, bytesToHex(identity.secretKey))
       const res = await fetch(
-        `${API_BASE}/api/auctions/${auctionId}?seller_pubkey=${identity.pubkey}`,
+        `${API_BASE}/api/auctions/${auctionId}?seller_pubkey=${identity.pubkey}&seller_sig=${sellerSig}`,
         { method: "DELETE" },
       )
       if (!res.ok) {

@@ -110,6 +110,8 @@ export function initDb(): Db {
 
     CREATE INDEX IF NOT EXISTS idx_bids_auction_id ON bids(auction_id);
     CREATE INDEX IF NOT EXISTS idx_bids_auction_amount ON bids(auction_id, max_amount DESC);
+    CREATE INDEX IF NOT EXISTS idx_bids_bidder_npub ON bids(bidder_npub);
+    CREATE INDEX IF NOT EXISTS idx_auctions_seller_pubkey ON auctions(seller_pubkey);
   `)
 
   // Add proof_data column if it doesn't exist (migration for existing DBs)

@@ -17,6 +17,7 @@ import { canonicalPubkey } from "../lib/canonical.js";
 import { toPublicBid } from "../lib/public-bid.js";
 import { auctionFeeBps } from "../lib/auction-fee.js";
 import { settleIfDue } from "../lib/settle.js";
+import { isValidMintUrl } from "../lib/mint-url.js";
 
 export interface AuctionRoutesConfig {
   serverKey?: string;
@@ -73,13 +74,19 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   });
 
   // ── Delete listing: seller removes a bid-less auction (a mistaken listing) ──
+  // Auth: the seller must prove key ownership with a Schnorr signature over
+  // `delete:<id>` (the pubkey alone is public data and not sufficient).
   router.delete("/auctions/:id", async (c) => {
     const id = c.req.param("id")!
     const auction = await db.getAuction(id)
     if (!auction) return c.json({ error: "not found" }, 404)
     const sellerPubkey = c.req.query("seller_pubkey") ?? ""
+    const sellerSig = c.req.query("seller_sig") ?? ""
     if (canonicalPubkey(sellerPubkey) !== canonicalPubkey(auction.seller_pubkey)) {
       return c.json({ error: "NOT_SELLER" }, 400)
+    }
+    if (!verifySecretSignature(sellerSig, `delete:${id}`, canonicalPubkey(sellerPubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400)
     }
     const bids = await db.getAllBids(id)
     if (bids.length > 0) return c.json({ error: "HAS_BIDS" }, 400)
@@ -114,6 +121,14 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
     if (!Number.isFinite(endTime) || endTime <= Date.now()) {
       return c.json({ error: "end_time must be in the future" }, 400);
+    }
+
+    // SSRF guard: mint_url must be a safe https URL (or the dev-only test mint).
+    if (!isValidMintUrl(mintUrl, { allowTestBids: process.env.ALLOW_TEST_BIDS === "1" })) {
+      return c.json(
+        { error: "mint_url must be an https URL with a public hostname" },
+        400,
+      );
     }
 
     // Images: optional array of data URLs, max 4, each ≤ 2MB, aggregate ≤ 2MB.
@@ -394,10 +409,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
 
       return c.json({ seller_proofs: sellerProofs, fee, change });
     } catch (err) {
-      return c.json(
-        { error: `claim swap failed: ${err instanceof Error ? err.message : String(err)}` },
-        500,
-      );
+      // Log the internal detail server-side; never leak it to the browser.
+      console.error(`claim swap failed (auction ${auction.id}):`, err);
+      return c.json({ error: "claim swap failed" }, 500);
     }
   });
 
@@ -552,12 +566,19 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     return c.json({ ok: true });
   });
 
+  // ── Shipping read: seller-only, Schnorr-signed over `shipping:<id>` ──
   router.get("/auctions/:id/shipping", async (c) => {
     const auction = await db.getAuction(c.req.param("id")!);
     if (!auction) return c.json({ error: "not found" }, 404);
     const sellerPubkey = c.req.query("seller_pubkey") ?? "";
+    const sellerSig = c.req.query("seller_sig") ?? "";
     if (canonicalPubkey(sellerPubkey) !== canonicalPubkey(auction.seller_pubkey)) {
       return c.json({ error: "NOT_SELLER" }, 400);
+    }
+    // The pubkey is public listing data — require proof of key ownership so a
+    // third party cannot read the winner's shipping address.
+    if (!verifySecretSignature(sellerSig, `shipping:${auction.id}`, canonicalPubkey(sellerPubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400);
     }
     const shipping = await db.getShipping(auction.id);
     return c.json(shipping ?? { address: null, note: null });
