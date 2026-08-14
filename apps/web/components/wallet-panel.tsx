@@ -144,7 +144,7 @@ export function WalletPanel() {
     try {
       const w = buildWallet(DEFAULT_MINT);
       await w.loadMint();
-      const quoteRes = await w.createMeltQuoteBolt11({ invoice, unit: "sat" });
+      const quoteRes = await w.createMeltQuoteBolt11(invoice);
       const need = Number(quoteRes.amount) + Number(quoteRes.fee_reserve ?? 0);
       const store = JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<
         string,
@@ -154,7 +154,7 @@ export function WalletPanel() {
       const { unspent } = await w.groupProofsByState(stored);
       const result = await w.ops.send(Amount.from(need), unspent).includeFees(true).run();
       if (result.send.length === 0) throw new Error("insufficient balance for invoice + fees");
-      const melt = await w.meltBolt11({ quote: quoteRes.quote, inputs: result.send });
+      const melt = await w.ops.meltBolt11(quoteRes, result.send).run();
       const keep = [...result.keep, ...(melt.change ?? [])];
       storeProofsInWallet(keep, DEFAULT_MINT);
       setLnMsg(`Paid ${Number(quoteRes.amount)} sats to the invoice.`);

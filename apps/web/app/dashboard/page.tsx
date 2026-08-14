@@ -16,7 +16,7 @@ import { bytesToHex } from "../../lib/hex";
 import type { Auction, PublicBid } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
 import { BackupSection } from "../backup-section";
-import { WalletPanel } from "../components/wallet-panel";
+import { WalletPanel } from "../../components/wallet-panel";
 
 // Root (no /api suffix) — the code below adds "/api" explicitly. This matches
 // the convention in lib/claim.ts and checkout.tsx so NEXT_PUBLIC_API_URL can
