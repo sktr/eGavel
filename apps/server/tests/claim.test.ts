@@ -567,29 +567,47 @@ describe("DELETE /api/auctions/:id (seller removes a bid-less listing)", async (
 
 describe("computeClaimSplit (proxy-bidding change return)", async () => {
   it("splits locked max into seller, fee, and winner change", async () => {
-    // locked 1000 (the max), winning 800, 5% fee
-    const split = computeClaimSplit(1000, 800, 500);
+    // locked 1000 (the max), winning 800, 5% fee, 1 sat mint fee
+    const split = computeClaimSplit(1000, 800, 500, 1);
     expect(split).toEqual({ sellerNet: 759, fee: 40, change: 200, reserveFee: 1 });
     expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(1000);
   });
 
   it("no change when the winner locked exactly the winning amount", async () => {
-    const split = computeClaimSplit(500, 500, 500);
+    const split = computeClaimSplit(500, 500, 500, 1);
     expect(split.change).toBe(0);
     expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(500);
   });
 
   it("buy-now: returns the excess above buy_now_price to the winner", async () => {
-    // locked 1500, winning (buy-now) 1000, 5% fee
-    const split = computeClaimSplit(1500, 1000, 500);
+    // locked 1500, winning (buy-now) 1000, 5% fee, 1 sat mint fee
+    const split = computeClaimSplit(1500, 1000, 500, 1);
     expect(split).toEqual({ sellerNet: 949, fee: 50, change: 500, reserveFee: 1 });
     expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(1500);
   });
 
   it("never returns negative change", async () => {
-    const split = computeClaimSplit(100, 500, 500); // defensive: winning > locked
+    const split = computeClaimSplit(100, 500, 500, 1); // defensive: winning > locked
     expect(split.change).toBe(0);
     expect(split.sellerNet).toBeGreaterThanOrEqual(0);
+  });
+
+  it("reserves exactly the mint fee, not a hardcoded 1 sat", async () => {
+    // A fee-free mint (input_fee_ppk = 0) must receive the full winning
+    // amount, otherwise the swap is unbalanced: NUT-02 requires
+    // sum(inputs) - fees == sum(outputs), and with expected_fee 0 the mint
+    // rejects a 1-sat shortfall (CDK error 11005 TransactionUnbalanced).
+    const split = computeClaimSplit(8, 8, 500, 0);
+    expect(split).toEqual({ sellerNet: 8, fee: 0, change: 0, reserveFee: 0 });
+    expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(8);
+  });
+
+  it("reserves more than 1 sat when the mint charges more", async () => {
+    // 11+ inputs on a 100 ppk keyset costs 2 sat (NUT-02 ceil rounding);
+    // sellerNet must shrink so the swap stays balanced.
+    const split = computeClaimSplit(1000, 800, 500, 2);
+    expect(split).toEqual({ sellerNet: 758, fee: 40, change: 200, reserveFee: 2 });
+    expect(split.sellerNet + split.fee + split.change + split.reserveFee).toBe(1000);
   });
 });
 

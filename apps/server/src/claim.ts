@@ -71,18 +71,25 @@ export function parseProofData(proofData: string): StoredProofBundle {
  * price (winning_amount) may be lower, so the excess is returned to the winner
  * as a change output during the seller's claim swap.
  *
- *   sellerNet = winning_amount - fee - 1 (1 sat reserved for the mint swap fee)
+ *   sellerNet = winning_amount - fee - mintFee
  *   change    = totalInput - winning_amount (>= 0)
  *
- * Invariant: sellerNet + fee + change + reserveFee === totalInput.
+ * `mintFee` is the swap fee the mint will actually charge for the input proofs
+ * (NUT-02: ceil(sum(input_fee_ppk) / 1000)). The claim swap must reserve
+ * exactly that much — a hardcoded 1 sat breaks fee-free mints, whose balance
+ * check `sum(inputs) - fees == sum(outputs)` demands outputs == inputs when
+ * fees are 0 (CDK error 11005 TransactionUnbalanced).
+ *
+ * Invariant: sellerNet + fee + change + mintFee === totalInput.
  */
 export function computeClaimSplit(
   totalInput: number,
   winningAmount: number,
   feeBps: number,
+  mintFee = 1,
 ): { sellerNet: number; fee: number; change: number; reserveFee: number } {
   const fee = Math.floor((winningAmount * feeBps) / 10000)
   const change = Math.max(0, totalInput - winningAmount)
-  const sellerNet = Math.max(0, winningAmount - fee - 1)
-  return { sellerNet, fee, change, reserveFee: 1 }
+  const sellerNet = Math.max(0, winningAmount - fee - mintFee)
+  return { sellerNet, fee, change, reserveFee: mintFee }
 }

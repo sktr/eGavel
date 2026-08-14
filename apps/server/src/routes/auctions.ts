@@ -229,7 +229,10 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (!result.ok) {
       return c.json({ error: result.error }, 400);
     }
-    return c.json({ ok: true });
+    return c.json({
+      ok: true,
+      ...(result.current_amount != null && { current_amount: result.current_amount }),
+    });
   });
 
   router.get("/bids", async (c) => {
@@ -359,7 +362,6 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const feeBps = config.feeBps ?? auctionFeeBps();
     const totalInput = bundle.proofs.reduce((a, p) => a + p.amount, 0);
     const winningAmount = auction.winning_amount ?? 0;
-    const { sellerNet, fee, change } = computeClaimSplit(totalInput, winningAmount, feeBps);
 
     try {
       const wallet = new Wallet(bundle.mint_url, { unit: "sat" });
@@ -378,6 +380,17 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
           signatures: [seller_sigs[secrets.indexOf(p.secret)]!, signSecret(p.secret, serverSkHex)],
         }),
       }));
+
+      // Reserve exactly the mint's swap fee for these inputs (NUT-02:
+      // ceil(sum(input_fee_ppk) / 1000)), not a hardcoded 1 sat — fee-free
+      // mints reject a 1-sat shortfall (CDK 11005 TransactionUnbalanced).
+      const mintFee = Number(wallet.getFeesForProofs(inputs as never));
+      const { sellerNet, fee, change } = computeClaimSplit(
+        totalInput,
+        winningAmount,
+        feeBps,
+        mintFee,
+      );
 
       const sellerOutputs = OutputData.createP2PKData(
         { pubkey: auction.seller_pubkey },
