@@ -3,13 +3,22 @@ import {
   createNewMintKeys,
   deriveKeysetId,
   serializeMintKeys,
+  serializeProofs,
+  type Proof,
 } from "@cashu/cashu-ts";
 import {
+  advanceCountersPastRecovery,
   createCounterSource,
+  filterNewProofs,
   walletOptions,
   recoverBalanceFromSeed,
 } from "./deterministic-wallet";
 import { saveAccount } from "./key-store";
+
+function proof(secret: string, amount: number): Proof {
+  // cashu-ts types Proof.amount as Amount; numbers are the runtime shape
+  return { id: "ks1", amount: amount as unknown as Proof["amount"], secret, C: "c" };
+}
 
 describe("createCounterSource", () => {
   beforeEach(() => localStorage.clear());
@@ -79,6 +88,35 @@ describe("walletOptions", () => {
     saveAccount({ secretKeyHex: "ab".repeat(32), pubkey: "cd".repeat(32), words: null });
     const opts = walletOptions("https://mint.example") as { bip39seed?: unknown };
     expect(opts.bip39seed).toBeUndefined();
+  });
+});
+
+describe("recovery helpers", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  it("advanceCountersPastRecovery moves the counter past the restored range", async () => {
+    const pubkey = "test-pubkey";
+    await advanceCountersPastRecovery(pubkey, { ks1: 42, ks2: undefined });
+    const src = createCounterSource(pubkey);
+    const r1 = await src.reserve("ks1", 1);
+    expect(r1.start).toBe(43);
+    const r2 = await src.reserve("ks2", 1);
+    expect(r2.start).toBe(0); // undefined → untouched
+  });
+
+  it("filterNewProofs drops proofs already in the store", () => {
+    const existing = serializeProofs([proof("s1", 2)]);
+    localStorage.setItem(
+      "cashu-wallet-v1",
+      JSON.stringify({ "https://mint.example": existing }),
+    );
+    const out = filterNewProofs("https://mint.example", [
+      proof("s1", 2),
+      proof("s2", 3),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.secret).toBe("s2");
   });
 });
 

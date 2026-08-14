@@ -1,6 +1,11 @@
-import { Wallet, type CounterSource } from "@cashu/cashu-ts";
+import {
+  Wallet,
+  deserializeProofs,
+  type CounterSource,
+  type Proof,
+} from "@cashu/cashu-ts";
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { loadAccount } from "./key-store";
+import { deriveAccountFromWords, loadAccount } from "./key-store";
 import { storeProofsInWallet } from "./wallet";
 
 /**
@@ -58,6 +63,43 @@ export function createCounterSource(pubkey: string): CounterSource {
   };
 }
 
+/**
+ * After NUT-13 recovery the account's persistent counter source must not
+ * re-derive outputs from counters the restore already consumed. Bump each
+ * keyset's cursor past the last counter with a signature so the next mint
+ * starts fresh. Keysets with no restored range (counter undefined) are left
+ * untouched.
+ */
+export async function advanceCountersPastRecovery(
+  pubkey: string,
+  keysetCounters: Record<string, number | undefined>,
+): Promise<void> {
+  const source = createCounterSource(pubkey);
+  for (const [keysetId, counter] of Object.entries(keysetCounters)) {
+    if (counter === undefined) continue;
+    await source.advanceToAtLeast(keysetId, counter + 1);
+  }
+}
+
+/**
+ * Drop proofs whose secret is already present in the wallet store for the
+ * mint. Without this, running recovery twice (or recovering onto a device
+ * that already holds the balance) would duplicate tokens.
+ */
+export function filterNewProofs(mintUrl: string, proofs: Proof[]): Proof[] {
+  let store: Record<string, string[]> = {};
+  try {
+    store = JSON.parse(
+      localStorage.getItem("cashu-wallet-v1") ?? "{}",
+    ) as Record<string, string[]>;
+  } catch {
+    store = {};
+  }
+  const existing = deserializeProofs(store[mintUrl] ?? []);
+  const seen = new Set(existing.map((p) => p.secret));
+  return proofs.filter((p) => !seen.has(p.secret));
+}
+
 export type WalletBuildOptions =
   | { unit: "sat" }
   | { unit: "sat"; bip39seed: Uint8Array; counterSource: CounterSource };
@@ -113,16 +155,32 @@ export async function recoverBalanceFromSeed(opts: {
       if (keysets.length === 0) throw new Error("no keysets");
 
       let recovered = 0;
+      const keysetCounters: Record<string, number | undefined> = {};
       for (const ks of keysets) {
         onProgress?.(`scanning ${mintUrl} (${ks.id})…`);
-        const { proofs } = await wallet.batchRestore(300, 100, 0, ks.id);
+        const { proofs, lastCounterWithSignature } = await wallet.batchRestore(
+          300,
+          100,
+          0,
+          ks.id,
+        );
+        if (lastCounterWithSignature !== undefined) {
+          keysetCounters[ks.id] = lastCounterWithSignature;
+        }
         if (proofs.length === 0) continue;
         const { unspent } = await wallet.groupProofsByState(proofs);
         if (unspent.length > 0) {
-          storeProofsInWallet(unspent, mintUrl);
+          storeProofsInWallet(filterNewProofs(mintUrl, unspent), mintUrl);
           recovered += unspent.reduce((a, p) => a + Number(p.amount), 0);
         }
       }
+      // The restore consumed counters up to lastCounterWithSignature; advance
+      // the account's persistent source past them so future mints don't
+      // re-derive the same secrets as pre-loss outputs.
+      await advanceCountersPastRecovery(
+        deriveAccountFromWords(mnemonic).pubkey,
+        keysetCounters,
+      );
       results.push({ mint: mintUrl, recovered });
     } catch (err) {
       onProgress?.(`${mintUrl}: ${err instanceof Error ? err.message : String(err)}`);
