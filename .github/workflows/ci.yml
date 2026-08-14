@@ -38,5 +38,10 @@ jobs:
       - name: Web typecheck
         run: pnpm --filter @egavel/web exec tsc --noEmit
 
+      # next build is the authoritative type gate: the web tsconfig does not
+      # cover components/, so tsc --noEmit misses type errors there.
+      - name: Web build
+        run: pnpm --filter @egavel/web build
+
       - name: Server build
         run: pnpm --filter @egavel/server build
