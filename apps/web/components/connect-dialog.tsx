@@ -71,63 +71,123 @@ export function ConnectDialog({
           Connect to eGavel
         </h2>
 
-        <label
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 10,
-            padding: "10px 0",
-            cursor: "pointer",
-          }}
-        >
-          <input
-            type="radio"
-            name="connect-mode"
-            checked={mode === "device"}
-            onChange={() => {
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => {
               setMode("device");
               setError(null);
             }}
-            style={{ marginTop: 4, flexShrink: 0 }}
-          />
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 14, fontWeight: 500 }}>
-              Use the account on this device
+            aria-pressed={mode === "device"}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              padding: "14px 16px",
+              borderRadius: "var(--radius)",
+              border: `1px solid ${mode === "device" ? "var(--accent)" : "var(--border)"}`,
+              background:
+                mode === "device"
+                  ? "color-mix(in srgb, var(--accent) 6%, transparent)"
+                  : "var(--surface)",
+              cursor: "pointer",
+              textAlign: "left",
+              fontFamily: "inherit",
+              transition: "border-color .15s, background .15s",
+            }}
+          >
+            <span
+              style={{
+                flexShrink: 0,
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                border: `2px solid ${mode === "device" ? "var(--accent)" : "var(--border)"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginTop: 1,
+              }}
+            >
+              {mode === "device" && (
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    background: "var(--accent)",
+                  }}
+                />
+              )}
             </span>
-            <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>
-              Sign in with the key already saved in this browser.
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>
+                Use the account on this device
+              </span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                Sign in with the key already saved in this browser.
+              </span>
             </span>
-          </span>
-        </label>
+          </button>
 
-        <label
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 10,
-            padding: "10px 0",
-            cursor: "pointer",
-          }}
-        >
-          <input
-            type="radio"
-            name="connect-mode"
-            checked={mode === "restore"}
-            onChange={() => {
+          <button
+            type="button"
+            onClick={() => {
               setMode("restore");
               setError(null);
             }}
-            style={{ marginTop: 4, flexShrink: 0 }}
-          />
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 14, fontWeight: 500 }}>
-              Restore from a recovery phrase
+            aria-pressed={mode === "restore"}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              padding: "14px 16px",
+              borderRadius: "var(--radius)",
+              border: `1px solid ${mode === "restore" ? "var(--accent)" : "var(--border)"}`,
+              background:
+                mode === "restore"
+                  ? "color-mix(in srgb, var(--accent) 6%, transparent)"
+                  : "var(--surface)",
+              cursor: "pointer",
+              textAlign: "left",
+              fontFamily: "inherit",
+              transition: "border-color .15s, background .15s",
+            }}
+          >
+            <span
+              style={{
+                flexShrink: 0,
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                border: `2px solid ${mode === "restore" ? "var(--accent)" : "var(--border)"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginTop: 1,
+              }}
+            >
+              {mode === "restore" && (
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    background: "var(--accent)",
+                  }}
+                />
+              )}
             </span>
-            <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>
-              Switch to a different account using your 12-word phrase (or secret key).
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>
+                Restore from a recovery phrase
+              </span>
+              <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                Switch to a different account using your 12-word phrase (or secret key).
+              </span>
             </span>
-          </span>
-        </label>
+          </button>
+        </div>
 
         {mode === "restore" && (
           <textarea
