@@ -100,7 +100,21 @@ export default function CreateAuctionPage() {
     if (!mintUrl.trim()) errs.mintUrl = "Enter a valid Mint URL";
     if (!agreeTerms) errs.agreeTerms = "Agree to terms of service";
     setFieldErrors(errs);
-    return Object.keys(errs).length === 0;
+
+    const hasErrors = Object.keys(errs).length > 0;
+    if (hasErrors) {
+      // Scroll to the first invalid field so the user can see what's missing.
+      const order = ["item", "category", "condition", "description", "startPrice", "agree1", "mintUrl"];
+      const first = order.find((f) => errs[f]);
+      if (first) {
+        const el = document.getElementById(first);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+      showToast("Please fill in the highlighted fields.", "error_outline");
+    }
+    return !hasErrors;
   }
 
   function handleOpenModal(e: React.FormEvent) {
