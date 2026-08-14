@@ -131,11 +131,8 @@ PENDING → ACTIVE → (EXTENDED)* → CLOSED/SETTLED
 
 ## Design docs
 
-- **Protocol spec**: [`docs/superpowers/specs/2026-08-11-cashu-auction-redesign-design.md`](docs/superpowers/specs/2026-08-11-cashu-auction-redesign-design.md)
 - **How it works (for the Cashu community)**: [`docs/how-it-works.md`](docs/how-it-works.md)
 - **Security & threat model**: [`docs/security.md`](docs/security.md)
-- **Domain glossary**: [`CONTEXT.md`](CONTEXT.md)
-- **UI design**: [`DESIGN.md`](DESIGN.md)
 
 ## References
 

@@ -21,3 +21,12 @@ exports/
 .wrangler/
 .dev.vars
 .vercel
+
+# Dev-only docs & agent instructions (not part of the OSS repo)
+AGENTS.md
+CONTEXT.md
+DESIGN.md
+ROADMAP.md
+docs/agents/
+docs/superpowers/
+docs/serverless-migration.md

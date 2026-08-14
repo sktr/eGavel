@@ -162,13 +162,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               margin: "var(--space-2xl) auto 0",
               padding: "var(--space-xl) 24px",
             }}>
-            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontSize: 13, flexWrap: "wrap", gap: "var(--space-md)" }}>
-              <span>© 2025 eGavel</span>
-              <div style={{ display: "flex", gap: "var(--space-lg)" }}>
-                <a href="/how-it-works" style={{ color: "var(--muted)", textDecoration: "none" }}>How it Works</a>
-                <a href="/terms" style={{ color: "var(--muted)", textDecoration: "none" }}>Terms</a>
-                <a href="https://github.com/sktr/egavel" style={{ color: "var(--muted)", textDecoration: "none" }}>GitHub</a>
-              </div>
+            <div style={{ display: "flex", color: "var(--muted)", fontSize: 13, flexWrap: "wrap", gap: "var(--space-lg)" }}>
+              <a href="/how-it-works" style={{ color: "var(--muted)", textDecoration: "none" }}>How it Works</a>
+              <a href="/terms" style={{ color: "var(--muted)", textDecoration: "none" }}>Terms</a>
+              <a href="https://github.com/sktr/egavel" style={{ color: "var(--muted)", textDecoration: "none" }}>GitHub</a>
             </div>
           </footer>
           </IdentityProvider>
