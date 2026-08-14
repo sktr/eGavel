@@ -189,7 +189,7 @@ export async function recoverAfterLocktime(
       }) as unknown as Proof,
   );
   const recovered = await swapLockedProofs(proofs, entry.amount, bidderSkHex);
-  storeProofsInWallet(recovered, entry.mintUrl);
+  storeProofsInWallet(recovered, entry.mintUrl, entry.bidderPubkey);
   updatePendingBidStatus(entry.bidId, "refunded");
 }
 

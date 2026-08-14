@@ -57,7 +57,7 @@ describe("collectChange (proxy-bidding excess return)", () => {
     expect(result.amount).toBe(250);
     expect(result.mint_url).toBe("https://mint.example");
 
-    const raw = localStorage.getItem("cashu-wallet-v1")!;
+    const raw = localStorage.getItem("cashu-wallet-v1:03cafebabe")!;
     expect(raw).toBeTruthy();
     const store = JSON.parse(raw) as Record<string, string[]>;
     expect(store["https://mint.example"]).toHaveLength(2);

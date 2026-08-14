@@ -122,7 +122,7 @@ export async function claimAuction(
     throw new Error(body.error ?? "claim failed");
   }
   const data = (await res.json()) as { seller_proofs: Proof[]; fee: number };
-  storeProofsInWallet(data.seller_proofs, bundle.mint_url);
+  storeProofsInWallet(data.seller_proofs, bundle.mint_url, sellerPubkey);
   return { proofs: data.seller_proofs, fee: data.fee };
 }
 
@@ -152,7 +152,7 @@ export async function refundBid(
   const recovered = await swapLockedProofs(proofs, bundle.amount, bidderSkHex);
   // Persist the recovered proofs into the wallet store — without this the
   // swapped-out sats never appear in the balance (and their secrets are lost).
-  storeProofsInWallet(recovered, bundle.mint_url);
+  storeProofsInWallet(recovered, bundle.mint_url, bidderPubkey);
   // Notify the server so the bid is marked refunded (idempotency).
   fetch(`${apiBase}/api/bids/${bidId}/refunded?bidder_pubkey=${bidderPubkey}`, {
     method: "POST",
@@ -211,6 +211,6 @@ export async function collectChange(
   apiBase = API_BASE,
 ): Promise<ChangeReturn> {
   const data = await fetchChangeData(auctionId, bidderPubkey, apiBase);
-  storeProofsInWallet(data.proofs as unknown as Proof[], data.mint_url);
+  storeProofsInWallet(data.proofs as unknown as Proof[], data.mint_url, bidderPubkey);
   return data;
 }

@@ -232,7 +232,8 @@ describe("recoverBalanceFromSeed", () => {
     expect(checkstateBody.Ys).toHaveLength(2);
 
     // only the unspent proof (amount 4) is merged into the wallet store
-    const store = JSON.parse(localStorage.getItem("cashu-wallet-v1")!) as Record<
+    const account = deriveAccountFromWords(MNEMONIC);
+    const store = JSON.parse(localStorage.getItem(`cashu-wallet-v1:${account.pubkey}`)!) as Record<
       string,
       string[]
     >;

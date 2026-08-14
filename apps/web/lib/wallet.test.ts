@@ -50,12 +50,56 @@ describe("wallet change notification", () => {
     );
     void listeners; // stubWindow returns the map for future assertions
 
-    storeProofsInWallet([] as Proof[], "https://mint.example");
+    storeProofsInWallet([] as Proof[], "https://mint.example", "any-account");
 
     expect(fired).toBe(1);
   });
 
   it("does not throw when window is unavailable (SSR / node)", () => {
-    expect(() => storeProofsInWallet([] as Proof[], "https://mint.example")).not.toThrow();
+    expect(() => storeProofsInWallet([] as Proof[], "https://mint.example", "any-account")).not.toThrow();
+  });
+});
+
+describe("per-account wallet store namespacing", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    restoreWindow();
+  });
+
+  it("stores proofs under the account pubkey so accounts never share proofs", () => {
+    const listeners = stubWindow();
+    void listeners;
+    const proofA = { id: "k1", amount: 10, secret: "sA", C: "cA" } as unknown as Proof;
+    const proofB = { id: "k1", amount: 20, secret: "sB", C: "cB" } as unknown as Proof;
+
+    storeProofsInWallet([proofA], "https://mint.example", "pubkey-a");
+    storeProofsInWallet([proofB], "https://mint.example", "pubkey-b");
+
+    const storeA = JSON.parse(localStorage.getItem("cashu-wallet-v1:pubkey-a") ?? "{}") as Record<string, string[]>;
+    const storeB = JSON.parse(localStorage.getItem("cashu-wallet-v1:pubkey-b") ?? "{}") as Record<string, string[]>;
+    // Account A's store contains only A's proof; account B's only B's.
+    expect(storeA["https://mint.example"]).toHaveLength(1);
+    expect(storeA["https://mint.example"]![0]).toContain("sA");
+    expect(storeB["https://mint.example"]![0]).toContain("sB");
+    expect(storeA["https://mint.example"]![0]).not.toContain("sB");
+    // The un-namespaced legacy key must not be written anymore.
+    expect(localStorage.getItem("cashu-wallet-v1")).toBeNull();
+  });
+
+  it("migrates the legacy shared store into the first account that touches it", () => {
+    const listeners = stubWindow();
+    void listeners;
+    // Legacy stores hold serialized proof JSON strings (one per proof).
+    const legacyProof = JSON.stringify({ id: "k1", amount: 7, secret: "legacy", C: "cL" });
+    const legacyProofs = JSON.stringify({ "https://mint.example": [legacyProof] });
+    localStorage.setItem("cashu-wallet-v1", legacyProofs);
+
+    storeProofsInWallet([] as Proof[], "https://mint.example", "first-account");
+
+    // The legacy data was claimed under the first account's key.
+    const claimed = JSON.parse(localStorage.getItem("cashu-wallet-v1:first-account") ?? "{}") as Record<string, string[]>;
+    expect(claimed["https://mint.example"]).toContain(legacyProof);
+    // A second account starts empty — no cross-account leakage.
+    expect(localStorage.getItem("cashu-wallet-v1:second-account")).toBeNull();
   });
 });

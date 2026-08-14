@@ -10,6 +10,7 @@ import {
 import { useWallet, useTotalBalance, storeProofsInWallet } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
+import { useIdentity } from "../lib/identity";
 import { QRCodeSVG } from "qrcode.react";
 
 /**
@@ -18,8 +19,10 @@ import { QRCodeSVG } from "qrcode.react";
  * (melt). All ops run on the app's single fixed mint (config.ts).
  */
 export function WalletPanel() {
-  const wallet = useWallet(DEFAULT_MINT);
-  const { total, loading, refresh } = useTotalBalance();
+  const { identity } = useIdentity();
+  const pubkey = identity?.pubkey ?? "";
+  const wallet = useWallet(DEFAULT_MINT, pubkey);
+  const { total, loading, refresh } = useTotalBalance(pubkey);
 
   const [copied, setCopied] = useState<string | null>(null);
   const copyText = useCallback(async (label: string, text: string) => {
@@ -117,7 +120,7 @@ export function WalletPanel() {
       if (unspent.length === 0) throw new Error("no spendable balance on this mint");
       const result = await w.ops.send(Amount.from(amt), unspent).includeFees(true).run();
       if (result.send.length === 0) throw new Error("send produced no output proofs");
-      storeProofsInWallet(result.keep, DEFAULT_MINT);
+      storeProofsInWallet(result.keep, DEFAULT_MINT, pubkey);
       setWdToken(getEncodedToken({ mint: DEFAULT_MINT, proofs: result.send }));
     } catch (err) {
       setWdErr(err instanceof Error ? err.message : String(err));
@@ -156,7 +159,7 @@ export function WalletPanel() {
       if (result.send.length === 0) throw new Error("insufficient balance for invoice + fees");
       const melt = await w.ops.meltBolt11(quoteRes, result.send).run();
       const keep = [...result.keep, ...(melt.change ?? [])];
-      storeProofsInWallet(keep, DEFAULT_MINT);
+      storeProofsInWallet(keep, DEFAULT_MINT, pubkey);
       setLnMsg(`Paid ${Number(quoteRes.amount)} sats to the invoice.`);
       setLnInvoice("");
     } catch (err) {

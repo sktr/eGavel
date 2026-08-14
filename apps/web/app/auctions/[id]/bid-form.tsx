@@ -46,7 +46,7 @@ export function BidForm({
   // Wallet — default to the mint the seller specified (spec §7.4 / review G4)
   // The mint is fixed app-wide (config.ts) — the wallet always operates on it.
   const mintUrl = auction.mint_url || DEFAULT_MINT
-  const wallet = useWallet(mintUrl)
+  const wallet = useWallet(mintUrl, identity?.pubkey ?? "")
 
   // Form state
   const [amount, setAmount] = useState("")

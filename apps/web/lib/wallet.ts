@@ -14,7 +14,15 @@ import {
 } from "@cashu/cashu-ts"
 import { buildWallet } from "./deterministic-wallet"
 
-const STORAGE_KEY = "cashu-wallet-v1"
+const LEGACY_KEY = "cashu-wallet-v1";
+/** Set once the legacy shared store has been claimed by an account. */
+const MIGRATED_FLAG = "cashu-wallet-v1:migrated";
+
+/** Wallet proof store is namespaced per account so two accounts in one
+ * browser never see (or spend) each other's proofs. */
+function walletStoreKey(pubkey: string): string {
+  return `${LEGACY_KEY}:${pubkey}`;
+}
 
 /**
  * Fired whenever the local wallet store changes (bid placed, refund recovered,
@@ -32,22 +40,36 @@ interface WalletStore {
   [mintUrl: string]: string[]
 }
 
-function loadStore(): WalletStore {
+function loadStore(pubkey: string): WalletStore {
+  const key = walletStoreKey(pubkey);
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}")
+    const raw = localStorage.getItem(key);
+    if (raw !== null) return JSON.parse(raw) ?? {}
+    // Legacy migration: the pre-namespacing store is claimed once, by the
+    // first account that touches it, then never read again — so a second
+    // account on the same browser cannot inherit another account's proofs.
+    if (localStorage.getItem(MIGRATED_FLAG) === null) {
+      const legacy = localStorage.getItem(LEGACY_KEY)
+      localStorage.setItem(MIGRATED_FLAG, "1")
+      if (legacy !== null) {
+        localStorage.setItem(key, legacy)
+        return JSON.parse(legacy) ?? {}
+      }
+    }
+    return {}
   } catch {
     return {}
   }
 }
 
-function saveStore(data: WalletStore) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+function saveStore(pubkey: string, data: WalletStore) {
+  localStorage.setItem(walletStoreKey(pubkey), JSON.stringify(data))
   // Every mutation funnels through here (receive/sendP2PK/claimMint/refresh/
   // storeProofsInWallet) — one dispatch point keeps every balance UI in sync.
   notifyWalletChanged()
 }
 
-export function useWallet(mintUrl: string) {
+export function useWallet(mintUrl: string, pubkey: string) {
   const walletRef = useRef<Wallet | null>(null)
   const [balance, setBalance] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -56,7 +78,7 @@ export function useWallet(mintUrl: string) {
 
   // ── Init ──────────────────────────────────────────────
   useEffect(() => {
-    if (!mintUrl) {
+    if (!mintUrl || !pubkey) {
       setLoading(false)
       return
     }
@@ -69,14 +91,14 @@ export function useWallet(mintUrl: string) {
         if (cancelled) return
         walletRef.current = wallet
 
-        const store = loadStore()
+        const store = loadStore(pubkey)
         const raw = store[mintUrl] ?? []
 
         if (raw.length > 0) {
           const stored = deserializeProofs(raw)
           const { unspent } = await wallet.groupProofsByState(stored)
           store[mintUrl] = serializeProofs(unspent)
-          saveStore(store)
+          saveStore(pubkey, store)
           setBalance(unspent.length > 0 ? Number(sumProofs(unspent)) : 0)
         } else {
           setBalance(0)
@@ -93,7 +115,7 @@ export function useWallet(mintUrl: string) {
     return () => {
       cancelled = true
     }
-  }, [mintUrl])
+  }, [mintUrl, pubkey])
 
   // ── Receive ──────────────────────────────────────────
   const receive = useCallback(
@@ -139,10 +161,10 @@ export function useWallet(mintUrl: string) {
       const total = newProofs.length > 0 ? Number(sumProofs(newProofs)) : 0
 
       // Store under the token's mint
-      const store = loadStore()
+      const store = loadStore(pubkey)
       const existing = deserializeProofs(store[tokenMint] ?? [])
       store[tokenMint] = serializeProofs([...existing, ...newProofs])
-      saveStore(store)
+      saveStore(pubkey, store)
 
       // If this is the active mint, update balance
       if (tokenMint === mintUrl) {
@@ -152,7 +174,7 @@ export function useWallet(mintUrl: string) {
 
       return { mint: tokenMint, amount: total }
     },
-    [mintUrl],
+    [mintUrl, pubkey],
   )
 
   // ── Send P2PK ────────────────────────────────────────
@@ -164,7 +186,7 @@ export function useWallet(mintUrl: string) {
       const wallet = walletRef.current
       if (!wallet) throw new Error("Wallet not initialized")
 
-      const store = loadStore()
+      const store = loadStore(pubkey)
       const stored = deserializeProofs(store[mintUrl] ?? [])
       const { unspent } = await wallet.groupProofsByState(stored)
 
@@ -178,7 +200,7 @@ export function useWallet(mintUrl: string) {
 
       // Store keep proofs back
       store[mintUrl] = serializeProofs(result.keep)
-      saveStore(store)
+      saveStore(pubkey, store)
 
       setBalance(
         result.keep.length > 0 ? Number(sumProofs(result.keep)) : 0,
@@ -187,7 +209,7 @@ export function useWallet(mintUrl: string) {
       if (result.send.length === 0) throw new Error("send produced no output proofs")
       return { proofs: result.send, change: result.keep }
     },
-    [mintUrl],
+    [mintUrl, pubkey],
   )
 
   // ── Mint (faucet) ─────────────────────────────────────
@@ -199,7 +221,7 @@ export function useWallet(mintUrl: string) {
       if (!wallet) throw new Error("Wallet not initialized")
       return wallet.createMintQuoteBolt11(amount, "eGavel bid")
     },
-    [mintUrl],
+    [mintUrl, pubkey],
   )
 
   const checkMintQuote = useCallback(
@@ -210,7 +232,7 @@ export function useWallet(mintUrl: string) {
       if (!wallet) throw new Error("Wallet not initialized")
       return wallet.checkMintQuoteBolt11(quoteId)
     },
-    [mintUrl],
+    [mintUrl, pubkey],
   )
 
   const claimMint = useCallback(
@@ -227,17 +249,17 @@ export function useWallet(mintUrl: string) {
       )
 
       // Store minted proofs
-      const store = loadStore()
+      const store = loadStore(pubkey)
       const existing = deserializeProofs(store[mintUrl] ?? [])
       store[mintUrl] = serializeProofs([...existing, ...proofs])
-      saveStore(store)
+      saveStore(pubkey, store)
 
       const refreshed = deserializeProofs(store[mintUrl] ?? [])
       setBalance(refreshed.length > 0 ? Number(sumProofs(refreshed)) : 0)
 
       return proofs
     },
-    [mintUrl],
+    [mintUrl, pubkey],
   )
 
   // ── Refresh ──────────────────────────────────────────
@@ -245,22 +267,22 @@ export function useWallet(mintUrl: string) {
     const wallet = walletRef.current
     if (!wallet) return
 
-    const store = loadStore()
+    const store = loadStore(pubkey)
     const stored = deserializeProofs(store[mintUrl] ?? [])
     const { unspent } = await wallet.groupProofsByState(stored)
     store[mintUrl] = serializeProofs(unspent)
-    saveStore(store)
+    saveStore(pubkey, store)
     setBalance(unspent.length > 0 ? Number(sumProofs(unspent)) : 0)
-  }, [mintUrl])
+  }, [mintUrl, pubkey])
 
   return { balance, loading, error, ready, receive, sendP2PK, refresh, requestMint, checkMintQuote, claimMint }
 }
 
-export function storeProofsInWallet(proofs: Proof[], mintUrl: string) {
-  const store = loadStore()
+export function storeProofsInWallet(proofs: Proof[], mintUrl: string, pubkey: string) {
+  const store = loadStore(pubkey)
   const existing = deserializeProofs(store[mintUrl] ?? [])
   store[mintUrl] = serializeProofs([...existing, ...proofs])
-  saveStore(store)
+  saveStore(pubkey, store)
 }
 
 // ── Total balance across all mints in the local wallet store ──────────────
@@ -269,14 +291,21 @@ export interface MintBalance {
   amount: number
 }
 
-export function useTotalBalance() {
+export function useTotalBalance(pubkey: string) {
   const [total, setTotal] = useState(0)
   const [byMint, setByMint] = useState<MintBalance[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const load = useCallback(async () => {
-    const store = loadStore()
+    if (!pubkey) {
+      setTotal(0)
+      setByMint([])
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
+    const store = loadStore(pubkey)
     const entries = Object.entries(store).filter(([, proofs]) => proofs.length > 0)
     if (entries.length === 0) {
       setTotal(0)
@@ -315,7 +344,7 @@ export function useTotalBalance() {
     setTotal(valid.reduce((acc, r) => acc + r.amount, 0))
     setLoading(false)
     setRefreshing(false)
-  }, [])
+  }, [pubkey])
 
   useEffect(() => {
     load()

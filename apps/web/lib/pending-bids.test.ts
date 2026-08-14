@@ -205,7 +205,7 @@ describe("recoverAfterLocktime", () => {
         mint_url: "https://mint.example",
       }),
     );
-    expect(storeProofsInWallet).toHaveBeenCalledWith(RECOVERED_PROOFS, "https://mint.example");
+    expect(storeProofsInWallet).toHaveBeenCalledWith(RECOVERED_PROOFS, "https://mint.example", "03cafebabe");
     expect(loadPendingBids()[0]!.status).toBe("refunded");
   });
 });

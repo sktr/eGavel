@@ -9,7 +9,7 @@ import { ConnectDialog } from "../components/connect-dialog"
 export function Header() {
   const { identity, isLoaded, login, logout, restore } = useIdentity()
   const { theme, setTheme } = useTheme()
-  const { total, byMint, loading, refreshing, refresh } = useTotalBalance()
+  const { total, byMint, loading, refreshing, refresh } = useTotalBalance(identity?.pubkey ?? "")
   const [open, setOpen] = useState(false)
   const [showConnect, setShowConnect] = useState(false)
   const [copied, setCopied] = useState(false)

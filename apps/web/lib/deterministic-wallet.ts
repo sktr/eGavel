@@ -171,7 +171,11 @@ export async function recoverBalanceFromSeed(opts: {
         if (proofs.length === 0) continue;
         const { unspent } = await wallet.groupProofsByState(proofs);
         if (unspent.length > 0) {
-          storeProofsInWallet(filterNewProofs(mintUrl, unspent), mintUrl);
+          storeProofsInWallet(
+            filterNewProofs(mintUrl, unspent),
+            mintUrl,
+            deriveAccountFromWords(mnemonic).pubkey,
+          );
           recovered += unspent.reduce((a, p) => a + Number(p.amount), 0);
         }
       }
