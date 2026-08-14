@@ -12,7 +12,7 @@ export default function HowItWorksPage() {
         How eGavel Works
       </h1>
       <p style={{ color: "var(--muted)", fontSize: 16, marginBottom: 48, maxWidth: 560, lineHeight: 1.6 }}>
-        Peer-to-peer auctions without custody. Bids are locked as Cashu e-cash with a
+        Non-custodial auctions on Cashu e-cash. Bids are locked with a
         2-of-3 P2PK lock, and settlement is automatic.
       </p>
 
