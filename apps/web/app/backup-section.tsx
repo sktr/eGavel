@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useIdentity } from "../lib/identity";
 import { bytesToHex } from "../lib/hex";
 import { exportWalletBackup, importWalletBackup } from "../lib/wallet-backup";
+import { recoverBalanceFromSeed } from "../lib/deterministic-wallet";
 
 /**
  * Account backup section: shows/copies the 12-word recovery phrase and
@@ -98,6 +99,48 @@ export function BackupSection() {
       setWalletBlob(null);
     } catch (err) {
       setWalletError(err instanceof Error ? err.message : "import failed");
+    }
+  };
+
+  // ── Recover balance from seed (NUT-13) ──────────────────────────────
+  const [extraMints, setExtraMints] = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const [recoverStatus, setRecoverStatus] = useState<string | null>(null);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+
+  const handleRecover = async () => {
+    if (!phrase) return;
+    setRecovering(true);
+    setRecoverError(null);
+    setRecoverStatus(null);
+    try {
+      const known = Object.keys(
+        JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<string, unknown>,
+      );
+      const extra = extraMints
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const mints = [...new Set([...known, ...extra])];
+      if (mints.length === 0) {
+        setRecoverError("No mints to scan — add mint URLs above.");
+        return;
+      }
+      const results = await recoverBalanceFromSeed({
+        mnemonic: phrase,
+        mintUrls: mints,
+        onProgress: (m) => setRecoverStatus(m),
+      });
+      const total = results.reduce((a, r) => a + r.recovered, 0);
+      setRecoverStatus(
+        `Recovered ${total.toLocaleString()} sats (${results
+          .map((r) => `${r.mint}: ${r.recovered}`)
+          .join(", ")}). Refresh the balance in the header.`,
+      );
+    } catch (err) {
+      setRecoverError(err instanceof Error ? err.message : "recovery failed");
+    } finally {
+      setRecovering(false);
     }
   };
 
@@ -338,6 +381,35 @@ export function BackupSection() {
             {walletError && <span style={{ fontSize: 12, color: "var(--red)" }}>{walletError}</span>}
           </div>
         </form>
+
+      {/* ── Recover balance from seed (NUT-13) ── */}
+      {phrase && (
+        <div style={{ borderTop: "1px solid var(--border)", marginTop: 20, paddingTop: 16 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
+            Recover balance from seed
+          </label>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
+            Regenerates the balance this account created after NUT-13 backups were enabled, using
+            the recovery phrase. Pre-existing balance (older tokens) moves via the wallet export
+            above.
+          </p>
+          <input
+            type="text"
+            value={extraMints}
+            onChange={(e) => setExtraMints(e.target.value)}
+            placeholder="Extra mint URLs (comma-separated, optional)"
+            autoComplete="off"
+            style={{ marginBottom: 8 }}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button type="button" onClick={handleRecover} disabled={recovering} style={{ padding: "8px 18px", fontSize: 13 }}>
+              {recovering ? "Recovering…" : "Recover balance"}
+            </button>
+            {recoverStatus && <span style={{ fontSize: 12, color: "var(--success)" }}>{recoverStatus}</span>}
+            {recoverError && <span style={{ fontSize: 12, color: "var(--red)" }}>{recoverError}</span>}
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
