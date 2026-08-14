@@ -16,6 +16,18 @@ import { buildWallet } from "./deterministic-wallet"
 
 const STORAGE_KEY = "cashu-wallet-v1"
 
+/**
+ * Fired whenever the local wallet store changes (bid placed, refund recovered,
+ * token received, claim/change collected). Header and dashboard balance
+ * displays listen for it so they refresh immediately instead of only on mount.
+ */
+export const WALLET_CHANGED_EVENT = "egavel:wallet-changed"
+
+function notifyWalletChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(WALLET_CHANGED_EVENT));
+}
+
 interface WalletStore {
   [mintUrl: string]: string[]
 }
@@ -30,6 +42,9 @@ function loadStore(): WalletStore {
 
 function saveStore(data: WalletStore) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  // Every mutation funnels through here (receive/sendP2PK/claimMint/refresh/
+  // storeProofsInWallet) — one dispatch point keeps every balance UI in sync.
+  notifyWalletChanged()
 }
 
 export function useWallet(mintUrl: string) {
@@ -304,6 +319,22 @@ export function useTotalBalance() {
 
   useEffect(() => {
     load()
+    // Refresh whenever the wallet store mutates (bid/refund/receive/claim) —
+    // this keeps the header balance in sync without polling the mint.
+    const onChanged = () => {
+      void load()
+    }
+    // Coming back to the tab is a cheap freshness signal too: another tab may
+    // have placed a bid or recovered a refund while this one was hidden.
+    const onVisibility = () => {
+      if (!document.hidden) void load()
+    }
+    window.addEventListener(WALLET_CHANGED_EVENT, onChanged)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener(WALLET_CHANGED_EVENT, onChanged)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
   }, [load])
 
   const refresh = useCallback(async () => {

@@ -221,6 +221,9 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // Poll auctions+bids with adaptive backoff (same pattern as live-bids.tsx)
+  // so outbid statuses, standing prices and the seller view refresh on their
+  // own — the dashboard used to fetch exactly once per identity change.
   useEffect(() => {
     if (!isLoaded) return;
     if (!identity) {
@@ -235,51 +238,104 @@ export default function DashboardPage() {
       return;
     }
 
-    const fetchData = async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let lastJson = "";
+    const BACKOFF_LEVELS = [4000, 10_000, 30_000, 60_000];
+    let level = 0;
+
+    const fetchData = async (silent: boolean) => {
+      const [auctionsRes, bidsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/auctions?seller_pubkey=${identity.pubkey}`, {
+          signal: AbortSignal.timeout(10000),
+        }),
+        fetch(`${API_BASE}/api/bids?bidder_pubkey=${identity.pubkey}`, {
+          signal: AbortSignal.timeout(10000),
+        }),
+      ]);
+
+      if (!auctionsRes.ok) throw new Error(`auctions: ${auctionsRes.status}`);
+      if (!bidsRes.ok) throw new Error(`bids: ${bidsRes.status}`);
+
+      const fetchedAuctions: Auction[] = await auctionsRes.json();
+      const fetchedBids: PublicBid[] = await bidsRes.json();
+
+      const signature = JSON.stringify({ auctions: fetchedAuctions, bids: fetchedBids });
+      if (signature === lastJson) {
+        // Nothing changed — back off (capped at the slowest level).
+        level = Math.min(level + 1, BACKOFF_LEVELS.length - 1);
+        return;
+      }
+      lastJson = signature;
+      level = 0; // something changed — poll fast again
+
+      if (cancelled) return;
+      setAuctions(fetchedAuctions);
+      setBids(fetchedBids);
+
+      // Build lookup for auctions referenced by bids
+      const lookup: Record<string, Auction> = {};
+      for (const a of fetchedAuctions) {
+        lookup[a.id] = a;
+      }
+      // Fetch any missing auctions from bids
+      const missingIds = [...new Set(fetchedBids.map((b) => b.auction_id))].filter(
+        (id) => !lookup[id],
+      );
+      if (missingIds.length > 0) {
+        const fetched = await Promise.all(missingIds.map(fetchAuctionById));
+        for (const a of fetched) {
+          if (cancelled) return;
+          if (a) lookup[a.id] = a;
+        }
+      }
+      setAuctionLookup(lookup);
+      if (silent) setError(null);
+    };
+
+    const poll = async (silent: boolean) => {
       try {
-        setError(null);
-        const [auctionsRes, bidsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/auctions?seller_pubkey=${identity.pubkey}`, {
-            signal: AbortSignal.timeout(10000),
-          }),
-          fetch(`${API_BASE}/api/bids?bidder_pubkey=${identity.pubkey}`, {
-            signal: AbortSignal.timeout(10000),
-          }),
-        ]);
-
-        if (!auctionsRes.ok) throw new Error(`auctions: ${auctionsRes.status}`);
-        if (!bidsRes.ok) throw new Error(`bids: ${bidsRes.status}`);
-
-        const fetchedAuctions: Auction[] = await auctionsRes.json();
-        const fetchedBids: PublicBid[] = await bidsRes.json();
-
-        setAuctions(fetchedAuctions);
-        setBids(fetchedBids);
-
-        // Build lookup for auctions referenced by bids
-        const lookup: Record<string, Auction> = {};
-        for (const a of fetchedAuctions) {
-          lookup[a.id] = a;
-        }
-        // Fetch any missing auctions from bids
-        const missingIds = [...new Set(fetchedBids.map((b) => b.auction_id))].filter(
-          (id) => !lookup[id],
-        );
-        if (missingIds.length > 0) {
-          const fetched = await Promise.all(missingIds.map(fetchAuctionById));
-          for (const a of fetched) {
-            if (a) lookup[a.id] = a;
-          }
-        }
-        setAuctionLookup(lookup);
+        await fetchData(silent);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        // Transient network error — keep the last good data. Only the first
+        // load surfaces an error banner.
+        if (silent) {
+          // back off a little extra on errors, then keep trying
+          level = Math.min(level + 1, BACKOFF_LEVELS.length - 1);
+        } else {
+          setError(err instanceof Error ? err.message : String(err));
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled && !document.hidden) restartTimer();
       }
     };
 
-    fetchData();
+    const restartTimer = () => {
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => void poll(true), BACKOFF_LEVELS[level] ?? 60_000);
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      } else {
+        void poll(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    void poll(false).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    restartTimer();
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [identity, isLoaded, fetchAuctionById]);
 
   // Resolve watchlist ids to auction item names (ids are 64-char hex; show the
