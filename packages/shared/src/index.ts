@@ -27,6 +27,12 @@ export interface Auction {
   image?: string
   /** All listing images as data URLs (max 4). */
   images?: string[]
+  /**
+   * Standing price in sats (second-price). Computed by the engine from all
+   * verified bids' max_amounts; present on API responses, absent when the
+   * auction has no verified bids (clients fall back to start_price).
+   */
+  current_amount?: number
 }
 
 export interface Bid {

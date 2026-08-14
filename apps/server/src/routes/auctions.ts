@@ -23,6 +23,22 @@ export interface AuctionRoutesConfig {
   feeBps?: number;
 }
 
+/**
+ * Standing price of an auction: the leading verified bid's current_amount
+ * (second-price engine), or the start price when there are no verified bids.
+ * Settled auctions carry their winning_amount, which equals the leader's
+ * standing price at settlement — prefer that so a settled listing shows the
+ * price it actually closed at.
+ */
+async function standingPrice(db: Db, a: Auction): Promise<number> {
+  if (a.state === "SETTLED" && a.winning_amount != null && a.winning_amount > 0) {
+    return a.winning_amount;
+  }
+  const bids = await db.getVerifiedBids(a.id);
+  const leader = bids[0];
+  return leader?.current_amount ?? a.start_price;
+}
+
 export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   const router = new Hono();
   const serverKey =
@@ -48,9 +64,11 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     // Lazy settle: any auction past E+grace settles the moment it is read.
     const settled = [];
     for (const a of auctions) settled.push(await settleIfDue(db, a));
-    const listed = settled.map((a) =>
-      a.images ? { ...a, images: a.images.slice(0, 1) } : a,
-    );
+    const listed = [];
+    for (const a of settled) {
+      const withPrice = { ...a, current_amount: await standingPrice(db, a) };
+      listed.push(withPrice.images ? { ...withPrice, images: withPrice.images.slice(0, 1) } : withPrice);
+    }
     return c.json(listed);
   });
 
@@ -164,9 +182,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     // two (auction + bids), halving polling load (adaptive-backoff client).
     if (c.req.query("with_bids") === "1") {
       const bids = (await db.getVerifiedBids(auction.id)).map(toPublicBid);
-      return c.json({ auction: settled, bids });
+      return c.json({ auction: { ...settled, current_amount: await standingPrice(db, settled) }, bids });
     }
-    return c.json(settled);
+    return c.json({ ...settled, current_amount: await standingPrice(db, settled) });
   });
 
   router.get("/auctions/:id/bids", async (c) => {

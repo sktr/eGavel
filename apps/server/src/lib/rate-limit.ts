@@ -1,8 +1,18 @@
 import type { MiddlewareHandler } from "hono"
 
-export function rateLimit({ windowMs, max }: { windowMs: number; max: number }): MiddlewareHandler {
+export interface RateLimitOptions {
+  windowMs: number
+  max: number
+  /** Restrict counting to these HTTP methods. Absent = all methods. */
+  methods?: string[]
+}
+
+export function rateLimit({ windowMs, max, methods }: RateLimitOptions): MiddlewareHandler {
   const hits = new Map<string, number[]>()
   return async (c, next) => {
+    if (methods && !methods.includes(c.req.method)) {
+      return next()
+    }
     const ip =
       c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
       c.req.header("x-real-ip") ??

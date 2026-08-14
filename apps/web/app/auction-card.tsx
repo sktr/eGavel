@@ -17,6 +17,8 @@ function timeLeft(ms: number): string {
 
 export function AuctionCard({ a }: { a: Auction }) {
   const isOpen = a.state === "ACTIVE" || a.state === "EXTENDED"
+  // Standing price when the auction has verified bids; start price otherwise.
+  const price = a.current_amount ?? a.start_price
   return (
     <a href={`/auctions/${a.id}`} style={{
       display: "block", background: "var(--surface)",
@@ -45,7 +47,7 @@ export function AuctionCard({ a }: { a: Auction }) {
         </div>
         <div style={{ color: "var(--muted)", fontSize: 13, display: "flex", justifyContent: "space-between" }}>
           <span style={{ fontWeight: 600, fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", color: "var(--fg)" }}>
-            {a.start_price.toLocaleString()} sats
+            {price.toLocaleString()} sats
           </span>
           {isOpen && <span>{timeLeft(a.end_time)}</span>}
         </div>
