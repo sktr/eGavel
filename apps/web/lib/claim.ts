@@ -1,8 +1,9 @@
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "./hex";
-import { Wallet, Amount } from "@cashu/cashu-ts";
+import { Amount } from "@cashu/cashu-ts";
 import { storeProofsInWallet } from "./wallet";
+import { buildWallet } from "./deterministic-wallet";
 import type { Proof } from "@cashu/cashu-ts";
 
 export interface StoredProof {
@@ -40,7 +41,7 @@ export async function swapLockedProofs(
 ): Promise<Proof[]> {
   const mintUrl = (proofs[0] as unknown as { mint_url?: string }).mint_url ?? "";
   if (!mintUrl) throw new Error("proof.mint_url is required");
-  const wallet = new Wallet(mintUrl, { unit: "sat" });
+  const wallet = buildWallet(mintUrl);
   await wallet.loadMint();
   const preview = await wallet.prepareSwapToSend(Amount.from(amount), proofs);
   const result = await wallet.completeSwap(preview, privkeyHex);
