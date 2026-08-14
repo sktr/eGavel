@@ -44,6 +44,25 @@ export default function TermsPage() {
           were to disappear, locked funds are recoverable by the bidder after
           the locktime via the refund key.
         </p>
+        <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--fg)", marginTop: 12 }}>
+          <b>You are responsible for your own funds.</b> Your account is a
+          12-word recovery phrase stored only in this browser. The platform
+          does not keep a copy of it and cannot restore it for you. You must
+          write down and safely store your recovery phrase.
+        </p>
+        <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--fg)", marginTop: 12 }}>
+          <b>Recovery.</b> The app uses a single fixed mint. As long as you
+          have your recovery phrase, your balance can be regenerated
+          automatically (NUT-13) on any device — the phrase alone is
+          sufficient; you do not need to remember the mint URL.
+        </p>
+        <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--fg)", marginTop: 12 }}>
+          <b>Browser storage.</b> Funds are stored in this browser's local
+          storage, which may be cleared by the browser (for example, Safari's
+          Intelligent Tracking Prevention can delete it after about 7 days
+          without visiting the site). Without your recovery phrase, funds
+          stored only in browser local storage cannot be recovered.
+        </p>
       </section>
 
       <section style={{ marginBottom: 28 }}>

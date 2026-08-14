@@ -160,6 +160,13 @@ export function BackupSection() {
         balance: Cashu tokens live in this browser only. Move that balance with the wallet backup
         below. Never share the phrase with anyone.
       </p>
+      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
+        <strong>Write the phrase down and keep it safe.</strong> If this browser's storage is
+        cleared (for example by Safari after ~7 days without visiting), the phrase is the only
+        way to recover your funds. Balance created with the phrase is regenerated automatically
+        from the app's single fixed mint — you do not need to remember the mint URL. Use
+        "Recover balance from seed" below (or the restore form) on any device.
+      </p>
 
       {phrase ? (
         <div style={{ marginBottom: 16 }}>

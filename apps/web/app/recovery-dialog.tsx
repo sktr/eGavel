@@ -44,8 +44,11 @@ export function RecoveryPhraseDialog() {
         </h2>
         <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
           These 12 words are <b style={{ color: "var(--fg)" }}>your wallet and your account</b>.
-          Restore the same account on any device (or after clearing browser data) by
-          entering this phrase. Anyone who has it can move your funds, so <b style={{ color: "var(--red)" }}>never share it</b>.
+          Write them down and keep them somewhere safe — they are the only backup
+          of your funds. Restore the same account on any device (or after clearing
+          browser data) by entering this phrase; your balance is regenerated
+          automatically, you do not need to remember anything else. Anyone who
+          has the phrase can move your funds, so <b style={{ color: "var(--red)" }}>never share it</b>.
         </p>
         <div
           style={{
