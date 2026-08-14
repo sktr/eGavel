@@ -8,6 +8,7 @@ import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import type { Auction } from "@egavel/shared"
 import { useWallet } from "../../../lib/wallet"
+import { buildPendingEntry, savePendingBid, placeBid } from "../../../lib/pending-bids"
 import { useIdentity } from "../../../lib/identity"
 import { QRCodeSVG } from "qrcode.react"
 
@@ -240,7 +241,7 @@ export function BidForm({
       }
 
       // 2. Build the server payload — a bid is backed by a bundle of proofs
-      const payload = JSON.stringify({
+      const payloadObj = {
         proofs: proofs.map((p) => ({
           id: p.id,
           amount: Number(p.amount),
@@ -251,20 +252,34 @@ export function BidForm({
         auction_id: auction.id,
         amount: bidAmount,
         bidder_pubkey: identity.pubkey,
-      })
+      }
+      const payload = JSON.stringify(payloadObj)
 
-      // 3. Send the bid to the auction server, which verifies it.
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-        .replace(/\/+$/, "")
-        .replace(/\/api$/, "")
-      const res = await fetch(`${apiBase}/api/bids`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
+      // 3. Persist the locked proofs BEFORE any network call. If the tab
+      // closes or the POST fails, this entry is the recovery record.
+      const entry = buildPendingEntry({
+        auctionId: auction.id,
+        bidderPubkey: identity.pubkey,
+        mintUrl: mintUrlForBid,
+        amount: bidAmount,
+        locktime,
+        proofs: proofs.map((p) => ({
+          keyset_id: p.id,
+          C: p.C,
+          secret: p.secret,
+          amount: Number(p.amount),
+        })),
+        payload,
       })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error ?? "bid rejected")
+      savePendingBid(entry)
+
+      // 4. Pre-register (mode:pending) then submit the live bid.
+      const placed = await placeBid({ payload: payloadObj, entry })
+      if (!placed.ok) {
+        setError(
+          `${placed.error} — your ${bidAmount} sats are locked. Recover them in Dashboard → Locked funds.`,
+        )
+        return
       }
 
       setSuccess("bid submitted!")
