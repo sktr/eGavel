@@ -5,6 +5,7 @@ import type { Auction, PublicBid } from "@egavel/shared"
 import { BidForm } from "./bid-form"
 import { useWatchlist } from "../../../lib/watchlist"
 import { useIdentity } from "../../../lib/identity"
+import { loadPendingBids, myBidState } from "../../../lib/pending-bids"
 
 function formatTimeRemaining(endTime: number): { text: string; urgent: boolean } {
   const diff = endTime - Date.now()
@@ -42,7 +43,7 @@ export function DetailBidPanel({
   // Proxy bidding: the standing price is the leader's current_amount (2nd max + increment).
   const highestBid = bids.length > 0 ? bids[0]!.current_amount : auction.start_price
   const minBid = auction.start_price
-  const amHighest = bids.length > 0 && identity !== null && bids[0]!.bidder_npub === identity.pubkey
+  const myBid = myBidState(auction.id, bids, loadPendingBids(), identity?.pubkey ?? null)
 
   const [buyNow, setBuyNow] = useState(false)
   const buyNowAvailable =
@@ -100,25 +101,58 @@ export function DetailBidPanel({
             sats
           </span>
         </span>
-        {amHighest && isOpen && (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "2px 10px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 600,
-              background: "var(--accent-soft)",
-              color: "var(--accent)",
-            }}
-          >
-            <span className="material-icons" style={{ fontSize: 13 }}>stars</span>
-            You are the highest bidder
-          </span>
-        )}
       </div>
+
+      {/* Your bid status */}
+      {isOpen && myBid.kind !== "none" && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexWrap: "wrap",
+            padding: "2px 0 12px",
+            fontSize: 13,
+          }}
+        >
+          {myBid.kind === "leader" && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "2px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                background: "var(--accent-soft)",
+                color: "var(--accent)",
+              }}
+            >
+              <span className="material-icons" style={{ fontSize: 13 }}>stars</span>
+              Highest bidder at {myBid.standingPrice?.toLocaleString()} sats
+            </span>
+          )}
+          {myBid.kind === "confirming" && (
+            <span style={{ color: "var(--muted)" }}>
+              Bid being confirmed…{" "}
+              <a href="/dashboard" style={{ color: "var(--accent)" }}>
+                check status
+              </a>
+            </span>
+          )}
+          {myBid.kind === "outbid" && (
+            <span style={{ color: "var(--red)" }}>
+              Outbid — refunding…
+            </span>
+          )}
+          {myBid.max != null && (
+            <span style={{ color: "var(--muted)" }}>
+              your max: {myBid.max.toLocaleString()} sats (locked)
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Timer */}
       {isOpen && (
