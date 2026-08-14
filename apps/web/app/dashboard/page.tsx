@@ -16,6 +16,7 @@ import { bytesToHex } from "../../lib/hex";
 import type { Auction, PublicBid } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
 import { BackupSection } from "../backup-section";
+import { WalletPanel } from "../components/wallet-panel";
 
 // Root (no /api suffix) — the code below adds "/api" explicitly. This matches
 // the convention in lib/claim.ts and checkout.tsx so NEXT_PUBLIC_API_URL can
@@ -249,11 +250,14 @@ export default function DashboardPage() {
     let level = 0;
 
     const fetchData = async (silent: boolean) => {
+      // SEC-2: /bids requires a Schnorr signature over `bids:<pubkey>` so a
+      // third party cannot read another user's bid history.
+      const bidderSig = signSecretHex(`bids:${identity.pubkey}`, bytesToHex(identity.secretKey));
       const [auctionsRes, bidsRes] = await Promise.all([
         fetch(`${API_BASE}/api/auctions?seller_pubkey=${identity.pubkey}`, {
           signal: AbortSignal.timeout(10000),
         }),
-        fetch(`${API_BASE}/api/bids?bidder_pubkey=${identity.pubkey}`, {
+        fetch(`${API_BASE}/api/bids?bidder_pubkey=${identity.pubkey}&bidder_sig=${bidderSig}`, {
           signal: AbortSignal.timeout(10000),
         }),
       ]);
@@ -749,6 +753,8 @@ export default function DashboardPage() {
       </div>
 
       {/* ===== Account Backup (recovery phrase) ===== */}
+      <WalletPanel />
+
       <BackupSection />
 
       {/* ===== Watching ===== */}

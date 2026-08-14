@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { useIdentity } from "../lib/identity";
 import { bytesToHex } from "../lib/hex";
-import { exportWalletBackup, importWalletBackup } from "../lib/wallet-backup";
-import { recoverBalanceFromSeed } from "../lib/deterministic-wallet";
-import { DEFAULT_MINT } from "../lib/config";
 
 /**
  * Account backup section: shows/copies the 12-word recovery phrase and
  * provides a restore form (phrase or hex secret key).
+ *
+ * The phrase restores EVERYTHING: the account key, bid funds (server-side),
+ * and — via NUT-13 deterministic secrets — the unspent balance created with
+ * the phrase. Recovery runs automatically on restore against the app's single
+ * fixed mint (see identity.tsx), so no mint URL or extra step is needed.
  * Legacy accounts (no phrase) display the raw hex secret key instead.
  */
 export function BackupSection() {
@@ -45,96 +47,14 @@ export function BackupSection() {
     }
     const res = restore(input);
     if (res.ok) {
-      setStatus("Restored — this device now uses the restored account.");
+      setStatus(
+        "Restored — this device now uses the restored account. Your balance is being recovered automatically.",
+      );
       setInput("");
     } else {
       setError(
         res.error === "INVALID_RECOVERY_INPUT" ? "Invalid input" : (res.error ?? "Restore failed"),
       );
-    }
-  };
-
-  // ── Wallet (device-local unspent balance) export / import ────────────
-  const [walletBlob, setWalletBlob] = useState<string | null>(null);
-  const [importText, setImportText] = useState("");
-  const [walletStatus, setWalletStatus] = useState<string | null>(null);
-  const [walletError, setWalletError] = useState<string | null>(null);
-
-  const exportWallet = () => {
-    setWalletError(null);
-    setWalletStatus(null);
-    try {
-      setWalletBlob(exportWalletBackup());
-    } catch {
-      setWalletError("could not read the wallet");
-    }
-  };
-
-  const copyWallet = async () => {
-    if (!walletBlob) return;
-    try {
-      await navigator.clipboard.writeText(walletBlob);
-      setWalletStatus("Backup copied — keep it somewhere safe. Anyone with it can spend these sats.");
-      setTimeout(() => setWalletStatus(null), 2500);
-    } catch {
-      // clipboard unavailable
-    }
-  };
-
-  const importWallet = (e: React.FormEvent) => {
-    e.preventDefault();
-    setWalletError(null);
-    setWalletStatus(null);
-    try {
-      const results = importWalletBackup(importText.trim());
-      if (results.length === 0) {
-        setWalletStatus("No wallets found in the backup.");
-      } else {
-        setWalletStatus(
-          `Imported ${results
-            .map((r) => `${r.amount} sats (${r.mint})`)
-            .join(", ")}. Refresh the balance in the header.`,
-        );
-      }
-      setImportText("");
-      setWalletBlob(null);
-    } catch (err) {
-      setWalletError(err instanceof Error ? err.message : "import failed");
-    }
-  };
-
-  // ── Recover balance from seed (NUT-13) ──────────────────────────────
-  const [recovering, setRecovering] = useState(false);
-  const [recoverStatus, setRecoverStatus] = useState<string | null>(null);
-  const [recoverError, setRecoverError] = useState<string | null>(null);
-
-  const handleRecover = async () => {
-    if (!phrase) return;
-    setRecovering(true);
-    setRecoverError(null);
-    setRecoverStatus(null);
-    try {
-      // The app is fixed to a single mint (config.ts) — always scan it, plus
-      // any legacy mint keys still in the store.
-      const known = Object.keys(
-        JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<string, unknown>,
-      );
-      const mints = [...new Set([DEFAULT_MINT, ...known])];
-      const results = await recoverBalanceFromSeed({
-        mnemonic: phrase,
-        mintUrls: mints,
-        onProgress: (m) => setRecoverStatus(m),
-      });
-      const total = results.reduce((a, r) => a + r.recovered, 0);
-      setRecoverStatus(
-        `Recovered ${total.toLocaleString()} sats (${results
-          .map((r) => `${r.mint}: ${r.recovered}`)
-          .join(", ")}). Refresh the balance in the header.`,
-      );
-    } catch (err) {
-      setRecoverError(err instanceof Error ? err.message : "recovery failed");
-    } finally {
-      setRecovering(false);
     }
   };
 
@@ -155,17 +75,14 @@ export function BackupSection() {
         <h2 style={{ fontSize: 17, fontWeight: 600 }}>Account backup</h2>
       </div>
       <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
-        These 12 words (or the secret key) restore your account key and the funds locked in your
-        bids — from any device. They do <strong>not</strong> include this device's unspent wallet
-        balance: Cashu tokens live in this browser only. Move that balance with the wallet backup
-        below. Never share the phrase with anyone.
+        These 12 words (or the secret key) are your account. Enter them after clearing browser data
+        or on another device to restore your identity, your bids, and the balance created with this
+        phrase. Restoring automatically recovers your balance — no mint URL needed. Never share the
+        phrase with anyone.
       </p>
-      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: "var(--amber)", marginBottom: 16, lineHeight: 1.6 }}>
         <strong>Write the phrase down and keep it safe.</strong> If this browser's storage is
-        cleared (for example by Safari after ~7 days without visiting), the phrase is the only
-        way to recover your funds. Balance created with the phrase is regenerated automatically
-        from the app's single fixed mint — you do not need to remember the mint URL. Use
-        "Recover balance from seed" below (or the restore form) on any device.
+        cleared, the phrase is the only way back in.
       </p>
 
       {phrase ? (
@@ -294,117 +211,6 @@ export function BackupSection() {
           new key.
         </p>
       </form>
-
-      {/* ── Wallet balance backup (device-local unspent tokens) ── */}
-      <div style={{ borderTop: "1px solid var(--border)", marginTop: 20, paddingTop: 16 }}>
-        <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
-          Wallet balance (this browser)
-        </label>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
-          Your unspent tokens are stored only in this browser and are not included in the recovery
-          phrase. To move them to another device, export them here and import the backup there.
-        </p>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <button type="button" onClick={exportWallet} style={{ padding: "8px 18px", fontSize: 13 }}>
-            Export wallet
-          </button>
-          {walletBlob && (
-            <button
-              type="button"
-              onClick={copyWallet}
-              style={{
-                border: "1px solid var(--border)",
-                background: "var(--surface)",
-                color: "var(--fg)",
-                padding: "8px 18px",
-                fontSize: 13,
-              }}
-            >
-              Copy backup
-            </button>
-          )}
-        </div>
-
-        {walletBlob && (
-          <textarea
-            readOnly
-            rows={4}
-            value={walletBlob}
-            style={{
-              width: "100%",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              padding: "10px 12px",
-              fontSize: 11,
-              fontFamily: "var(--font-mono)",
-              background: "var(--bg)",
-              color: "var(--fg)",
-              resize: "vertical",
-              marginBottom: 12,
-              wordBreak: "break-all",
-            }}
-          />
-        )}
-
-        <form onSubmit={importWallet} style={{ marginTop: 4 }}>
-          <label htmlFor="wallet-import" style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-            Import wallet backup
-          </label>
-          <textarea
-            id="wallet-import"
-            rows={3}
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-            placeholder='Paste the wallet backup JSON from another device (starts with {"version":1,...)'
-            autoComplete="off"
-            style={{
-              width: "100%",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              padding: "10px 12px",
-              fontSize: 11,
-              fontFamily: "var(--font-mono)",
-              background: "var(--surface)",
-              color: "var(--fg)",
-              resize: "vertical",
-              marginBottom: 8,
-              wordBreak: "break-all",
-            }}
-          />
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button type="submit" style={{ padding: "8px 18px", fontSize: 13 }}>
-              Import
-            </button>
-            {walletStatus && (
-              <span style={{ fontSize: 12, color: "var(--success)" }}>{walletStatus}</span>
-            )}
-            {walletError && <span style={{ fontSize: 12, color: "var(--red)" }}>{walletError}</span>}
-          </div>
-        </form>
-
-      {/* ── Recover balance from seed (NUT-13) ── */}
-      {phrase && (
-        <div style={{ borderTop: "1px solid var(--border)", marginTop: 20, paddingTop: 16 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
-            Recover balance from seed
-          </label>
-          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
-            Regenerates the balance this account created after NUT-13 backups were enabled, using
-            the recovery phrase. The app uses a single mint ({DEFAULT_MINT}) — no entry needed.
-            Restoring the phrase on a new device recovers this automatically; the button below is a
-            manual fallback. Pre-existing balance (older tokens) moves via the wallet export above.
-          </p>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button type="button" onClick={handleRecover} disabled={recovering} style={{ padding: "8px 18px", fontSize: 13 }}>
-              {recovering ? "Recovering…" : "Recover balance"}
-            </button>
-            {recoverStatus && <span style={{ fontSize: 12, color: "var(--success)" }}>{recoverStatus}</span>}
-            {recoverError && <span style={{ fontSize: 12, color: "var(--red)" }}>{recoverError}</span>}
-          </div>
-        </div>
-      )}
-      </div>
     </div>
   );
 }
