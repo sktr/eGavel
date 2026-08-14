@@ -118,7 +118,9 @@ export async function reconcileEntry(
   return "unregistered";
 }
 
-export type PlaceBidResult = { ok: true } | { ok: false; error: string };
+export type PlaceBidResult =
+  | { ok: true; current_amount?: number }
+  | { ok: false; error: string };
 
 /**
  * Two-step submission: pre-register (`mode:"pending"`) so the server can
@@ -154,7 +156,8 @@ export async function placeBid(params: {
       return { ok: false, error: err.error ?? "bid rejected" };
     }
     updatePendingBidStatus(params.entry.bidId, "live");
-    return { ok: true };
+    const body = (await res.json().catch(() => ({}))) as { current_amount?: number };
+    return { ok: true, current_amount: body.current_amount };
   } catch (err) {
     return { ok: false, error: String(err) };
   }

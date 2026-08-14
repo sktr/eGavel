@@ -134,7 +134,14 @@ export function LiveBids({
 
   return (
     <>
-      <DetailBidPanel auction={auction} bids={bids} serverNpub={serverNpub} />
+      <DetailBidPanel
+        auction={auction}
+        bids={bids}
+        serverNpub={serverNpub}
+        onBidPlaced={(currentAmount) =>
+          setAuction((prev) => ({ ...prev, current_amount: currentAmount }))
+        }
+      />
 
       {/* Bid History */}
       <div

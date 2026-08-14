@@ -231,6 +231,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
     return c.json({
       ok: true,
+      ...(result.buyNow && { buyNow: true }),
       ...(result.current_amount != null && { current_amount: result.current_amount }),
     });
   });

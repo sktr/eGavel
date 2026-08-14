@@ -40,10 +40,13 @@ export function DetailBidPanel({
   auction,
   bids,
   serverNpub,
+  onBidPlaced,
 }: {
   auction: Auction
   bids: PublicBid[]
   serverNpub: string
+  /** Forwarded to BidForm; fired with the new standing price after a bid. */
+  onBidPlaced?: (currentAmount: number) => void
 }) {
   const { identity } = useIdentity()
   // Read localStorage entries in an effect, not during render: SSR has no
@@ -55,7 +58,11 @@ export function DetailBidPanel({
   }, [])
   const isOpen = auction.state === "ACTIVE" || auction.state === "EXTENDED"
   // Proxy bidding: the standing price is the leader's current_amount (2nd max + increment).
-  const highestBid = bids.length > 0 ? bids[0]!.current_amount : auction.start_price
+  // Prefer auction.current_amount — the server computes it on every read and
+  // LiveBids updates it immediately after the user's own bid lands.
+  const highestBid =
+    auction.current_amount ??
+    (bids.length > 0 ? bids[0]!.current_amount : auction.start_price)
   const minBid = auction.start_price
   const myBid = myBidState(auction.id, bids, myEntries, identity?.pubkey ?? null)
 
@@ -92,7 +99,7 @@ export function DetailBidPanel({
     isOpen &&
     auction.buy_now_price !== null &&
     auction.buy_now_price > 0 &&
-    (bids.length === 0 || auction.buy_now_price > bids[0]!.current_amount)
+    (auction.current_amount == null || auction.buy_now_price > auction.current_amount)
 
   const { watching, toggle } = useWatchlist()
   const isWatching = watching(auction.id)
@@ -253,6 +260,7 @@ export function DetailBidPanel({
         auction={auction}
         serverNpub={serverNpub}
         buyNowPrice={buyNow ? auction.buy_now_price : undefined}
+        onBidPlaced={onBidPlaced}
       />
 
       {/* Bid note */}

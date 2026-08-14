@@ -17,10 +17,13 @@ export function BidForm({
   auction,
   serverNpub: serverNpubProp,
   buyNowPrice,
+  onBidPlaced,
 }: {
   auction: Auction
   serverNpub: string
   buyNowPrice?: number | null
+  /** Called immediately after a successful bid with the new standing price. */
+  onBidPlaced?: (currentAmount: number) => void
 }) {
   const router = useRouter()
   const { identity, isLoaded } = useIdentity()
@@ -281,6 +284,9 @@ export function BidForm({
       }
 
       setSuccess("bid submitted!")
+      if (placed.ok && placed.current_amount != null) {
+        onBidPlaced?.(placed.current_amount)
+      }
       setTimeout(() => router.refresh(), 2000)
     } catch (err) {
       setError(String(err))

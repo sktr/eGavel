@@ -6,7 +6,7 @@ import { computeStandingPrice } from "./lib/standing-price.js"
 import { ANTI_SNIPING_WINDOW, EXTEND_BY } from "./lib/settle.js"
 
 export type ProcessBidResult =
-  | { ok: true; buyNow?: boolean }
+  | { ok: true; buyNow?: boolean; current_amount?: number }
   | { ok: false; error: string }
 
 export type ProcessPendingBidResult = { ok: true } | { ok: false; error: string }
@@ -188,7 +188,7 @@ export async function processBid(
       bid.current_amount = auction.buy_now_price
       await db.saveBid(bid)
       await db.saveAuction(auction)
-      return { ok: true, buyNow: true }
+      return { ok: true, buyNow: true, current_amount: auction.buy_now_price }
     }
 
     // ── Anti-sniping (event-driven): a bid in the last 5 minutes of the
@@ -203,6 +203,6 @@ export async function processBid(
       await db.saveAuction(auction)
     }
 
-    return { ok: true }
+    return { ok: true, current_amount: newPrice }
   })
 }

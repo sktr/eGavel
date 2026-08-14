@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest"
 import { initDb, type Db } from "../src/db/index.js"
 import { processBid, processPendingBid } from "../src/process-bid.js"
+import { createAuctionRoutes } from "../src/routes/auctions.js"
+import { schnorr } from "@noble/curves/secp256k1.js"
+import { bytesToHex, hexToBytes } from "../src/lib/hex.js"
 import type { Auction } from "@egavel/shared"
 
 const SELLER = "02deadbeef"
@@ -81,6 +84,7 @@ describe("processBid (proxy bidding)", async () => {
     await db.saveAuction(auction)
     const result = await processBid(payload(auction, 500, "n1"), db, SERVER)
     expect(result.ok).toBe(true)
+    if (result.ok) expect(result.current_amount).toBe(100) // standing price == start
     const verified = await db.getVerifiedBids("a1")
     expect(verified).toHaveLength(1)
     expect(verified[0]!.max_amount).toBe(500) // locked proofs == max
@@ -93,6 +97,7 @@ describe("processBid (proxy bidding)", async () => {
     await processBid(payload(auction, 200, "n1"), db, SERVER) // A: max 200
     const result = await processBid(payload(auction, 300, "n2", BIDDER2), db, SERVER) // B: max 300
     expect(result.ok).toBe(true)
+    if (result.ok) expect(result.current_amount).toBe(210) // 200 + inc(200)=10
 
     const verified = await db.getVerifiedBids("a1")
     expect(verified).toHaveLength(1)
@@ -198,7 +203,10 @@ describe("processBid (proxy bidding)", async () => {
     await db.saveAuction(auction)
     const result = await processBid(payload(auction, 1500, "n3"), db, SERVER)
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.buyNow).toBe(true)
+    if (result.ok) {
+      expect(result.buyNow).toBe(true)
+      expect(result.current_amount).toBe(1000) // buy-now price, not the max
+    }
     const settled = (await db.getAuction("a1"))!
     expect(settled.state).toBe("SETTLED")
     expect(settled.winner_npub).toBe(BIDDER)
@@ -365,5 +373,88 @@ describe("processPendingBid (pre-registration)", () => {
     const p = { ...payload(auction, 500, "n-spent"), mint_url: mintUrl }
     const result = await processPendingBid(p, db, SERVER)
     expect(result).toEqual({ ok: false, error: "verify error: PROOF_ALREADY_SPENT" })
+  })
+})
+
+describe("POST /api/bids — response carries the new standing price", async () => {
+  let db: Db
+  // 64-hex server signing key; its pubkey is placed in the P2PK lock so
+  // verifyBid's SERVER_KEY_MISMATCH check passes through the HTTP route.
+  const SERVER_KEY_64 = "ab".repeat(32)
+  const SERVER_PUB = bytesToHex(schnorr.getPublicKey(hexToBytes(SERVER_KEY_64)))
+
+  function routePayload(auction: Auction, max: number, nonce: string, bidder = BIDDER) {
+    const locktime = Math.ceil((auction.end_time + 24 * 3600_000) / 1000) + 100
+    return {
+      proofs: [
+        {
+          id: "keyset1",
+          amount: max,
+          secret: JSON.stringify([
+            "P2PK",
+            {
+              nonce,
+              data: SELLER,
+              tags: [
+                ["pubkeys", SERVER_PUB, bidder],
+                ["n_sigs", "2"],
+                ["locktime", String(locktime)],
+                ["refund", bidder],
+              ],
+            },
+          ]),
+          C: "c",
+        },
+      ],
+      mint_url: "test://local",
+      auction_id: auction.id,
+      amount: max,
+      bidder_pubkey: bidder,
+    }
+  }
+
+  beforeEach(async () => {
+    db = initDb()
+    process.env.ALLOW_TEST_BIDS = "1"
+  })
+  afterAll(async () => {
+    delete process.env.ALLOW_TEST_BIDS
+  })
+
+  it("returns current_amount on a normal live bid", async () => {
+    const { Hono } = await import("hono")
+    const app = new Hono()
+    app.route("/api", createAuctionRoutes(db, { serverKey: SERVER_KEY_64 }))
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+
+    const res = await app.request("http://localhost/api/bids", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(routePayload(auction, 300, "n1")),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { ok: boolean; current_amount?: number }
+    expect(body.ok).toBe(true)
+    expect(body.current_amount).toBe(100) // first bid stands at start price
+  })
+
+  it("returns the buy-now price when a max reaches buy_now_price", async () => {
+    const { Hono } = await import("hono")
+    const app = new Hono()
+    app.route("/api", createAuctionRoutes(db, { serverKey: SERVER_KEY_64 }))
+    const auction = makeAuction({ buy_now_price: 1000 })
+    await db.saveAuction(auction)
+
+    const res = await app.request("http://localhost/api/bids", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(routePayload(auction, 1500, "n3")),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { ok: boolean; buyNow?: boolean; current_amount?: number }
+    expect(body.ok).toBe(true)
+    expect(body.buyNow).toBe(true)
+    expect(body.current_amount).toBe(1000)
   })
 })
