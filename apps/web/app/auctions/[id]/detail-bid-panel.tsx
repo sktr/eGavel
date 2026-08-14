@@ -5,7 +5,14 @@ import type { Auction, PublicBid } from "@egavel/shared"
 import { BidForm } from "./bid-form"
 import { useWatchlist } from "../../../lib/watchlist"
 import { useIdentity } from "../../../lib/identity"
-import { loadPendingBids, myBidState } from "../../../lib/pending-bids"
+import { refundBid } from "../../../lib/claim"
+import { bytesToHex } from "../../../lib/hex"
+import {
+  loadPendingBids,
+  removePendingBid,
+  updatePendingBidStatus,
+  myBidState,
+} from "../../../lib/pending-bids"
 
 function formatTimeRemaining(endTime: number): { text: string; urgent: boolean } {
   const diff = endTime - Date.now()
@@ -51,6 +58,34 @@ export function DetailBidPanel({
   const highestBid = bids.length > 0 ? bids[0]!.current_amount : auction.start_price
   const minBid = auction.start_price
   const myBid = myBidState(auction.id, bids, myEntries, identity?.pubkey ?? null)
+
+  // Auto-refund: when the user's bid on this auction is outbid, the funds
+  // return immediately (bidder + server co-sign). The local entry carries the
+  // bid id. On success the entry is dropped so the "Outbid — refunding…"
+  // state clears. The dashboard retries any transient failures.
+  useEffect(() => {
+    if (!identity || myBid.kind !== "outbid") return;
+    const entry = myEntries
+      .filter(
+        (e) => e.auctionId === auction.id && e.status !== "refunded" && e.status !== "unregistered",
+      )
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!entry) return;
+    let cancelled = false;
+    refundBid(entry.bidId, entry.bidderPubkey, bytesToHex(identity.secretKey))
+      .then(() => {
+        if (cancelled) return;
+        updatePendingBidStatus(entry.bidId, "refunded");
+        removePendingBid(entry.bidId);
+        setMyEntries(loadPendingBids());
+      })
+      .catch(() => {
+        // transient — the dashboard's auto-refund retries; don't loop here
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [myBid.kind, identity, myEntries, auction.id])
 
   const [buyNow, setBuyNow] = useState(false)
   const buyNowAvailable =
@@ -155,7 +190,7 @@ export function DetailBidPanel({
           )}
           {myBid.max != null && (
             <span style={{ color: "var(--muted)" }}>
-              your max: {myBid.max.toLocaleString()} sats (locked)
+              your max: {myBid.max.toLocaleString()} sats (reserved)
             </span>
           )}
         </div>

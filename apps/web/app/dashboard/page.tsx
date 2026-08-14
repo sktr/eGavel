@@ -326,6 +326,8 @@ export default function DashboardPage() {
 
   // Auto-refund outbid bids: when a bid is no longer the highest, the funds
   // return immediately via bidder+server co-sign (2-of-3, spec §6.4).
+  // Failed refunds are retried every 5 minutes (transient mint/network
+  // failures self-heal; legacy 2-of-2 bids simply keep failing harmlessly).
   const failedRefundsRef = useRef(new Set<string>());
   useEffect(() => {
     if (!identity) return;
@@ -338,18 +340,24 @@ export default function DashboardPage() {
         if (failedRefundsRef.current.has(b.id)) continue;
         try {
           await refundBid(b.id, b.bidder_npub, skHex);
+          // Keep the local entry / Locked Funds section consistent.
+          updatePendingBidStatus(b.id, "refunded");
+          removePendingBid(b.id);
+          setLockedFunds((l) => l.filter((x) => x.bidId !== b.id));
         } catch {
-          // Legacy 2-of-2 bids (pre-2-of-3) can't be co-signed-refunded before
-          // locktime — stop retrying them instead of looping forever.
           failedRefundsRef.current.add(b.id);
         }
       }
     };
     run();
     const timer = setInterval(run, 15000);
+    const retryTimer = setInterval(() => {
+      failedRefundsRef.current.clear();
+    }, 300_000);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      clearInterval(retryTimer);
     };
   }, [bids, identity]);
 
