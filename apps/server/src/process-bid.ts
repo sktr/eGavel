@@ -9,6 +9,75 @@ export type ProcessBidResult =
   | { ok: true; buyNow?: boolean }
   | { ok: false; error: string }
 
+export type ProcessPendingBidResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * Pre-registers a locked proof bundle WITHOUT making it a bid.
+ *
+ * The bundle is fully verified (P2PK structure, server key, mint, NUT-07) but
+ * saved with status='pending': it never becomes leader, never moves the
+ * standing price, never outbids existing bids, and never triggers buy-now or
+ * anti-sniping. The eventual live bid reuses the same deterministic id
+ * (derived from the proofs' Ys) and simply overwrites this row via
+ * `saveBid`'s INSERT OR REPLACE. No proof lock is taken here, so the live
+ * bid's `tryLockProofs` is unaffected.
+ *
+ * Because the server stores the bundle, a pending bid can be refunded
+ * immediately (bidder + server co-sign) if the live bid never lands.
+ */
+export async function processPendingBid(
+  payload: BidPayload,
+  db: Db,
+  serverPubkey?: string,
+): Promise<ProcessPendingBidResult> {
+  const auction = await db.getAuction(payload.auction_id)
+  if (!auction) return { ok: false, error: "auction not found" }
+
+  const result = await verifyBid(payload, auction, undefined, serverPubkey)
+  if (!result.ok) {
+    const err = result.error
+    return {
+      ok: false,
+      error: `verify error: ${"code" in err ? err.code : JSON.stringify(err)}`,
+    }
+  }
+
+  const Y = result.Ys.join(",")
+  const bidId = `${payload.auction_id}-${result.Ys.map((y) => y.slice(0, 6)).join("-")}`
+
+  // Downgrade guard: if this bundle already backs a LIVE bid (same
+  // deterministic id — e.g. a retry of the pre-register step after the live
+  // bid landed, or two tabs), do NOT overwrite it with a pending row. The
+  // live bid stays live; the client's own reconcile will see it as such.
+  const existing = await db.getBid(bidId)
+  if (existing && existing.status === "verified") {
+    return { ok: true }
+  }
+
+  const bid: Bid = {
+    id: bidId,
+    auction_id: payload.auction_id,
+    max_amount: payload.amount,
+    current_amount: 0, // cosmetic; never exposed via getVerifiedBids
+    bidder_npub: payload.bidder_pubkey,
+    Y,
+    received_at: Date.now(),
+    status: "pending",
+    proof_data: JSON.stringify({
+      proofs: payload.proofs.map((p) => ({
+        keyset_id: p.id,
+        C: p.C,
+        secret: p.secret,
+        amount: p.amount,
+      })),
+      mint_url: payload.mint_url,
+      amount: payload.amount,
+    }),
+  }
+  await db.saveBid(bid)
+  return { ok: true }
+}
+
 export async function processBid(
   payload: BidPayload,
   db: Db,

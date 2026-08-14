@@ -4,7 +4,7 @@ import { bytesToHex, hexToBytes } from "../lib/hex.js";
 import { Wallet, OutputData } from "@cashu/cashu-ts";
 import type { Auction } from "@egavel/shared";
 import type { Db } from "../db/index.js";
-import { processBid } from "../process-bid.js";
+import { processBid, processPendingBid } from "../process-bid.js";
 import type { BidPayload } from "../verify/index.js";
 import {
   validateClaim,
@@ -168,9 +168,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   });
 
   router.post("/bids", async (c) => {
-    let body: BidPayload;
+    let body: BidPayload & { mode?: string };
     try {
-      body = (await c.req.json()) as BidPayload;
+      body = (await c.req.json()) as BidPayload & { mode?: string };
     } catch {
       return c.json({ error: "invalid json" }, 400);
     }
@@ -179,11 +179,16 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       return c.json({ error: "missing required fields: auction_id, amount, bidder_pubkey" }, 400);
     }
 
+    if (body.mode === "pending") {
+      const pending = await processPendingBid(body, db, serverPubkey() ?? undefined);
+      if (!pending.ok) return c.json({ error: pending.error }, 400);
+      return c.json({ ok: true, pending: true });
+    }
+
     const result = await processBid(body, db, serverPubkey() ?? undefined);
     if (!result.ok) {
       return c.json({ error: result.error }, 400);
     }
-
     return c.json({ ok: true });
   });
 

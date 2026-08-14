@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { initDb, type Db } from "../src/db/index.js"
-import { processBid } from "../src/process-bid.js"
+import { processBid, processPendingBid } from "../src/process-bid.js"
 import type { Auction } from "@egavel/shared"
 
 const SELLER = "02deadbeef"
@@ -235,5 +235,73 @@ describe("processBid (proxy bidding)", async () => {
     const after = (await db.getAuction("a1"))!
     expect(after.state).toBe("ACTIVE")
     expect(after.end_time).toBe(endTime)
+  })
+})
+
+describe("processPendingBid (pre-registration)", () => {
+  let db: Db
+  beforeEach(async () => {
+    db = initDb()
+    process.env.ALLOW_TEST_BIDS = "1"
+  })
+  afterAll(async () => {
+    delete process.env.ALLOW_TEST_BIDS
+  })
+
+  it("saves a pending bid that does not affect the leader or standing price", async () => {
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+    // a real leading bid first
+    const live = await processBid(payload(auction, 300, "n1"), db, SERVER)
+    expect(live.ok).toBe(true)
+
+    const pending = await processPendingBid(payload(auction, 900, "n2", BIDDER2), db, SERVER)
+    expect(pending.ok).toBe(true)
+
+    const verified = await db.getVerifiedBids("a1")
+    expect(verified).toHaveLength(1) // pending is NOT in the verified set
+    expect(verified[0]!.bidder_npub).toBe(BIDDER) // leader unchanged
+    expect(verified[0]!.current_amount).toBe(100) // standing price unchanged
+  })
+
+  it("pending → live upgrade with the same bundle becomes the verified bid", async () => {
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+    const p = payload(auction, 400, "n3", BIDDER2)
+    const pending = await processPendingBid(p, db, SERVER)
+    expect(pending.ok).toBe(true)
+
+    const live = await processBid(p, db, SERVER)
+    expect(live.ok).toBe(true)
+
+    const verified = await db.getVerifiedBids("a1")
+    expect(verified).toHaveLength(1)
+    expect(verified[0]!.bidder_npub).toBe(BIDDER2)
+    expect(verified[0]!.status).toBe("verified")
+    expect(verified[0]!.max_amount).toBe(400)
+  })
+
+  it("pending bid never triggers buy-now settlement", async () => {
+    const auction = makeAuction({ buy_now_price: 300 })
+    await db.saveAuction(auction)
+    const pending = await processPendingBid(payload(auction, 500, "n4"), db, SERVER)
+    expect(pending.ok).toBe(true)
+    const got = await db.getAuction("a1")
+    expect(got!.state).toBe("ACTIVE")
+  })
+
+  it("pending never downgrades an already-verified bid for the same bundle", async () => {
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+    const p = payload(auction, 400, "n5", BIDDER2)
+    // live first, then a stray pending for the same bundle (retry/two tabs)
+    const live = await processBid(p, db, SERVER)
+    expect(live.ok).toBe(true)
+    const pending = await processPendingBid(p, db, SERVER)
+    expect(pending.ok).toBe(true)
+
+    const verified = await db.getVerifiedBids("a1")
+    expect(verified).toHaveLength(1)
+    expect(verified[0]!.status).toBe("verified") // NOT downgraded to pending
   })
 })

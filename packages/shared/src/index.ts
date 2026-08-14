@@ -39,7 +39,7 @@ export interface Bid {
   bidder_npub: string
   Y: string
   received_at: number
-  status: "verified" | "outbid" | "refunded"
+  status: "pending" | "verified" | "outbid" | "refunded"
   proof_data: string | null  // JSON: { keyset_id, C, secret, mint_url }
 }
 
