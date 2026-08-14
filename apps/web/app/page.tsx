@@ -46,7 +46,7 @@ export default async function Home() {
               marginBottom: 16,
             }}
           >
-            Peer-to-peer auctions
+            Non-custodial auctions
             <br />
             on Cashu e-cash
           </h1>
@@ -59,7 +59,7 @@ export default async function Home() {
               lineHeight: 1.5,
             }}
           >
-            Bid with sats, settle instantly. No account, no custody — your keys, your coins.
+            Bid with sats, settle instantly. No custody — your keys, your coins. Funds are locked 2-of-3, so no single party can move them.
           </p>
           <a
             href="/create"
