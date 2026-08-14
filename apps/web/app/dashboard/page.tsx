@@ -373,7 +373,10 @@ export default function DashboardPage() {
           updatePendingBidStatus(e.bidId, "outbid");
           out.push({ ...e, status: "outbid" });
         } else {
-          out.push(e); // unregistered — retry or locktime recovery
+          // unregistered — retry or locktime recovery; persist the status so
+          // the "unregistered" action row (Retry / Recover after locktime) renders
+          updatePendingBidStatus(e.bidId, "unregistered");
+          out.push({ ...e, status: "unregistered" });
         }
       }
       setLockedFunds(out);
