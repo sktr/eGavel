@@ -855,7 +855,16 @@ export default function CreateAuctionPage() {
                 }}
               />
               <label htmlFor="agree1" style={{ fontSize: 14, cursor: "pointer", fontWeight: 400 }}>
-                I agree to the auction terms and guidelines
+                I agree to the auction{" "}
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ color: "var(--accent)", textDecoration: "underline" }}
+                >
+                  terms and guidelines
+                </a>
               </label>
             </div>
             {fieldErrors.agreeTerms && (

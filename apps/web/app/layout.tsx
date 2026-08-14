@@ -166,6 +166,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <span>© 2025 eGavel</span>
               <div style={{ display: "flex", gap: "var(--space-lg)" }}>
                 <a href="/how-it-works" style={{ color: "var(--muted)", textDecoration: "none" }}>How it Works</a>
+                <a href="/terms" style={{ color: "var(--muted)", textDecoration: "none" }}>Terms</a>
                 <a href="https://github.com/sktr/egavel" style={{ color: "var(--muted)", textDecoration: "none" }}>GitHub</a>
               </div>
             </div>
