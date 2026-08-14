@@ -23,6 +23,8 @@ export interface Db {
   saveFee: (auctionId: string, amount: number, proofs: string) => Promise<void>
   saveChange: (auctionId: string, bidderNpub: string, amount: number, proofs: string) => Promise<void>
   getChange: (auctionId: string) => Promise<{ bidder_npub: string; amount: number; proofs: string } | null>
+  /** Mark an auction as claimed by its seller (idempotent; claim idempotency). */
+  markClaimed: (auctionId: string) => Promise<void>
   tryLockProofs: (bidId: string, auctionId: string, Ys: string[]) => Promise<string[]>
   unlockProofs: (bidId: string, Ys: string[]) => Promise<void>
   /** Atomic state transition ACTIVE/EXTENDED → SETTLED. Returns true if this call performed the transition. */
@@ -59,7 +61,8 @@ export function initDb(): Db {
       condition TEXT,
       shipping TEXT,
       image TEXT,
-      images TEXT
+      images TEXT,
+      claimed INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS bids (
@@ -157,6 +160,7 @@ export function initDb(): Db {
     "ALTER TABLE auctions ADD COLUMN shipping TEXT",
     "ALTER TABLE auctions ADD COLUMN image TEXT",
     "ALTER TABLE auctions ADD COLUMN images TEXT",
+    "ALTER TABLE auctions ADD COLUMN claimed INTEGER NOT NULL DEFAULT 0",
   ]) {
     try {
       db.exec(col)
@@ -196,6 +200,7 @@ export function initDb(): Db {
         delete row.images
       }
     }
+    if (row.claimed !== undefined) row.claimed = Boolean(row.claimed)
     return row
   }
 
@@ -320,6 +325,10 @@ export function initDb(): Db {
         amount: number
         proofs: string
       } | null
+    },
+
+    async markClaimed(auctionId) {
+      db.prepare("UPDATE auctions SET claimed = 1 WHERE id = ?").run(auctionId)
     },
 
     async tryLockProofs(bidId, auctionId, Ys) {

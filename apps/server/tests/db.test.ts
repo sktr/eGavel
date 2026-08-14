@@ -180,3 +180,52 @@ describe("db index creation (dashboard/seller lookups)", async () => {
     expect(names).toContain("idx_auctions_seller_pubkey")
   })
 })
+
+describe("db claimed flag (claim idempotency)", async () => {
+  let db: Db
+  const origPath = process.env.DB_PATH
+  const testPath = path.join(os.tmpdir(), `test-claimed-${Date.now()}.db`)
+
+  beforeEach(async () => {
+    process.env.DB_PATH = testPath
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+    db = initDb()
+  })
+
+  afterEach(async () => {
+    if (origPath === undefined) delete process.env.DB_PATH
+    else process.env.DB_PATH = origPath
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+  })
+
+  it("starts unclaimed and markClaimed persists the flag", async () => {
+    await db.saveAuction(legacyAuction("a1"))
+    const before = await db.getAuction("a1")
+    expect(before!.claimed).toBe(false)
+
+    await db.markClaimed("a1")
+
+    const after = await db.getAuction("a1")
+    expect(after!.claimed).toBe(true)
+  })
+
+  it("markClaimed is idempotent (safe to call twice)", async () => {
+    await db.saveAuction(legacyAuction("a1"))
+    await db.markClaimed("a1")
+    await db.markClaimed("a1")
+    expect((await db.getAuction("a1"))!.claimed).toBe(true)
+  })
+
+  it("survives a re-init (persisted to disk, not in-memory)", async () => {
+    await db.saveAuction(legacyAuction("a1"))
+    await db.markClaimed("a1")
+
+    db = initDb() // same DB_PATH → reopens the file
+
+    expect((await db.getAuction("a1"))!.claimed).toBe(true)
+  })
+})

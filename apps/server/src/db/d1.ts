@@ -32,6 +32,7 @@ export function createD1Db(d1: D1Database): Db {
         delete row.images
       }
     }
+    if (row.claimed !== undefined) row.claimed = Boolean(row.claimed)
     return row
   }
 
@@ -214,6 +215,10 @@ export function createD1Db(d1: D1Database): Db {
         .prepare("SELECT bidder_npub, amount, proofs FROM change_returns WHERE auction_id = ?")
         .bind(auctionId)
         .first<{ bidder_npub: string; amount: number; proofs: string }>()
+    },
+
+    async markClaimed(auctionId) {
+      await d1.prepare("UPDATE auctions SET claimed = 1 WHERE id = ?").bind(auctionId).run()
     },
 
     async tryLockProofs(bidId, auctionId, Ys) {

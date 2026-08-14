@@ -33,6 +33,8 @@ export interface Auction {
    * auction has no verified bids (clients fall back to start_price).
    */
   current_amount?: number
+  /** True once the seller has claimed the winning bid (claim idempotency). */
+  claimed?: boolean
 }
 
 export interface Bid {

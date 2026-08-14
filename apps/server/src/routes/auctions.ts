@@ -426,6 +426,10 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       if (winnerProofs.length > 0 && auction.winner_npub) {
         await db.saveChange(auction.id, auction.winner_npub, change, JSON.stringify(winnerProofs));
       }
+      // Claim idempotency: persist the claimed flag so a page reload after a
+      // successful claim stops showing the claim button (a second claim would
+      // fail anyway — the input proofs are already spent at the mint).
+      await db.markClaimed(auction.id);
 
       return c.json({ seller_proofs: sellerProofs, fee, change });
     } catch (err) {
