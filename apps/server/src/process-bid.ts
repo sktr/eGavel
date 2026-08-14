@@ -49,11 +49,10 @@ export async function processPendingBid(
   // deterministic id — e.g. a retry of the pre-register step after the live
   // bid landed, or two tabs), do NOT overwrite it with a pending row. The
   // live bid stays live; the client's own reconcile will see it as such.
-  const existing = await db.getBid(bidId)
-  if (existing && existing.status === "verified") {
-    return { ok: true }
-  }
-
+  // This is enforced atomically in SQL (`savePendingBid`'s upsert only writes
+  // when the existing row is NOT `verified`), so a concurrent live bid can
+  // never be demoted by a stray pending save — the in-process withAuctionLock
+  // does not span Worker isolates.
   const bid: Bid = {
     id: bidId,
     auction_id: payload.auction_id,
@@ -74,7 +73,7 @@ export async function processPendingBid(
       amount: payload.amount,
     }),
   }
-  await db.saveBid(bid)
+  await db.savePendingBid(bid)
   return { ok: true }
 }
 
@@ -134,6 +133,7 @@ export async function processBid(
     // price while only one bidder is active.
     const maxByBidder = new Map<string, number>()
     for (const b of allBids) {
+      if (b.status === "pending") continue // pre-registrations never price
       const prev = maxByBidder.get(b.bidder_npub) ?? 0
       if (b.max_amount > prev) maxByBidder.set(b.bidder_npub, b.max_amount)
     }

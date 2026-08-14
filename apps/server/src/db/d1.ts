@@ -125,6 +125,36 @@ export function createD1Db(d1: D1Database): Db {
         .run()
     },
 
+    async savePendingBid(bid: Bid) {
+      await d1
+        .prepare(
+          `INSERT INTO bids
+            (id, auction_id, max_amount, current_amount, bidder_npub, Y, received_at, status, proof_data)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             max_amount = excluded.max_amount,
+             current_amount = excluded.current_amount,
+             bidder_npub = excluded.bidder_npub,
+             Y = excluded.Y,
+             received_at = excluded.received_at,
+             status = excluded.status,
+             proof_data = excluded.proof_data
+           WHERE bids.status != 'verified'`,
+        )
+        .bind(
+          bid.id,
+          bid.auction_id,
+          bid.max_amount,
+          bid.current_amount,
+          bid.bidder_npub,
+          bid.Y,
+          bid.received_at,
+          bid.status,
+          bid.proof_data,
+        )
+        .run()
+    },
+
     async getAuctionsBySeller(sellerPubkey: string) {
       const { results } = await d1
         .prepare("SELECT * FROM auctions WHERE seller_pubkey = ? ORDER BY end_time DESC")

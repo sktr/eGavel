@@ -9,6 +9,12 @@ export interface Db {
   getVerifiedBids: (auctionId: string) => Promise<Bid[]>
   getAllBids: (auctionId: string) => Promise<Bid[]>
   saveBid: (bid: Bid) => Promise<void>
+  /**
+   * Atomic save of a pre-registration (status='pending'). Same shape as saveBid
+   * but refuses to overwrite an already-`verified` row (downgrade guard), enforced
+   * in SQL so a concurrent live bid is never demoted across Worker isolates.
+   */
+  savePendingBid: (bid: Bid) => Promise<void>
   getAuctionsBySeller: (sellerPubkey: string) => Promise<Auction[]>
   getBidsByBidder: (bidderPubkey: string) => Promise<Bid[]>
   getBid: (id: string) => Promise<Bid | null>
@@ -243,6 +249,22 @@ export function initDb(): Db {
       db.prepare(
         `INSERT OR REPLACE INTO bids (id, auction_id, max_amount, current_amount, bidder_npub, Y, received_at, status, proof_data)
          VALUES (@id, @auction_id, @max_amount, @current_amount, @bidder_npub, @Y, @received_at, @status, @proof_data)`,
+      ).run({ ...bid, proof_data: bid.proof_data ?? null })
+    },
+
+    async savePendingBid(bid: Bid) {
+      db.prepare(
+        `INSERT INTO bids (id, auction_id, max_amount, current_amount, bidder_npub, Y, received_at, status, proof_data)
+         VALUES (@id, @auction_id, @max_amount, @current_amount, @bidder_npub, @Y, @received_at, @status, @proof_data)
+         ON CONFLICT(id) DO UPDATE SET
+           max_amount = excluded.max_amount,
+           current_amount = excluded.current_amount,
+           bidder_npub = excluded.bidder_npub,
+           Y = excluded.Y,
+           received_at = excluded.received_at,
+           status = excluded.status,
+           proof_data = excluded.proof_data
+         WHERE bids.status != 'verified'`,
       ).run({ ...bid, proof_data: bid.proof_data ?? null })
     },
 

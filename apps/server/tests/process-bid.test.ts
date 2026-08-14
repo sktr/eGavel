@@ -304,4 +304,26 @@ describe("processPendingBid (pre-registration)", () => {
     expect(verified).toHaveLength(1)
     expect(verified[0]!.status).toBe("verified") // NOT downgraded to pending
   })
+
+  it("an abandoned pending bid never moves the standing price for later bids", async () => {
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+    // a real leading bid first
+    const live = await processBid(payload(auction, 300, "n1"), db, SERVER)
+    expect(live.ok).toBe(true)
+
+    // an abandoned pre-registration for a DIFFERENT bidder with a huge max
+    const pending = await processPendingBid(payload(auction, 900, "n2", BIDDER2), db, SERVER)
+    expect(pending.ok).toBe(true)
+
+    // a later live bid prices against the real maxes only — the pending 900 is ignored
+    const later = await processBid(payload(auction, 400, "n3", "05c"), db, SERVER)
+    expect(later.ok).toBe(true)
+
+    const verified = await db.getVerifiedBids("a1")
+    expect(verified).toHaveLength(1)
+    expect(verified[0]!.bidder_npub).toBe("05c")
+    // pending 900 in the engine would give min(400, 400+10)=410; ignored it gives min(400, 300+10)=310
+    expect(verified[0]!.current_amount).toBe(310)
+  })
 })
