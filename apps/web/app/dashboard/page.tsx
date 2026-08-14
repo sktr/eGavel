@@ -227,6 +227,7 @@ export default function DashboardPage() {
 
     const fetchData = async () => {
       try {
+        setError(null);
         const [auctionsRes, bidsRes] = await Promise.all([
           fetch(`${API_BASE}/api/auctions?seller_pubkey=${identity.pubkey}`, {
             signal: AbortSignal.timeout(10000),
