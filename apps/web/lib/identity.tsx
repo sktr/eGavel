@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { hexToBytes } from "./hex";
+import { autoRecoverBalance } from "./deterministic-wallet";
 import {
   createAccount,
   loadAccount,
@@ -130,6 +131,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       markBackupSeen(); // a restorer already holds the phrase
       setIdentity(toIdentity(account));
       setShowBackupPrompt(false);
+      // NUT-13: with the app's single fixed mint, restoring the phrase
+      // automatically recovers the unspent balance in the background.
+      if (account.words) autoRecoverBalance(account.words);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

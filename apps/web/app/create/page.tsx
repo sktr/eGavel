@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useIdentity } from "../../lib/identity";
-import { DEV_TOOLS } from "../../lib/dev-tools";
+import { DEFAULT_MINT } from "../../lib/config";
 import { compressImage } from "../../lib/image";
 import { ItemPlaceholder } from "../../components/item-placeholder";
 
@@ -59,7 +59,6 @@ export default function CreateAuctionPage() {
   const [condition, setCondition] = useState<string | null>(null);
   const [shipping, setShipping] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
-  const [mintUrl, setMintUrl] = useState(DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
@@ -97,14 +96,13 @@ export default function CreateAuctionPage() {
     if (!condition) errs.condition = "Select condition";
     const sp = parseInt(startPrice, 10);
     if (!sp || sp < 1) errs.startPrice = "Enter start price (minimum 1 sat)";
-    if (!mintUrl.trim()) errs.mintUrl = "Enter a valid Mint URL";
     if (!agreeTerms) errs.agreeTerms = "Agree to terms of service";
     setFieldErrors(errs);
 
     const hasErrors = Object.keys(errs).length > 0;
     if (hasErrors) {
       // Scroll to the first invalid field so the user can see what's missing.
-      const order = ["item", "category", "condition", "description", "startPrice", "agree1", "mintUrl"];
+      const order = ["item", "category", "condition", "description", "startPrice", "agree1"];
       const first = order.find((f) => errs[f]);
       if (first) {
         const el = document.getElementById(first);
@@ -154,7 +152,7 @@ export default function CreateAuctionPage() {
         start_price: price,
         end_time: endTime,
         seller_pubkey: identity.pubkey,
-        mint_url: mintUrl.trim(),
+        mint_url: DEFAULT_MINT,
       };
       if (reservePrice) {
         const rp = parseInt(reservePrice, 10);
@@ -197,7 +195,6 @@ export default function CreateAuctionPage() {
       setCondition(null);
       setShipping("");
       setAgreeTerms(false);
-      setMintUrl(DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin");
       setImages([]);
       setFieldErrors({});
 
@@ -236,7 +233,6 @@ export default function CreateAuctionPage() {
     setCondition(null);
     setShipping("");
     setAgreeTerms(false);
-    setMintUrl(DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin");
     setImages([]);
     setFieldErrors({});
     showToast("Form cleared", "delete");
@@ -897,42 +893,6 @@ export default function CreateAuctionPage() {
             )}
           </div>
 
-          {/* Mint URL (hidden for power users) */}
-          <div style={{ marginBottom: 24 }}>
-            <label
-              htmlFor="mintUrl"
-              style={{
-                display: "block",
-                fontSize: 13,
-                fontWeight: 400,
-                marginBottom: 6,
-                color: "var(--muted)",
-              }}
-            >
-              Cashu Mint URL (bidders hold ecash on this mint)
-            </label>
-            <input
-              id="mintUrl"
-              type="url"
-              list="mint-suggestions"
-              value={mintUrl}
-              onChange={(e) => setMintUrl(e.target.value)}
-              placeholder={DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin"}
-              style={{
-                ...inputTextStyle,
-                fontSize: 13,
-                ...errStyle("mintUrl"),
-              }}
-              onFocus={handleFocus}
-              onBlur={(e) => handleBlur(e, "mintUrl")}
-            />
-            {fieldErrors.mintUrl && (
-              <span style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}>
-                {fieldErrors.mintUrl}
-              </span>
-            )}
-          </div>
-
           {/* Error */}
           {error && (
             <p style={{ color: "var(--red)", fontSize: 13, margin: "0 0 16px" }}>{error}</p>
@@ -1237,7 +1197,7 @@ export default function CreateAuctionPage() {
                     ["Category", categoryLabel],
                     ["Condition", condition || "—"],
                     ["Shipping", shipping || "—"],
-                    ["Mint URL", mintUrl],
+                    ["Mint", DEFAULT_MINT],
                   ].map(([label, value]) => (
                     <tr key={label}>
                       <td

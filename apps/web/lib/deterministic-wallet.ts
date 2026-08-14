@@ -7,6 +7,7 @@ import {
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { deriveAccountFromWords, loadAccount } from "./key-store";
 import { storeProofsInWallet } from "./wallet";
+import { DEFAULT_MINT } from "./config";
 
 /**
  * NUT-13 deterministic wallet: the account's BIP-39 phrase derives every new
@@ -188,4 +189,28 @@ export async function recoverBalanceFromSeed(opts: {
     }
   }
   return results;
+}
+
+/**
+ * Background auto-recovery: with the app fixed to a single mint (config.ts),
+ * restoring the phrase can scan that one mint for deterministically-created
+ * proofs — no mint URL entry needed. Skips when the wallet store already
+ * holds proofs for the default mint (idempotent re-login on the same device).
+ * Fire-and-forget; failures are swallowed (the manual Recover button remains).
+ */
+export function autoRecoverBalance(mnemonic: string): void {
+  const attempt = () => {
+    void recoverBalanceFromSeed({ mnemonic, mintUrls: [DEFAULT_MINT] }).catch(() => {});
+  };
+  try {
+    const store = JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    const existing = store[DEFAULT_MINT];
+    if (Array.isArray(existing) && existing.length > 0) return; // already populated
+    attempt();
+  } catch {
+    attempt(); // corrupt store — still try recovery
+  }
 }

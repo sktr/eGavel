@@ -5,6 +5,7 @@ import { useIdentity } from "../lib/identity";
 import { bytesToHex } from "../lib/hex";
 import { exportWalletBackup, importWalletBackup } from "../lib/wallet-backup";
 import { recoverBalanceFromSeed } from "../lib/deterministic-wallet";
+import { DEFAULT_MINT } from "../lib/config";
 
 /**
  * Account backup section: shows/copies the 12-word recovery phrase and
@@ -103,7 +104,6 @@ export function BackupSection() {
   };
 
   // ── Recover balance from seed (NUT-13) ──────────────────────────────
-  const [extraMints, setExtraMints] = useState("");
   const [recovering, setRecovering] = useState(false);
   const [recoverStatus, setRecoverStatus] = useState<string | null>(null);
   const [recoverError, setRecoverError] = useState<string | null>(null);
@@ -114,18 +114,12 @@ export function BackupSection() {
     setRecoverError(null);
     setRecoverStatus(null);
     try {
+      // The app is fixed to a single mint (config.ts) — always scan it, plus
+      // any legacy mint keys still in the store.
       const known = Object.keys(
         JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<string, unknown>,
       );
-      const extra = extraMints
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const mints = [...new Set([...known, ...extra])];
-      if (mints.length === 0) {
-        setRecoverError("No mints to scan — add mint URLs above.");
-        return;
-      }
+      const mints = [...new Set([DEFAULT_MINT, ...known])];
       const results = await recoverBalanceFromSeed({
         mnemonic: phrase,
         mintUrls: mints,
@@ -390,17 +384,10 @@ export function BackupSection() {
           </label>
           <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, lineHeight: 1.6 }}>
             Regenerates the balance this account created after NUT-13 backups were enabled, using
-            the recovery phrase. Pre-existing balance (older tokens) moves via the wallet export
-            above.
+            the recovery phrase. The app uses a single mint ({DEFAULT_MINT}) — no entry needed.
+            Restoring the phrase on a new device recovers this automatically; the button below is a
+            manual fallback. Pre-existing balance (older tokens) moves via the wallet export above.
           </p>
-          <input
-            type="text"
-            value={extraMints}
-            onChange={(e) => setExtraMints(e.target.value)}
-            placeholder="Extra mint URLs (comma-separated, optional)"
-            autoComplete="off"
-            style={{ marginBottom: 8 }}
-          />
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button type="button" onClick={handleRecover} disabled={recovering} style={{ padding: "8px 18px", fontSize: 13 }}>
               {recovering ? "Recovering…" : "Recover balance"}

@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { bytesToHex } from "../../../lib/hex"
 import { DEV_TOOLS } from "../../../lib/dev-tools"
+import { DEFAULT_MINT, TEST_MINT_URL } from "../../../lib/config"
 import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import type { Auction } from "@egavel/shared"
@@ -11,10 +12,6 @@ import { useWallet } from "../../../lib/wallet"
 import { buildPendingEntry, savePendingBid, placeBid } from "../../../lib/pending-bids"
 import { useIdentity } from "../../../lib/identity"
 import { QRCodeSVG } from "qrcode.react"
-
-const TEST_MINT_URL = "test://local"
-
-const DEFAULT_MINT = DEV_TOOLS ? "https://testnut.cashu.space" : "https://mint.minibits.cash/Bitcoin"
 
 export function BidForm({
   auction,
@@ -47,7 +44,8 @@ export function BidForm({
   }, [serverNpubProp])
 
   // Wallet — default to the mint the seller specified (spec §7.4 / review G4)
-  const [mintUrl, setMintUrl] = useState(auction.mint_url || DEFAULT_MINT)
+  // The mint is fixed app-wide (config.ts) — the wallet always operates on it.
+  const mintUrl = auction.mint_url || DEFAULT_MINT
   const wallet = useWallet(mintUrl)
 
   // Form state
@@ -489,41 +487,6 @@ export function BidForm({
             {receiveStatus && <p style={{ fontSize: 12, color: "var(--accent2)", marginTop: 4 }}>{receiveStatus}</p>}
             {receiveError && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{receiveError}</p>}
           </div>
-
-          {/* Mint URL (dev-only; production binds the wallet to the auction's mint) */}
-          {DEV_TOOLS && !testMode && (
-            <div>
-              <label htmlFor="mint" style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>
-                Mint URL
-              </label>
-              <input
-                id="mint"
-                type="url"
-                value={mintUrl}
-                onChange={(e) => setMintUrl(e.target.value)}
-                required
-                style={{
-                  width: "100%",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
-                  padding: "8px 12px",
-                  fontSize: 13,
-                  fontFamily: "var(--font-mono)",
-                  background: "var(--surface)",
-                  color: "var(--fg)",
-                  outline: "none",
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "var(--accent)"
-                  e.currentTarget.style.boxShadow = "0 0 0 3px var(--accent-soft)"
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "var(--border)"
-                  e.currentTarget.style.boxShadow = "none"
-                }}
-              />
-            </div>
-          )}
 
                     {/* Mint sats: dev shows the testnet faucet, production the real
               Lightning mint flow on the auction's mint */}
