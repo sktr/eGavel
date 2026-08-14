@@ -241,4 +241,12 @@ describe("myBidState", () => {
   it("reports none with no relevant entry", () => {
     expect(myBidState("a1", [otherLeader], [], "03cafebabe").kind).toBe("none");
   });
+
+  it("prefers the newest entry when two bundles coexist for the same auction", () => {
+    const older = { ...entry(), amount: 500, status: "live" as const, createdAt: 1000 };
+    const newer = { ...entry(), amount: 700, status: "pending" as const, createdAt: 2000 };
+    const s = myBidState("a1", [], [older, newer], "03cafebabe");
+    expect(s.kind).toBe("confirming");
+    expect(s.max).toBe(700);
+  });
 });

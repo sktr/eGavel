@@ -39,11 +39,18 @@ export function DetailBidPanel({
   serverNpub: string
 }) {
   const { identity } = useIdentity()
+  // Read localStorage entries in an effect, not during render: SSR has no
+  // localStorage, so render-time reads would differ from hydration and cause
+  // a React hydration mismatch (SSR `[]` vs client entries).
+  const [myEntries, setMyEntries] = useState<ReturnType<typeof loadPendingBids>>([])
+  useEffect(() => {
+    setMyEntries(loadPendingBids())
+  }, [])
   const isOpen = auction.state === "ACTIVE" || auction.state === "EXTENDED"
   // Proxy bidding: the standing price is the leader's current_amount (2nd max + increment).
   const highestBid = bids.length > 0 ? bids[0]!.current_amount : auction.start_price
   const minBid = auction.start_price
-  const myBid = myBidState(auction.id, bids, loadPendingBids(), identity?.pubkey ?? null)
+  const myBid = myBidState(auction.id, bids, myEntries, identity?.pubkey ?? null)
 
   const [buyNow, setBuyNow] = useState(false)
   const buyNowAvailable =

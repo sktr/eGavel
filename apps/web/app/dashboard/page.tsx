@@ -361,7 +361,15 @@ export default function DashboardPage() {
       if (entries.length === 0) return;
       const out: typeof entries = [];
       for (const e of entries) {
-        const st = await reconcileEntry(e);
+        let st: Awaited<ReturnType<typeof reconcileEntry>>;
+        try {
+          st = await reconcileEntry(e);
+        } catch {
+          // A flaky/offline probe must not hide the whole Locked Funds section:
+          // keep the entry as-is (its stored status) and move on to the next.
+          out.push(e);
+          continue;
+        }
         if (cancelled) return;
         if (st === "live") {
           updatePendingBidStatus(e.bidId, "live");
@@ -380,7 +388,9 @@ export default function DashboardPage() {
         }
       }
       setLockedFunds(out);
-    })();
+    })().catch(() => {
+      // Never surface an unhandled rejection from the reconcile loop.
+    });
     return () => {
       cancelled = true;
     };

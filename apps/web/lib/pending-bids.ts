@@ -213,9 +213,11 @@ export function myBidState(
       max: maxEntry?.amount,
     };
   }
-  const mine = entries.find(
-    (e) => e.auctionId === auctionId && e.status !== "refunded" && e.status !== "unregistered",
-  );
+  const mine = entries
+    .filter(
+      (e) => e.auctionId === auctionId && e.status !== "refunded" && e.status !== "unregistered",
+    )
+    .sort((a, b) => b.createdAt - a.createdAt)[0];
   if (mine?.status === "pending") return { kind: "confirming", max: mine.amount };
   if (mine) return { kind: "outbid", max: mine.amount };
   return { kind: "none" };

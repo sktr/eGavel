@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest"
 import { initDb, type Db } from "../src/db/index.js"
 import { processBid, processPendingBid } from "../src/process-bid.js"
 import type { Auction } from "@egavel/shared"
@@ -244,6 +244,9 @@ describe("processPendingBid (pre-registration)", () => {
     db = initDb()
     process.env.ALLOW_TEST_BIDS = "1"
   })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
   afterAll(async () => {
     delete process.env.ALLOW_TEST_BIDS
   })
@@ -325,5 +328,42 @@ describe("processPendingBid (pre-registration)", () => {
     expect(verified[0]!.bidder_npub).toBe("05c")
     // pending 900 in the engine would give min(400, 400+10)=410; ignored it gives min(400, 300+10)=310
     expect(verified[0]!.current_amount).toBe(310)
+  })
+
+  it("rejects reusing a refunded bundle as a pending bid (PROOF_ALREADY_SPENT)", async () => {
+    // test://local bypasses the NUT-07 check (verify/index.ts short-circuits
+    // for test mints), so use a real-looking mint URL with a stubbed fetch.
+    // The URL must be unique per test: checkMintCapabilities caches by URL at
+    // module level (INFO_TTL_MS), so a reused URL would hit the cache.
+    const mintUrl = `https://mint-spent-${Date.now()}.test`
+    const auction = makeAuction({ mint_url: mintUrl })
+    await db.saveAuction(auction)
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith("/v1/info")) {
+          return {
+            ok: true,
+            json: async () => ({
+              nuts: {
+                "7": { supported: true },
+                "8": { supported: true },
+                "10": { supported: true },
+                "11": { supported: true },
+              },
+            }),
+          }
+        }
+        if (url.endsWith("/v1/checkstate")) {
+          return { ok: true, json: async () => ({ states: [{ state: "SPENT" }] }) }
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
+    )
+
+    const p = { ...payload(auction, 500, "n-spent"), mint_url: mintUrl }
+    const result = await processPendingBid(p, db, SERVER)
+    expect(result).toEqual({ ok: false, error: "verify error: PROOF_ALREADY_SPENT" })
   })
 })
