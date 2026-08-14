@@ -337,6 +337,27 @@ describe("lazy settle on read", async () => {
     expect(body.state).toBe("SETTLED");
   });
 
+  it("with_bids=1 returns auction + verified bids in one response", async () => {
+    await db.saveAuction(makeAuction({ id: "a2", state: "ACTIVE", end_time: Date.now() + 3600_000 }));
+    await db.saveBid(
+      makeBid({
+        id: "a2-y",
+        auction_id: "a2",
+        status: "verified",
+        current_amount: 500,
+        max_amount: 500,
+      }),
+    );
+    const res = await app.request("http://localhost/api/auctions/a2?with_bids=1");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { auction: Auction; bids: unknown[] };
+    expect(body.auction.id).toBe("a2");
+    expect(body.bids).toHaveLength(1);
+    const b = body.bids[0] as { id: string; max_amount?: number };
+    expect(b.id).toBe("a2-y");
+    expect(b.max_amount).toBeUndefined(); // max secrecy preserved in combined read
+  });
+
   it("settles past-due auctions in the list, leaving live ones active", async () => {
     await db.saveAuction(makeAuction({ id: "a1", state: "ACTIVE", end_time: Date.now() - 60_000 }));
     await db.saveAuction(

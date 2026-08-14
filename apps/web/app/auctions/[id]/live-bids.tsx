@@ -13,7 +13,6 @@ import { bytesToHex } from "../../../lib/hex";
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
   .replace(/\/+$/, "")
   .replace(/\/api$/, "");
-const POLL_MS = 4000;
 
 function shortId(s: string) {
   if (s.length <= 16) return s;
@@ -70,26 +69,66 @@ export function LiveBids({
     // Stop live polling once the auction is decided.
     if (auction.state === "SETTLED" || auction.state === "CLOSED") return;
     let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let lastJson = "";
+
+    // Adaptive backoff: poll fast while things change, slow down while idle.
+    // (Bids are rare, so most polls see no change — backing off cuts the
+    // request rate dramatically without adding visible latency.)
+    const BACKOFF_LEVELS = [4000, 10_000, 30_000, 60_000];
+    let level = 0;
+
     const poll = async () => {
       try {
-        const [aRes, bRes] = await Promise.all([
-          fetch(`${API_BASE}/api/auctions/${initialAuction.id}`, { cache: "no-store" }),
-          fetch(`${API_BASE}/api/auctions/${initialAuction.id}/bids`, { cache: "no-store" }),
-        ]);
-        if (cancelled) return;
-        if (aRes.ok) setAuction((await aRes.json()) as Auction);
-        if (bRes.ok) setBids((await bRes.json()) as PublicBid[]);
+        // Combined endpoint: auction + bids in one request (with_bids=1).
+        const res = await fetch(
+          `${API_BASE}/api/auctions/${initialAuction.id}?with_bids=1`,
+          { cache: "no-store" },
+        );
+        if (cancelled || !res.ok) return;
+        const json = await res.text();
+        if (json === lastJson) {
+          // Nothing changed — back off (capped at the slowest level).
+          level = Math.min(level + 1, BACKOFF_LEVELS.length - 1);
+          return;
+        }
+        lastJson = json;
+        level = 0; // something changed — poll fast again
+        const data = JSON.parse(json) as { auction: Auction; bids: PublicBid[] };
+        setAuction(data.auction);
+        setBids(data.bids);
       } catch {
         // transient network error — keep the last good data
+      } finally {
+        if (!cancelled && !document.hidden) restartTimer();
       }
     };
 
-    const first = setTimeout(poll, 400);
-    const timer = setInterval(poll, POLL_MS);
+    const restartTimer = () => {
+      if (timer) clearInterval(timer);
+      timer = setInterval(poll, BACKOFF_LEVELS[level] ?? 60_000);
+    };
+
+    // Background tab: stop polling entirely — the user isn't looking. Resume
+    // with an immediate poll when the tab becomes visible again.
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      } else {
+        void poll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    if (!document.hidden) void poll();
+    restartTimer();
     return () => {
       cancelled = true;
-      clearTimeout(first);
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [initialAuction.id, auction.state]);
 

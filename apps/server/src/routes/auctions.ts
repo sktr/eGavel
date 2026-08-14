@@ -159,7 +159,14 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   router.get("/auctions/:id", async (c) => {
     const auction = await db.getAuction(c.req.param("id")!);
     if (!auction) return c.json({ error: "not found" }, 404);
-    return c.json(await settleIfDue(db, auction));
+    const settled = await settleIfDue(db, auction);
+    // Combined read for the detail page's live poll: one request instead of
+    // two (auction + bids), halving polling load (adaptive-backoff client).
+    if (c.req.query("with_bids") === "1") {
+      const bids = (await db.getVerifiedBids(auction.id)).map(toPublicBid);
+      return c.json({ auction: settled, bids });
+    }
+    return c.json(settled);
   });
 
   router.get("/auctions/:id/bids", async (c) => {
