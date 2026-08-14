@@ -9,11 +9,11 @@ export default function HowItWorksPage() {
       </div>
 
       <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "clamp(28px,4vw,40px)", marginBottom: 8, letterSpacing: "-0.02em" }}>
-        How eGavel Works
+        How it Works
       </h1>
       <p style={{ color: "var(--muted)", fontSize: 16, marginBottom: 48, maxWidth: 560, lineHeight: 1.6 }}>
-        Non-custodial auctions on Cashu e-cash. Bids are locked with a
-        2-of-3 P2PK lock, and settlement is automatic.
+        eGavel is a non-custodial auction site. You keep your own keys, bid with
+        sats, and settlement happens automatically when an auction ends.
       </p>
 
       {/* Step cards */}
@@ -50,18 +50,6 @@ export default function HowItWorksPage() {
               <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.7, marginBottom: 0 }}>
                 {step.description}
               </p>
-              {step.detail && (
-                <div
-                  style={{
-                    marginTop: 12, padding: "12px 16px",
-                    background: "var(--bg)", borderRadius: "var(--radius-sm)",
-                    color: "var(--fg)", lineHeight: 1.6,
-                    fontFamily: "var(--font-mono)", fontSize: 12,
-                  }}
-                >
-                  {step.detail}
-                </div>
-              )}
             </div>
           </div>
         ))}
@@ -97,6 +85,14 @@ export default function HowItWorksPage() {
             </div>
           ))}
         </div>
+        <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 16, lineHeight: 1.6 }}>
+          For developers: the full technical architecture (API endpoints, the 2-of-3 P2PK lock
+          structure, settlement state machine, and fee model) is documented in the{" "}
+          <a href="https://github.com/sktr/egavel" target="_blank" rel="noopener" style={{ color: "var(--accent)" }}>
+            repository README
+          </a>
+          .
+        </p>
       </div>
 
       {/* Footer links */}
@@ -111,33 +107,28 @@ export default function HowItWorksPage() {
 
 const steps = [
   {
-    title: "Create an Auction",
-    description: "Describe your item, set a starting price and duration. The listing is created directly on the auction server. No deposit, no registration — your account is your key.",
-    detail: "POST /api/auctions · Account = 12-word recovery phrase (BIP-39)",
-  },
-  {
-    title: "Bidders Place Bids",
+    title: "Create an auction",
     description:
-      "Bidders enter their MAXIMUM bid. The engine bids just enough to stay in the lead — the second-highest max plus the minimum increment. Each bid locks its full max as a 2-of-3 P2PK proof (seller + server + bidder).",
-    detail: "2-of-3 lock: seller + server + bidder keys · n_sigs: 2 · Locktime: end_time + 24h · Refund: bidder",
+      "Describe your item, set a starting price and how long the auction runs. Your account is your key — there is no sign-up, no email, and no deposit required.",
   },
   {
-    title: "Auction Extends (Anti-Sniping)",
-    description: "If a bid arrives in the last 5 minutes, the auction auto-extends by 5 more minutes. This prevents last-second sniping and gives other bidders time to respond.",
-    detail: "Extension: +5 min · Trigger: bid within last 5 min of end_time",
-  },
-  {
-    title: "Settlement",
+    title: "Bidders place bids",
     description:
-      "When the auction ends, bids arriving within a 30-second grace window are still accepted. The highest bidder wins at the standing price once the grace window closes.",
-    detail:
-      "State: ACTIVE → EXTENDED → SETTLED · Grace: end + 30s · Winner: standing price ≥ reserve",
+      "Bidders enter the maximum they are willing to pay. The system only bids as much as needed to stay in the lead, so you never pay more than necessary. Each bid is secured so that no one — not even the platform — can touch the funds alone.",
   },
   {
-    title: "Claim & Change",
+    title: "Ending soon? The auction extends",
     description:
-      "The seller claims the winning bid: the server splits the locked proofs into the seller's share, the operator fee, and any change (max − standing price) back to the winner. Outbid bidders get an instant refund via bidder + server co-signature.",
-    detail:
-      "2-of-3: seller + server co-sign the claim · fee: AUCTION_FEE_BPS (5%) · change: returned to the winner",
+      "If a bid arrives in the last 5 minutes, the auction automatically extends by 5 more minutes. This prevents last-second sniping and gives everyone a fair chance to respond.",
+  },
+  {
+    title: "The auction settles",
+    description:
+      "When time runs out, the highest bidder wins at the final price. Payment and settlement happen automatically — no manual steps, no waiting.",
+  },
+  {
+    title: "Claim and change",
+    description:
+      "The seller receives the sale proceeds (minus a small platform fee). The winner gets any excess back automatically, and losing bidders are refunded instantly.",
   },
 ]
