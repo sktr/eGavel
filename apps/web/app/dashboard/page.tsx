@@ -28,6 +28,7 @@ import { BackupSection } from "../backup-section";
 import { IdentityNostrSection } from "../identity-nostr-section";
 import { WalletPanel } from "../../components/wallet-panel";
 import { hexToNpub } from "../../lib/npub";
+import { shortHex } from "../../lib/ident";
 function shortId(s: string) {
   if (s.length <= 16) return s;
   return s.slice(0, 8) + "..." + s.slice(-6);
@@ -1312,8 +1313,20 @@ export default function DashboardPage() {
                     </div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                       Winner:{" "}
-                      <code title={a.winner_npub ? fullNpub(a.winner_npub) : ""}>
-                        {a.winner_npub ? shortNpub(a.winner_npub) : ""}
+                      <code
+                        title={
+                          a.winner_nostr_pubkey
+                            ? fullNpub(a.winner_nostr_pubkey)
+                            : a.winner_npub
+                              ? a.winner_npub
+                              : ""
+                        }
+                      >
+                        {a.winner_nostr_pubkey
+                          ? shortNpub(a.winner_nostr_pubkey)
+                          : a.winner_npub
+                            ? shortHex(a.winner_npub)
+                            : ""}
                       </code>{" "}
                       — {a.winning_amount?.toLocaleString()} sats
                     </div>
@@ -1615,8 +1628,20 @@ export default function DashboardPage() {
                     }}
                   >
                     Winner:{" "}
-                    <code title={a.winner_npub ? fullNpub(a.winner_npub) : ""}>
-                      {a.winner_npub ? shortNpub(a.winner_npub) : ""}
+                    <code
+                      title={
+                        a.winner_nostr_pubkey
+                          ? fullNpub(a.winner_nostr_pubkey)
+                          : a.winner_npub
+                            ? a.winner_npub
+                            : ""
+                      }
+                    >
+                      {a.winner_nostr_pubkey
+                        ? shortNpub(a.winner_nostr_pubkey)
+                        : a.winner_npub
+                          ? shortHex(a.winner_npub)
+                          : ""}
                     </code>{" "}
                     — {a.winning_amount?.toLocaleString()}{" "}
                     sats
