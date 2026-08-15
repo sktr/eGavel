@@ -173,9 +173,9 @@ export function Header() {
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all", background: "transparent", padding: 0 }}>
                         {identity && (
-                          <div style={{ fontSize: 11, color: "var(--muted)", wordBreak: "break-all" }}>
+                          <span style={{ fontSize: 11, color: "var(--muted)", wordBreak: "break-all" }}>
                             {hexToNpub(identity.pubkey)}
-                          </div>
+                          </span>
                         )}
                       </code>
                       <button

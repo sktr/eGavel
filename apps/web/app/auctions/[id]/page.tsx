@@ -13,8 +13,12 @@ function shortId(s: string) {
   return s.slice(0, 8) + "..." + s.slice(-6)
 }
 
+function fullNpub(pubkeyHex: string): string {
+  return /^[0-9a-fA-F]{64}$/.test(pubkeyHex) ? hexToNpub(pubkeyHex) : pubkeyHex
+}
+
 function shortNpub(pubkeyHex: string): string {
-  const npub = hexToNpub(pubkeyHex)
+  const npub = fullNpub(pubkeyHex)
   return npub.length > 20 ? npub.slice(0, 12) + "…" + npub.slice(-8) : npub
 }
 
