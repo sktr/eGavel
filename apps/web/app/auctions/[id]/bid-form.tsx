@@ -13,6 +13,7 @@ import type { Auction } from "@egavel/shared"
 import { useWallet } from "../../../lib/wallet"
 import { buildPendingEntry, savePendingBid, placeBid } from "../../../lib/pending-bids"
 import { useIdentity } from "../../../lib/identity"
+import { shortHex } from "../../../lib/ident"
 import { QRCodeSVG } from "qrcode.react"
 
 export function BidForm({
@@ -312,7 +313,7 @@ export function BidForm({
         </p>
       ) : identity?.pubkey ? (
         <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, wordBreak: "break-all" }}>
-          Key: <code style={{ fontSize: 11 }}>{identity.pubkey.slice(0, 20)}…</code>
+          Key: <code style={{ fontSize: 11 }}>{shortHex(identity.pubkey)}</code>
         </p>
       ) : null}
 
