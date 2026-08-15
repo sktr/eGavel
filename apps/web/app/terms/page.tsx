@@ -76,9 +76,10 @@ export default function TermsPage() {
         </h2>
         <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--fg)" }}>
           Shipping and delivery are a private agreement between the seller and
-          the winning bidder. After settlement, the winner submits a shipping
-          address, which the seller can view on their dashboard. The platform
-          does not handle, insure, or guarantee delivery of any physical item.
+          the winning bidder. After settlement, the winner's Nostr contact
+          handle (npub) is shown to the seller so they can arrange delivery.
+          The platform does not handle, insure, or guarantee delivery of any
+          physical item.
         </p>
       </section>
 

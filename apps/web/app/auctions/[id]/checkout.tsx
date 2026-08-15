@@ -5,6 +5,7 @@ import { hexToNpub } from "../../../lib/npub";
 
 export function Checkout({ winnerNpub }: { winnerNpub: string }) {
   const { identity } = useIdentity();
+  // winnerNpub is stored as the bidder's HEX pubkey — compare hex-vs-hex, not npub.
   const isWinner = identity && winnerNpub && identity.pubkey === winnerNpub;
   if (!isWinner || !identity) return null;
 
