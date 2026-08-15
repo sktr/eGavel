@@ -2,6 +2,7 @@ import { hashToCurve, type Proof } from "@cashu/cashu-ts";
 import type { StoredProof } from "./claim";
 import { swapLockedProofs } from "./claim";
 import { storeProofsInWallet } from "./wallet";
+import { apiUrl } from "./api";
 
 export interface PendingBidEntry {
   /** Deterministic server bid id: `${auctionId}-${Ys[0..6]}-...` */
@@ -30,10 +31,6 @@ export interface MyBidState {
 }
 
 const STORAGE_KEY = "egavel-pending-bids";
-
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "");
 
 export function computeY(secret: string): string {
   return hashToCurve(new TextEncoder().encode(secret)).toHex();
@@ -92,10 +89,6 @@ export function removePendingBid(bidId: string): void {
   );
 }
 
-function normalizedBase(apiBase: string): string {
-  return apiBase.replace(/\/+$/, "").replace(/\/api$/, "");
-}
-
 /**
  * Ask the server what happened to a pre-registered bundle by probing the
  * refund-data endpoint (404 = never registered; 200 = refundable now;
@@ -103,11 +96,10 @@ function normalizedBase(apiBase: string): string {
  */
 export async function reconcileEntry(
   entry: PendingBidEntry,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<ReconcileStatus> {
-  const base = normalizedBase(apiBase);
   const res = await fetch(
-    `${base}/api/bids/${entry.bidId}/refund-data?bidder_pubkey=${entry.bidderPubkey}`,
+    apiUrl(`/bids/${entry.bidId}/refund-data?bidder_pubkey=${entry.bidderPubkey}`, apiBase),
   );
   if (res.status === 200) return "refundable";
   if (res.status === 400) {
@@ -132,12 +124,11 @@ export async function placeBid(params: {
   entry: PendingBidEntry;
   apiBase?: string;
 }): Promise<PlaceBidResult> {
-  const base = normalizedBase(params.apiBase ?? API_BASE);
   try {
     // Pre-register is best-effort: a rejected or failed pre-register must not
     // prevent the live bid below (the local entry still covers recovery).
     try {
-      await fetch(`${base}/api/bids`, {
+      await fetch(apiUrl("/bids", params.apiBase), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...params.payload, mode: "pending" }),
@@ -146,7 +137,7 @@ export async function placeBid(params: {
       // ignore — the live bid below still proceeds
     }
 
-    const res = await fetch(`${base}/api/bids`, {
+    const res = await fetch(apiUrl("/bids", params.apiBase), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params.payload),
@@ -165,7 +156,7 @@ export async function placeBid(params: {
 
 export async function retryEntry(
   entry: PendingBidEntry,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<PlaceBidResult> {
   return placeBid({ payload: JSON.parse(entry.payload) as Record<string, unknown>, entry, apiBase });
 }

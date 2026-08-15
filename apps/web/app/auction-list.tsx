@@ -1,14 +1,15 @@
 import type { Auction } from "@egavel/shared"
 import { LiveAuctionList } from "./live-auction-list"
+import { apiUrl } from "../lib/api"
 
-const API_BASE = (process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "")
+// Server components resolve the base at request time: SSR_API_URL for
+// server-side fetches, falling back to the public client URL.
+const SSR_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL
 
 export async function AuctionList() {
   let initial: Auction[] = []
   try {
-    const res = await fetch(`${API_BASE}/api/auctions`, { cache: "no-store" })
+    const res = await fetch(apiUrl("/auctions", SSR_BASE), { cache: "no-store" })
     if (res.ok) initial = (await res.json()) as Auction[]
   } catch {
     // leave initial empty — the live list will surface the error state

@@ -4,10 +4,7 @@ import { useState } from "react";
 import { useIdentity } from "../../../lib/identity";
 import { signSecretHex } from "../../../lib/claim";
 import { bytesToHex } from "../../../lib/hex";
-
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "");
+import { apiUrl } from "../../../lib/api";
 
 export function Checkout({ auctionId, winnerNpub }: { auctionId: string; winnerNpub: string }) {
   const { identity } = useIdentity();
@@ -39,7 +36,7 @@ export function Checkout({ auctionId, winnerNpub }: { auctionId: string; winnerN
       const content = JSON.stringify({ auction_id: auctionId, address, note: noteOrNull });
       const sig = signSecretHex(content, bytesToHex(identity.secretKey));
 
-      const res = await fetch(`${API_BASE}/api/auctions/${auctionId}/shipping`, {
+      const res = await fetch(apiUrl(`/auctions/${auctionId}/shipping`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

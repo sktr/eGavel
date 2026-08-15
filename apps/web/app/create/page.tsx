@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useIdentity } from "../../lib/identity";
+import { apiUrl } from "../../lib/api";
 import { DEFAULT_MINT } from "../../lib/config";
 import { compressImage } from "../../lib/image";
 import { ItemPlaceholder } from "../../components/item-placeholder";
@@ -170,10 +171,7 @@ export default function CreateAuctionPage() {
         body.images = images;
       }
 
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-        .replace(/\/+$/, "")
-        .replace(/\/api$/, "");
-      const res = await fetch(`${apiBase}/api/auctions`, {
+      const res = await fetch(apiUrl("/auctions"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

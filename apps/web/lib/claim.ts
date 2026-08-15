@@ -4,6 +4,7 @@ import { bytesToHex, hexToBytes } from "./hex";
 import { Amount } from "@cashu/cashu-ts";
 import { storeProofsInWallet } from "./wallet";
 import { buildWallet } from "./deterministic-wallet";
+import { apiUrl } from "./api";
 import type { Proof } from "@cashu/cashu-ts";
 
 export interface StoredProof {
@@ -48,17 +49,13 @@ export async function swapLockedProofs(
   return [...result.send, ...result.keep];
 }
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "");
-
 export async function fetchClaimData(
   auctionId: string,
   sellerPubkey: string,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<StoredProofBundle> {
   const res = await fetch(
-    `${apiBase}/api/auctions/${auctionId}/claim-data?seller_pubkey=${sellerPubkey}`,
+    apiUrl(`/auctions/${auctionId}/claim-data?seller_pubkey=${sellerPubkey}`, apiBase),
   );
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -70,9 +67,9 @@ export async function fetchClaimData(
 export async function fetchRefundData(
   bidId: string,
   bidderPubkey: string,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<StoredProofBundle> {
-  const res = await fetch(`${apiBase}/api/bids/${bidId}/refund-data?bidder_pubkey=${bidderPubkey}`);
+  const res = await fetch(apiUrl(`/bids/${bidId}/refund-data?bidder_pubkey=${bidderPubkey}`, apiBase));
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? "refund-data failed");
@@ -84,9 +81,9 @@ export async function requestCoSign(
   auctionId: string,
   secrets: string[],
   sellerSigs: string[],
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<string[]> {
-  const res = await fetch(`${apiBase}/api/auctions/${auctionId}/co-sign`, {
+  const res = await fetch(apiUrl(`/auctions/${auctionId}/co-sign`, apiBase), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ secrets, seller_sigs: sellerSigs }),
@@ -105,14 +102,14 @@ export async function claimAuction(
   auctionId: string,
   sellerPubkey: string,
   sellerSkHex: string,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<{ proofs: Proof[]; fee: number }> {
   const bundle = await fetchClaimData(auctionId, sellerPubkey, apiBase);
 
   const secrets = bundle.proofs.map((p) => p.secret);
   const sellerSigs = secrets.map((s) => signSecretHex(s, sellerSkHex));
 
-  const res = await fetch(`${apiBase}/api/auctions/${auctionId}/claim`, {
+  const res = await fetch(apiUrl(`/auctions/${auctionId}/claim`, apiBase), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ secrets, seller_sigs: sellerSigs }),
@@ -131,7 +128,7 @@ export async function refundBid(
   bidId: string,
   bidderPubkey: string,
   bidderSkHex: string,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<Proof[]> {
   const bundle = await fetchRefundData(bidId, bidderPubkey, apiBase);
 
@@ -154,7 +151,7 @@ export async function refundBid(
   // swapped-out sats never appear in the balance (and their secrets are lost).
   storeProofsInWallet(recovered, bundle.mint_url, bidderPubkey);
   // Notify the server so the bid is marked refunded (idempotency).
-  fetch(`${apiBase}/api/bids/${bidId}/refunded?bidder_pubkey=${bidderPubkey}`, {
+  fetch(apiUrl(`/bids/${bidId}/refunded?bidder_pubkey=${bidderPubkey}`, apiBase), {
     method: "POST",
   }).catch(() => {});
   return recovered;
@@ -164,9 +161,9 @@ async function requestRefundCoSign(
   bidId: string,
   secrets: string[],
   bidderSigs: string[],
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<string[]> {
-  const res = await fetch(`${apiBase}/api/bids/${bidId}/refund-co-sign`, {
+  const res = await fetch(apiUrl(`/bids/${bidId}/refund-co-sign`, apiBase), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ secrets, bidder_sigs: bidderSigs }),
@@ -193,11 +190,14 @@ export async function fetchShippingData(
   auctionId: string,
   sellerPubkey: string,
   sellerSkHex: string,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<{ address: string | null; note: string | null }> {
   const sellerSig = signSecretHex(`shipping:${auctionId}`, sellerSkHex);
   const res = await fetch(
-    `${apiBase}/api/auctions/${auctionId}/shipping?seller_pubkey=${sellerPubkey}&seller_sig=${sellerSig}`,
+    apiUrl(
+      `/auctions/${auctionId}/shipping?seller_pubkey=${sellerPubkey}&seller_sig=${sellerSig}`,
+      apiBase,
+    ),
     { signal: AbortSignal.timeout(10000) },
   );
   if (!res.ok) return { address: null, note: null };
@@ -207,10 +207,10 @@ export async function fetchShippingData(
 export async function fetchChangeData(
   auctionId: string,
   bidderPubkey: string,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<ChangeReturn> {
   const res = await fetch(
-    `${apiBase}/api/auctions/${auctionId}/change?bidder_pubkey=${bidderPubkey}`,
+    apiUrl(`/auctions/${auctionId}/change?bidder_pubkey=${bidderPubkey}`, apiBase),
     { cache: "no-store" },
   );
   if (!res.ok) {
@@ -227,7 +227,7 @@ export async function fetchChangeData(
 export async function collectChange(
   auctionId: string,
   bidderPubkey: string,
-  apiBase = API_BASE,
+  apiBase?: string,
 ): Promise<ChangeReturn> {
   const data = await fetchChangeData(auctionId, bidderPubkey, apiBase);
   storeProofsInWallet(data.proofs as unknown as Proof[], data.mint_url, bidderPubkey);

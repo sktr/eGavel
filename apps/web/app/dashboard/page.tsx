@@ -19,18 +19,11 @@ import {
   recoverAfterLocktime,
 } from "../../lib/pending-bids";
 import { bytesToHex } from "../../lib/hex";
+import { apiUrl } from "../../lib/api";
 import type { Auction, PublicBid } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
 import { BackupSection } from "../backup-section";
 import { WalletPanel } from "../../components/wallet-panel";
-
-// Root (no /api suffix) — the code below adds "/api" explicitly. This matches
-// the convention in lib/claim.ts and checkout.tsx so NEXT_PUBLIC_API_URL can
-// point at the Worker origin (https://egavel-api.sktr1211.workers.dev).
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "");
-
 function shortId(s: string) {
   if (s.length <= 16) return s;
   return s.slice(0, 8) + "..." + s.slice(-6);
@@ -160,7 +153,7 @@ export default function DashboardPage() {
 
   const fetchAuctionById = useCallback(async (id: string): Promise<Auction | null> => {
     try {
-      const res = await fetch(`${API_BASE}/api/auctions/${id}`, {
+      const res = await fetch(apiUrl(`/auctions/${id}`), {
         cache: "no-store",
         signal: AbortSignal.timeout(10000),
       });
@@ -199,10 +192,10 @@ export default function DashboardPage() {
       // third party cannot read another user's bid history.
       const bidderSig = signSecretHex(`bids:${identity.pubkey}`, bytesToHex(identity.secretKey));
       const [auctionsRes, bidsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/auctions?seller_pubkey=${identity.pubkey}`, {
+        fetch(apiUrl(`/auctions?seller_pubkey=${identity.pubkey}`), {
           signal: AbortSignal.timeout(10000),
         }),
-        fetch(`${API_BASE}/api/bids?bidder_pubkey=${identity.pubkey}&bidder_sig=${bidderSig}`, {
+        fetch(apiUrl(`/bids?bidder_pubkey=${identity.pubkey}&bidder_sig=${bidderSig}`), {
           signal: AbortSignal.timeout(10000),
         }),
       ]);

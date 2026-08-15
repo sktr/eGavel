@@ -3,13 +3,7 @@
 import { useState, useEffect } from "react"
 import type { Auction } from "@egavel/shared"
 import { AuctionCard } from "./auction-card"
-
-// Root (no /api suffix) — the code below adds "/api" explicitly. Matches the
-// convention in live-bids.tsx so NEXT_PUBLIC_API_URL can point at the Worker
-// origin without a trailing path.
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "")
+import { apiUrl } from "../lib/api"
 
 /**
  * Live home/listing sections. Polls GET /api/auctions with adaptive backoff
@@ -30,7 +24,7 @@ export function LiveAuctionList({ initial }: { initial: Auction[] }) {
 
     const poll = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/auctions`, { cache: "no-store" })
+        const res = await fetch(apiUrl("/auctions"), { cache: "no-store" })
         if (cancelled || !res.ok) return
         const json = await res.text()
         if (json === lastJson) {

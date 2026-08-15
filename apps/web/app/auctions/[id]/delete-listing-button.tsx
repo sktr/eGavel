@@ -5,10 +5,7 @@ import { useRouter } from "next/navigation"
 import { useIdentity } from "../../../lib/identity"
 import { signSecretHex } from "../../../lib/claim"
 import { bytesToHex } from "../../../lib/hex"
-
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "")
+import { apiUrl } from "../../../lib/api"
 
 /**
  * Seller-only "Delete listing" button for bid-less auctions. Shown next to
@@ -49,7 +46,7 @@ export function DeleteListingButton({
       // is public listing data — the server requires key-ownership proof).
       const sellerSig = signSecretHex(`delete:${auctionId}`, bytesToHex(identity.secretKey))
       const res = await fetch(
-        `${API_BASE}/api/auctions/${auctionId}?seller_pubkey=${identity.pubkey}&seller_sig=${sellerSig}`,
+        apiUrl(`/auctions/${auctionId}?seller_pubkey=${identity.pubkey}&seller_sig=${sellerSig}`),
         { method: "DELETE" },
       )
       if (!res.ok) {

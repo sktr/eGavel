@@ -6,13 +6,7 @@ import { DetailBidPanel } from "./detail-bid-panel";
 import { useIdentity } from "../../../lib/identity";
 import { refundBid } from "../../../lib/claim";
 import { bytesToHex } from "../../../lib/hex";
-
-// Root (no /api suffix) — the code below adds "/api" explicitly. Matches the
-// convention in lib/claim.ts and checkout.tsx so NEXT_PUBLIC_API_URL can point
-// at the Worker origin without a trailing path.
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "");
+import { apiUrl } from "../../../lib/api";
 
 function shortId(s: string) {
   if (s.length <= 16) return s;
@@ -82,7 +76,7 @@ export function LiveBids({
       try {
         // Combined endpoint: auction + bids in one request (with_bids=1).
         const res = await fetch(
-          `${API_BASE}/api/auctions/${initialAuction.id}?with_bids=1`,
+          apiUrl(`/auctions/${initialAuction.id}?with_bids=1`),
           { cache: "no-store" },
         );
         if (cancelled || !res.ok) return;

@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { bytesToHex } from "../../../lib/hex"
+import { rootUrl } from "../../../lib/api"
 import { DEV_TOOLS } from "../../../lib/dev-tools"
 import { DEFAULT_MINT, TEST_MINT_URL } from "../../../lib/config"
 import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
@@ -35,10 +36,8 @@ export function BidForm({
       setServerPubkeyHex(serverNpubProp) // the server pubkey, as hex
       return
     }
-    const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-      .replace(/\/+$/, "")
-      .replace(/\/api$/, "")
-    fetch(`${apiBase}/health`, { cache: "no-store" })
+    // /health is mounted at the root (not under /api) — rootUrl handles that.
+    fetch(rootUrl("/health"), { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         if (data.pubkey) setServerPubkeyHex(data.pubkey)

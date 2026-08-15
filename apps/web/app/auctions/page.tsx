@@ -1,10 +1,9 @@
 import type { Auction } from "@egavel/shared"
 import { AuctionCard } from "../auction-card"
 import { FilterBar } from "./filter-bar"
+import { apiUrl } from "../../lib/api"
 
-const API_BASE = (process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "")
+const SSR_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL
 
 const PAGE_SIZE = 16
 
@@ -19,7 +18,7 @@ export default async function AllAuctionsPage({
   const statusFilter = params.status ?? "all"
 
   // Fetch all auctions
-  const res = await fetch(`${API_BASE}/api/auctions`, { cache: "no-store" })
+  const res = await fetch(apiUrl("/auctions", SSR_BASE), { cache: "no-store" })
   if (!res.ok) {
     return (
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 24px" }}>

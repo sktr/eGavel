@@ -1,11 +1,10 @@
 import type { MetadataRoute } from "next"
+import { apiUrl } from "../lib/api"
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/+$/, "")
 
-// Root (no /api suffix) — matches the convention used across the app.
-const API_BASE = (process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-  .replace(/\/+$/, "")
-  .replace(/\/api$/, "")
+// Server components resolve the base at request time (SSR_API_URL first).
+const SSR_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
@@ -18,7 +17,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Dynamic public pages: every auction detail page.
   let auctionRoutes: MetadataRoute.Sitemap = []
   try {
-    const res = await fetch(`${API_BASE}/api/auctions`, { cache: "no-store" })
+    const res = await fetch(apiUrl("/auctions", SSR_BASE), { cache: "no-store" })
     if (res.ok) {
       const auctions = (await res.json()) as { id: string }[]
       auctionRoutes = auctions.map((a) => ({
