@@ -176,22 +176,6 @@ export function createD1Db(d1: D1Database): Db {
       return d1.prepare("SELECT * FROM bids WHERE id = ?").bind(id).first<Bid>()
     },
 
-    async saveShipping(auctionId, address, note) {
-      await d1
-        .prepare(
-          "INSERT OR REPLACE INTO shipping (auction_id, address, note, created_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind(auctionId, address, note, Date.now())
-        .run()
-    },
-
-    async getShipping(auctionId) {
-      return d1
-        .prepare("SELECT address, note FROM shipping WHERE auction_id = ?")
-        .bind(auctionId)
-        .first<{ address: string; note: string | null }>()
-    },
-
     async saveFee(auctionId, amount, proofs) {
       await d1
         .prepare(

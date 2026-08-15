@@ -18,8 +18,6 @@ export interface Db {
   getAuctionsBySeller: (sellerPubkey: string) => Promise<Auction[]>
   getBidsByBidder: (bidderPubkey: string) => Promise<Bid[]>
   getBid: (id: string) => Promise<Bid | null>
-  saveShipping: (auctionId: string, address: string, note: string | null) => Promise<void>
-  getShipping: (auctionId: string) => Promise<{ address: string; note: string | null } | null>
   saveFee: (auctionId: string, amount: number, proofs: string) => Promise<void>
   saveChange: (auctionId: string, bidderNpub: string, amount: number, proofs: string) => Promise<void>
   getChange: (auctionId: string) => Promise<{ bidder_npub: string; amount: number; proofs: string } | null>
@@ -74,14 +72,6 @@ export function initDb(): Db {
       Y TEXT NOT NULL,
       received_at INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'verified',
-      FOREIGN KEY (auction_id) REFERENCES auctions(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS shipping (
-      auction_id TEXT PRIMARY KEY,
-      address TEXT NOT NULL,
-      note TEXT,
-      created_at INTEGER NOT NULL,
       FOREIGN KEY (auction_id) REFERENCES auctions(id)
     );
 
@@ -291,18 +281,6 @@ export function initDb(): Db {
       return (db.prepare("SELECT * FROM bids WHERE id = ?").get(id) ?? null) as Bid | null
     },
 
-    async saveShipping(auctionId, address, note) {
-      db.prepare(
-        `INSERT OR REPLACE INTO shipping (auction_id, address, note, created_at)
-         VALUES (?, ?, ?, ?)`,
-      ).run(auctionId, address, note, Date.now())
-    },
-
-    async getShipping(auctionId) {
-      return (db
-        .prepare("SELECT address, note FROM shipping WHERE auction_id = ?")
-        .get(auctionId) ?? null) as { address: string; note: string | null } | null
-    },
     async saveFee(auctionId, amount, proofs) {
       db.prepare(
         `INSERT OR REPLACE INTO fees (auction_id, amount, proofs, created_at)

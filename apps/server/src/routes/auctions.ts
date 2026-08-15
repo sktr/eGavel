@@ -563,56 +563,5 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     return c.json({ ok: true });
   });
 
-  // ── Checkout: winner registers a shipping address.
-  // Auth = Schnorr signature over the payload string (same scheme as P2PK). ──
-  router.post("/auctions/:id/shipping", async (c) => {
-    const auction = await db.getAuction(c.req.param("id")!);
-    if (!auction) return c.json({ error: "not found" }, 404);
-    let body: {
-      auction_id?: string;
-      address?: string;
-      note?: string | null;
-      pubkey?: string;
-      sig?: string;
-    };
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "invalid json" }, 400);
-    }
-    const { auction_id, address, note, pubkey, sig } = body;
-    if (!auction_id || !address || !pubkey || !sig) {
-      return c.json({ error: "missing auction_id, address, pubkey, sig" }, 400);
-    }
-    if (auction_id !== auction.id) return c.json({ error: "INVALID_CONTENT" }, 400);
-    if (!auction.winner_npub || canonicalPubkey(pubkey) !== canonicalPubkey(auction.winner_npub)) {
-      return c.json({ error: "NOT_WINNER" }, 400);
-    }
-    const content = JSON.stringify({ auction_id, address, note: note ?? null });
-    if (!verifySecretSignature(sig, content, canonicalPubkey(pubkey))) {
-      return c.json({ error: "INVALID_SIGNATURE" }, 400);
-    }
-    await db.saveShipping(auction.id, address, note ?? null);
-    return c.json({ ok: true });
-  });
-
-  // ── Shipping read: seller-only, Schnorr-signed over `shipping:<id>` ──
-  router.get("/auctions/:id/shipping", async (c) => {
-    const auction = await db.getAuction(c.req.param("id")!);
-    if (!auction) return c.json({ error: "not found" }, 404);
-    const sellerPubkey = c.req.query("seller_pubkey") ?? "";
-    const sellerSig = c.req.query("seller_sig") ?? "";
-    if (canonicalPubkey(sellerPubkey) !== canonicalPubkey(auction.seller_pubkey)) {
-      return c.json({ error: "NOT_SELLER" }, 400);
-    }
-    // The pubkey is public listing data — require proof of key ownership so a
-    // third party cannot read the winner's shipping address.
-    if (!verifySecretSignature(sellerSig, `shipping:${auction.id}`, canonicalPubkey(sellerPubkey))) {
-      return c.json({ error: "INVALID_SIGNATURE" }, 400);
-    }
-    const shipping = await db.getShipping(auction.id);
-    return c.json(shipping ?? { address: null, note: null });
-  });
-
   return router;
 }

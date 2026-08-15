@@ -262,69 +262,6 @@ describe("POST /api/auctions (create listing, HTTP-direct)", async () => {
   });
 });
 
-describe("POST /api/auctions/:id/shipping (Schnorr-signed payload)", async () => {
-  let db: Db;
-  let app: Hono;
-  let winnerSkHex: string;
-  let winnerPubkey: string;
-
-  beforeEach(async () => {
-    db = initDb();
-    winnerSkHex = bytesToHex(schnorr.utils.randomSecretKey());
-    winnerPubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(winnerSkHex)));
-    await db.saveAuction(makeAuction({ state: "SETTLED", winner_npub: winnerPubkey }));
-    app = new Hono();
-    app.route("/api", createAuctionRoutes(db));
-  });
-
-  function shippingBody(address: string, note: string | null, skHex: string, pubkey: string) {
-    const content = JSON.stringify({ auction_id: "a1", address, note });
-    return {
-      auction_id: "a1",
-      address,
-      note,
-      pubkey,
-      sig: signSecret(content, skHex),
-    };
-  }
-
-  it("accepts a Schnorr-signed shipping payload from the winner", async () => {
-    const res = await app.request("http://localhost/api/auctions/a1/shipping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(shippingBody("Tokyo", null, winnerSkHex, winnerPubkey)),
-    });
-    expect(res.status).toBe(200);
-    expect((await db.getShipping("a1"))?.address).toBe("Tokyo");
-  });
-
-  it("rejects a signature from a non-winner (NOT_WINNER)", async () => {
-    const otherSkHex = bytesToHex(schnorr.utils.randomSecretKey());
-    const otherPubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(otherSkHex)));
-    const res = await app.request("http://localhost/api/auctions/a1/shipping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(shippingBody("Osaka", null, otherSkHex, otherPubkey)),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("NOT_WINNER");
-  });
-
-  it("rejects a tampered payload (INVALID_SIGNATURE)", async () => {
-    const body = shippingBody("Tokyo", null, winnerSkHex, winnerPubkey);
-    body.address = "Hacked"; // tampered payload
-    const res = await app.request("http://localhost/api/auctions/a1/shipping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    expect(res.status).toBe(400);
-    const parsed = (await res.json()) as { error: string };
-    expect(parsed.error).toBe("INVALID_SIGNATURE");
-  });
-});
-
 describe("POST /api/auctions/:id/claim — swap failure never leaks internals", async () => {
   let db: Db;
   let app: Hono;

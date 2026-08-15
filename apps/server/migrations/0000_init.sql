@@ -35,14 +35,6 @@ CREATE TABLE IF NOT EXISTS bids (
   FOREIGN KEY (auction_id) REFERENCES auctions(id)
 );
 
-CREATE TABLE IF NOT EXISTS shipping (
-  auction_id TEXT PRIMARY KEY,
-  address TEXT NOT NULL,
-  note TEXT,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (auction_id) REFERENCES auctions(id)
-);
-
 CREATE TABLE IF NOT EXISTS fees (
   auction_id TEXT PRIMARY KEY,
   amount INTEGER NOT NULL,
