@@ -29,6 +29,11 @@ export interface Db {
   settleAuction: (auctionId: string, winnerNpub: string | null, winningAmount: number) => Promise<boolean>
   /** Remove a listing (only valid for auctions with no bids). */
   deleteAuction: (auctionId: string) => Promise<void>
+  /** Upsert a trading↔nostr pubkey link. */
+  saveNostrLink: (tradingPubkey: string, nostrPubkey: string) => Promise<void>
+  getNostrLink: (tradingPubkey: string) => Promise<{ nostr_pubkey: string } | null>
+  /** Unlink a trading pubkey from its nostr pubkey. */
+  deleteNostrLink: (tradingPubkey: string) => Promise<void>
   exec: (sql: string) => Promise<void>
 }
 
@@ -99,6 +104,13 @@ export function initDb(): Db {
       bid_id TEXT NOT NULL,
       auction_id TEXT NOT NULL,
       locked_at INTEGER NOT NULL
+    );
+
+    -- Map a trading pubkey to a nostr pubkey (upsert semantics).
+    CREATE TABLE IF NOT EXISTS nostr_links (
+      trading_pubkey TEXT PRIMARY KEY,
+      nostr_pubkey TEXT NOT NULL,
+      created_at INTEGER NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_bids_auction_id ON bids(auction_id);
@@ -339,6 +351,20 @@ export function initDb(): Db {
 
     async deleteAuction(auctionId) {
       db.prepare("DELETE FROM auctions WHERE id = ?").run(auctionId)
+    },
+
+    async saveNostrLink(tradingPubkey, nostrPubkey) {
+      db.prepare(
+        "INSERT OR REPLACE INTO nostr_links (trading_pubkey, nostr_pubkey, created_at) VALUES (?, ?, ?)",
+      ).run(tradingPubkey, nostrPubkey, Date.now())
+    },
+
+    async getNostrLink(tradingPubkey) {
+      return (db.prepare("SELECT nostr_pubkey FROM nostr_links WHERE trading_pubkey = ?").get(tradingPubkey) ?? null) as { nostr_pubkey: string } | null
+    },
+
+    async deleteNostrLink(tradingPubkey) {
+      db.prepare("DELETE FROM nostr_links WHERE trading_pubkey = ?").run(tradingPubkey)
     },
 
     async exec(sql: string) {

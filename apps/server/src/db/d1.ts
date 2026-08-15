@@ -241,6 +241,26 @@ export function createD1Db(d1: D1Database): Db {
       await d1.prepare("DELETE FROM auctions WHERE id = ?").bind(auctionId).run()
     },
 
+    async saveNostrLink(tradingPubkey, nostrPubkey) {
+      await d1
+        .prepare(
+          "INSERT OR REPLACE INTO nostr_links (trading_pubkey, nostr_pubkey, created_at) VALUES (?, ?, ?)",
+        )
+        .bind(tradingPubkey, nostrPubkey, Date.now())
+        .run()
+    },
+
+    async getNostrLink(tradingPubkey) {
+      return d1
+        .prepare("SELECT nostr_pubkey FROM nostr_links WHERE trading_pubkey = ?")
+        .bind(tradingPubkey)
+        .first<{ nostr_pubkey: string }>()
+    },
+
+    async deleteNostrLink(tradingPubkey) {
+      await d1.prepare("DELETE FROM nostr_links WHERE trading_pubkey = ?").bind(tradingPubkey).run()
+    },
+
     async exec(sql: string) {
       await d1.exec(sql)
     },

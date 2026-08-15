@@ -229,3 +229,39 @@ describe("db claimed flag (claim idempotency)", async () => {
     expect((await db.getAuction("a1"))!.claimed).toBe(true)
   })
 })
+
+describe("nostr links", async () => {
+  let db: Db
+  const origPath = process.env.DB_PATH
+  const testPath = path.join(os.tmpdir(), `test-nostr-links-${Date.now()}.db`)
+
+  beforeEach(async () => {
+    process.env.DB_PATH = testPath
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+    db = initDb()
+  })
+
+  afterEach(async () => {
+    if (origPath === undefined) delete process.env.DB_PATH
+    else process.env.DB_PATH = origPath
+    for (const f of [testPath, `${testPath}-wal`, `${testPath}-shm`]) {
+      if (fs.existsSync(f)) fs.unlinkSync(f)
+    }
+  })
+
+  it("saves, reads, and deletes a trading↔nostr link", async () => {
+    await db.saveNostrLink("02trading", "03nostr")
+    expect((await db.getNostrLink("02trading"))?.nostr_pubkey).toBe("03nostr")
+    // upsert overwrites
+    await db.saveNostrLink("02trading", "03other")
+    expect((await db.getNostrLink("02trading"))?.nostr_pubkey).toBe("03other")
+    await db.deleteNostrLink("02trading")
+    expect(await db.getNostrLink("02trading")).toBeNull()
+  })
+
+  it("returns null when no link exists", async () => {
+    expect(await db.getNostrLink("02missing")).toBeNull()
+  })
+})
