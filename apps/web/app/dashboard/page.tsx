@@ -24,9 +24,19 @@ import type { Auction, PublicBid } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
 import { BackupSection } from "../backup-section";
 import { WalletPanel } from "../../components/wallet-panel";
+import { hexToNpub } from "../../lib/npub";
 function shortId(s: string) {
   if (s.length <= 16) return s;
   return s.slice(0, 8) + "..." + s.slice(-6);
+}
+
+function fullNpub(pubkeyHex: string): string {
+  return /^[0-9a-fA-F]{64}$/.test(pubkeyHex) ? hexToNpub(pubkeyHex) : pubkeyHex;
+}
+
+function shortNpub(pubkeyHex: string): string {
+  const npub = fullNpub(pubkeyHex);
+  return npub.length > 20 ? npub.slice(0, 12) + "…" + npub.slice(-8) : npub;
 }
 
 function timeLeft(ms: number) {
@@ -1267,8 +1277,11 @@ export default function DashboardPage() {
                       {a.item}
                     </a>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                      Winner: {shortId(a.winner_npub ?? "")} — {a.winning_amount?.toLocaleString()}{" "}
-                      sats
+                      Winner:{" "}
+                      <code title={a.winner_npub ? fullNpub(a.winner_npub) : ""}>
+                        {a.winner_npub ? shortNpub(a.winner_npub) : ""}
+                      </code>{" "}
+                      — {a.winning_amount?.toLocaleString()} sats
                     </div>
                   </div>
                   <div style={{ textAlign: "right", fontSize: 13, maxWidth: "50%" }}>
