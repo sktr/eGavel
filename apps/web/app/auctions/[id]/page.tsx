@@ -7,6 +7,7 @@ import { Gallery } from "./gallery"
 import { DeleteListingButton } from "./delete-listing-button"
 import { apiUrl } from "../../../lib/api"
 import { hexToNpub, nostrAtProfileUrl } from "../../../lib/npub"
+import { shortHex } from "../../../lib/ident"
 
 function shortId(s: string) {
   if (s.length <= 16) return s
@@ -68,7 +69,7 @@ function SellerIdentity({ auction }: { auction: Auction }) {
       </>
     )
   }
-  return <span title={auction.seller_pubkey}>{shortNpub(auction.seller_pubkey)}</span>
+  return <span title={auction.seller_pubkey}>{shortHex(auction.seller_pubkey)}</span>
 }
 
 async function fetchAuction(id: string): Promise<Auction | null> {

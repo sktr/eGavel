@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { useIdentity } from "../lib/identity"
 import { useTotalBalance } from "../lib/wallet"
-import { hexToNpub } from "../lib/npub"
+import { shortHex } from "../lib/ident"
 import { useTheme } from "@wrksz/themes/client"
 import { ConnectDialog } from "../components/connect-dialog"
 
@@ -28,10 +28,10 @@ export function Header() {
     return () => document.removeEventListener("mousedown", onDown)
   }, [open])
 
-  const copyNpub = async () => {
+  const copyKey = async () => {
     if (!identity) return
     try {
-      await navigator.clipboard.writeText(hexToNpub(identity.pubkey))
+      await navigator.clipboard.writeText(identity.pubkey)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -100,7 +100,7 @@ export function Header() {
                 <span className="header-mobile-hide" style={{ fontFamily: "var(--font-mono)" }}>
                   {identity && (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
-                      {hexToNpub(identity.pubkey).slice(0, 20)}…
+                      {shortHex(identity.pubkey)}
                     </span>
                   )}
                 </span>
@@ -174,12 +174,12 @@ export function Header() {
                       <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all", background: "transparent", padding: 0 }}>
                         {identity && (
                           <span style={{ fontSize: 11, color: "var(--muted)", wordBreak: "break-all" }}>
-                            {hexToNpub(identity.pubkey)}
+                            {identity.pubkey}
                           </span>
                         )}
                       </code>
                       <button
-                        onClick={copyNpub}
+                        onClick={copyKey}
                         aria-label="Copy pubkey"
                         style={{
                           background: "none", border: "none", cursor: "pointer",
