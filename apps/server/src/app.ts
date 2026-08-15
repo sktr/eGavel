@@ -56,7 +56,7 @@ export function createApp(db: Db, config: AppConfig = {}) {
   });
 
   app.use("/api/bids", rateLimit({ windowMs: 60_000, max: 30 }));
-  // Link/unlink identity keys (NIP-98) is a write-heavy, abuse-prone surface.
+  // Link identity keys (NIP-98) is a write-heavy, abuse-prone surface.
   app.use("/api/identity/nostr-link", rateLimit({ windowMs: 60_000, max: 10 }));
   // Reads (list + homepage live poll) get a generous budget; writes stay strict.
   app.use("/api/auctions", rateLimit({ windowMs: 60_000, max: 120, methods: ["GET"] }));
