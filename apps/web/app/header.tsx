@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { useIdentity } from "../lib/identity"
 import { useTotalBalance } from "../lib/wallet"
+import { hexToNpub } from "../lib/npub"
 import { useTheme } from "@wrksz/themes/client"
 import { ConnectDialog } from "../components/connect-dialog"
 
@@ -30,7 +31,7 @@ export function Header() {
   const copyNpub = async () => {
     if (!identity) return
     try {
-      await navigator.clipboard.writeText(identity.pubkey)
+      await navigator.clipboard.writeText(hexToNpub(identity.pubkey))
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -97,7 +98,11 @@ export function Header() {
                   person
                 </span>
                 <span className="header-mobile-hide" style={{ fontFamily: "var(--font-mono)" }}>
-                  {identity.pubkey.slice(0, 12)}…
+                  {identity && (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+                      {hexToNpub(identity.pubkey).slice(0, 20)}…
+                    </span>
+                  )}
                 </span>
                 {!loading && (
                   <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600 }}>
@@ -167,7 +172,11 @@ export function Header() {
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all", background: "transparent", padding: 0 }}>
-                        {identity.pubkey}
+                        {identity && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", wordBreak: "break-all" }}>
+                            {hexToNpub(identity.pubkey)}
+                          </div>
+                        )}
                       </code>
                       <button
                         onClick={copyNpub}
