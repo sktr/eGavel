@@ -99,7 +99,9 @@ export function IdentityNostrSection() {
         setError(
           res.error === "NCRYPTSEC_UNSUPPORTED"
             ? "Encrypted keys (ncryptsec) are not supported yet — use the raw nsec."
-            : (res.error ?? "Link failed"),
+            : res.error === "INVALID_NSEC"
+              ? "That doesn't look like a valid nsec key."
+              : (res.error ?? "Link failed"),
         );
       }
     } catch (err) {
@@ -258,6 +260,7 @@ export function IdentityNostrSection() {
                 value={nsecInput}
                 onChange={(e) => setNsecInput(e.target.value)}
                 placeholder="nsec1… or ncryptsec1…"
+                aria-label="Nostr private key (nsec)"
                 spellCheck={false}
                 autoComplete="off"
                 style={{
