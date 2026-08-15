@@ -9,7 +9,6 @@ import {
   fetchNostrLinkStatus,
   linkNostr,
   linkNostrWithNsec,
-  unlinkNostr,
 } from "../lib/nostr-link";
 
 /**
@@ -112,25 +111,6 @@ export function IdentityNostrSection() {
     }
   }, [identity, nsecInput]);
 
-  const handleUnlink = useCallback(async () => {
-    if (!identity) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await unlinkNostr(identity.pubkey, bytesToHex(identity.secretKey));
-      if (res.ok) {
-        setNostrPubkey(null);
-        setLinkStatus("unlinked");
-      } else {
-        setError(res.error ?? "Unlink failed");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [identity]);
-
   const shortNpub = nostrPubkey
     ? (() => {
         try {
@@ -194,21 +174,6 @@ export function IdentityNostrSection() {
           >
             {shortNpub}
           </a>
-          <button
-            type="button"
-            onClick={handleUnlink}
-            disabled={busy}
-            style={{
-              border: "1px solid var(--border)",
-              background: "var(--surface)",
-              color: "var(--red)",
-              padding: "6px 14px",
-              fontSize: 13,
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
-          >
-            {busy ? "Unlinking…" : "Unlink"}
-          </button>
         </div>
       ) : linkStatus === "unlinked" ? (
         <div>

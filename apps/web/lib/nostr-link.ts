@@ -46,17 +46,6 @@ export async function linkNostr(
   return parseLinkResult(await res.json().catch(() => ({ error: "link failed" })));
 }
 
-export async function unlinkNostr(tradingPubkey: string, tradingSkHex: string, apiBase?: string): Promise<{ ok: boolean; error?: string }> {
-  const tradingSig = signSecretHex(`unlink:${tradingPubkey}`, tradingSkHex);
-  const res = await fetch(apiUrl("/identity/nostr-link", apiBase), {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ trading_pubkey: tradingPubkey, sig: tradingSig }),
-  });
-  if (!res.ok) return { ok: false, error: "unlink failed" };
-  return { ok: true };
-}
-
 /** Read the caller's own link status (signed like /bids). ok:false → not linked. */
 export async function fetchNostrLinkStatus(
   tradingPubkey: string,
