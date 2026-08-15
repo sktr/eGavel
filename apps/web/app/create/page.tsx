@@ -69,7 +69,9 @@ export default function CreateAuctionPage() {
   // Modal state
   const [showModal, setShowModal] = useState(false);
 
-  // Whether the seller has linked a Nostr identity (null = unknown yet).
+  // Whether the seller has linked a Nostr identity (null = unknown yet). A
+  // transient fetch failure stays null — only a definitive "not linked" answer
+  // from the server collapses to false, so a verified seller is never nagged.
   const [nostrLinked, setNostrLinked] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -79,9 +81,9 @@ export default function CreateAuctionPage() {
       try {
         const st = await fetchNostrLinkStatus(identity.pubkey, bytesToHex(identity.secretKey));
         if (!cancelled && st.ok && st.nostrPubkey) setNostrLinked(true);
-        else if (!cancelled) setNostrLinked(false);
+        else if (!cancelled && !st.error) setNostrLinked(false);
       } catch {
-        if (!cancelled) setNostrLinked(false);
+        // transient failure → stay unknown; do NOT present as unlinked
       }
     })();
     return () => {

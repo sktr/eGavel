@@ -24,6 +24,7 @@ export function IdentityNostrSection() {
   const { identity } = useIdentity();
   const [hasExtension, setHasExtension] = useState(false);
   const [nostrPubkey, setNostrPubkey] = useState<string | null>(null);
+  const [linkStatus, setLinkStatus] = useState<"unknown" | "linked" | "unlinked">("unknown");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,14 +32,25 @@ export function IdentityNostrSection() {
     setHasExtension(detectNostrExtension());
     if (!identity) return;
     let cancelled = false;
+    setLinkStatus("unknown");
     (async () => {
-      const st = await fetchNostrLinkStatus(
-        identity.pubkey,
-        bytesToHex(identity.secretKey),
-      );
-      if (cancelled) return;
-      if (st.ok && st.nostrPubkey) setNostrPubkey(st.nostrPubkey);
-    })().catch(() => {});
+      try {
+        const st = await fetchNostrLinkStatus(
+          identity.pubkey,
+          bytesToHex(identity.secretKey),
+        );
+        if (cancelled) return;
+        if (st.ok && st.nostrPubkey) {
+          setNostrPubkey(st.nostrPubkey);
+          setLinkStatus("linked");
+        } else if (!st.error) {
+          setNostrPubkey(null);
+          setLinkStatus("unlinked");
+        }
+      } catch {
+        // transient failure → stay unknown; do NOT present as unlinked
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -52,6 +64,7 @@ export function IdentityNostrSection() {
       const res = await linkNostr(identity.pubkey, bytesToHex(identity.secretKey));
       if (res.ok) {
         setNostrPubkey(res.nostrPubkey);
+        setLinkStatus("linked");
       } else {
         setError(
           res.error === "NO_NIP07"
@@ -74,6 +87,7 @@ export function IdentityNostrSection() {
       const res = await unlinkNostr(identity.pubkey, bytesToHex(identity.secretKey));
       if (res.ok) {
         setNostrPubkey(null);
+        setLinkStatus("unlinked");
       } else {
         setError(res.error ?? "Unlink failed");
       }
@@ -120,7 +134,7 @@ export function IdentityNostrSection() {
         <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6 }}>
           Install Alby or another NIP-07 extension to link your Nostr identity.
         </p>
-      ) : nostrPubkey ? (
+      ) : linkStatus === "linked" && nostrPubkey ? (
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span
             style={{
@@ -167,7 +181,7 @@ export function IdentityNostrSection() {
             {busy ? "Unlinking…" : "Unlink"}
           </button>
         </div>
-      ) : (
+      ) : linkStatus === "unlinked" ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
             type="button"
@@ -186,6 +200,10 @@ export function IdentityNostrSection() {
           </button>
           {error && <span style={{ fontSize: 12, color: "var(--red)" }}>{error}</span>}
         </div>
+      ) : (
+        <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6 }}>
+          Checking Nostr link status…
+        </p>
       )}
     </div>
   );
