@@ -277,9 +277,13 @@ export function BidForm({
       // 4. Pre-register (mode:pending) then submit the live bid.
       const placed = await placeBid({ payload: payloadObj, entry })
       if (!placed.ok) {
-        setError(
-          `${placed.error} — your ${bidAmount} sats are locked. Recover them in Dashboard → Locked funds.`,
-        )
+        if (placed.error === "LINK_REQUIRED") {
+          setError("Link your Nostr identity before bidding (Account → Link Nostr).")
+        } else {
+          setError(
+            `${placed.error} — your ${bidAmount} sats are locked. Recover them in Dashboard → Locked funds.`,
+          )
+        }
         return
       }
 

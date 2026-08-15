@@ -11,6 +11,7 @@ const SELLER = "02deadbeef"
 const SERVER = "04server"
 const BIDDER = "03cafebabe"
 const BIDDER2 = "05otherbidder"
+const UNLINKED = "07ghost"
 
 function makeAuction(overrides: Partial<Auction> = {}): Auction {
   return {
@@ -69,6 +70,8 @@ describe("processBid (proxy bidding)", async () => {
   beforeEach(async () => {
     db = initDb()
     process.env.ALLOW_TEST_BIDS = "1"
+    await db.saveNostrLink(BIDDER, "03nostrkey")
+    await db.saveNostrLink(BIDDER2, "03nostrkey2")
   })
   afterAll(async () => {
     delete process.env.ALLOW_TEST_BIDS
@@ -78,6 +81,21 @@ describe("processBid (proxy bidding)", async () => {
     const auction = makeAuction()
     const result = await processBid(payload(auction, 200, "n1"), db, SERVER)
     expect(result).toEqual({ ok: false, error: "auction not found" })
+  })
+
+  it("rejects a bid from a bidder with no Nostr link (LINK_REQUIRED)", async () => {
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+    const result = await processBid(payload(auction, 200, "n-link", UNLINKED), db, SERVER)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("LINK_REQUIRED")
+  })
+
+  it("accepts a bid from a linked bidder", async () => {
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+    const result = await processBid(payload(auction, 200, "n-linked"), db, SERVER)
+    expect(result.ok).toBe(true)
   })
 
   it("first bid locks the full max but stands at the start price", async () => {
@@ -189,6 +207,9 @@ describe("processBid (proxy bidding)", async () => {
   it("three bidders: price is driven by the top two maxes", async () => {
     const auction = makeAuction()
     await db.saveAuction(auction)
+    await db.saveNostrLink("05a", "03aa")
+    await db.saveNostrLink("05b", "03bb")
+    await db.saveNostrLink("05c", "03cc")
     await processBid(payload(auction, 500, "n1", "05a"), db, SERVER)
     await processBid(payload(auction, 300, "n2", "05b"), db, SERVER) // price 310
     await processBid(payload(auction, 2000, "n3", "05c"), db, SERVER) // max 2000
@@ -252,12 +273,22 @@ describe("processPendingBid (pre-registration)", () => {
   beforeEach(async () => {
     db = initDb()
     process.env.ALLOW_TEST_BIDS = "1"
+    await db.saveNostrLink(BIDDER, "03nostrkey")
+    await db.saveNostrLink(BIDDER2, "03nostrkey2")
   })
   afterEach(() => {
     vi.unstubAllGlobals()
   })
   afterAll(async () => {
     delete process.env.ALLOW_TEST_BIDS
+  })
+
+  it("rejects a pending bid from a bidder with no Nostr link (LINK_REQUIRED)", async () => {
+    const auction = makeAuction()
+    await db.saveAuction(auction)
+    const result = await processPendingBid(payload(auction, 500, "n-plink", UNLINKED), db, SERVER)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("LINK_REQUIRED")
   })
 
   it("saves a pending bid that does not affect the leader or standing price", async () => {
@@ -329,6 +360,7 @@ describe("processPendingBid (pre-registration)", () => {
     expect(pending.ok).toBe(true)
 
     // a later live bid prices against the real maxes only — the pending 900 is ignored
+    await db.saveNostrLink("05c", "03cc")
     const later = await processBid(payload(auction, 400, "n3", "05c"), db, SERVER)
     expect(later.ok).toBe(true)
 
@@ -417,6 +449,7 @@ describe("POST /api/bids — response carries the new standing price", async () 
   beforeEach(async () => {
     db = initDb()
     process.env.ALLOW_TEST_BIDS = "1"
+    await db.saveNostrLink(BIDDER, "03nostrkey")
   })
   afterAll(async () => {
     delete process.env.ALLOW_TEST_BIDS

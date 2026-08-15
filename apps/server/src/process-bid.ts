@@ -33,6 +33,9 @@ export async function processPendingBid(
   const auction = await db.getAuction(payload.auction_id)
   if (!auction) return { ok: false, error: "auction not found" }
 
+  const link = await db.getNostrLink(payload.bidder_pubkey)
+  if (!link) return { ok: false, error: "LINK_REQUIRED" }
+
   const result = await verifyBid(payload, auction, undefined, serverPubkey)
   if (!result.ok) {
     const err = result.error
@@ -85,6 +88,9 @@ export async function processBid(
   return withAuctionLock(payload.auction_id, async () => {
     const auction = await db.getAuction(payload.auction_id)
     if (!auction) return { ok: false, error: "auction not found" }
+
+    const link = await db.getNostrLink(payload.bidder_pubkey)
+    if (!link) return { ok: false, error: "LINK_REQUIRED" }
 
     const allBids = await db.getAllBids(auction.id)
     const verifiedBids = allBids.filter((b) => b.status === "verified")
