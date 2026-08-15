@@ -4,6 +4,10 @@ import { useState } from "react";
 import { useIdentity } from "../../../lib/identity";
 import { hexToNpub, nostrProfileUri } from "../../../lib/npub";
 
+function shortNpub(npub: string): string {
+  return npub.length > 20 ? npub.slice(0, 12) + "…" + npub.slice(-8) : npub;
+}
+
 export function Checkout({ winnerNpub }: { winnerNpub: string }) {
   const { identity } = useIdentity();
   const [copied, setCopied] = useState(false);
@@ -56,10 +60,11 @@ export function Checkout({ winnerNpub }: { winnerNpub: string }) {
             fontSize: 12,
             lineHeight: 1.5,
           }}
+          title={npub}
         >
-          {npub}
+          {shortNpub(npub)}
         </code>
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           <button
             type="button"
             onClick={copyNpub}
