@@ -252,11 +252,13 @@ describe("nostr links", async () => {
   })
 
   it("saves, reads, and deletes a trading↔nostr link", async () => {
-    await db.saveNostrLink("02trading", "03nostr")
+    expect(await db.saveNostrLink("02trading", "03nostr")).toBe(true)
     expect((await db.getNostrLink("02trading"))?.nostr_pubkey).toBe("03nostr")
-    // upsert overwrites
-    await db.saveNostrLink("02trading", "03other")
-    expect((await db.getNostrLink("02trading"))?.nostr_pubkey).toBe("03other")
+    // same-pair re-link is idempotent
+    expect(await db.saveNostrLink("02trading", "03nostr")).toBe(true)
+    // a different key is rejected and does not overwrite
+    expect(await db.saveNostrLink("02trading", "03other")).toBe(false)
+    expect((await db.getNostrLink("02trading"))?.nostr_pubkey).toBe("03nostr")
     await db.deleteNostrLink("02trading")
     expect(await db.getNostrLink("02trading")).toBeNull()
   })

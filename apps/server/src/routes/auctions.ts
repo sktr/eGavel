@@ -605,19 +605,10 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const v = verifyNip98Event(body.event)
     if (!v.ok) return c.json({ error: v.error }, 400)
     if (v.content !== body.trading_pubkey) return c.json({ error: "CONTENT_MISMATCH" }, 400)
-    // 3. store the link
-    await db.saveNostrLink(body.trading_pubkey, v.nostrPubkey)
+    // 3. store the link (locked: no re-link to a different key, no unlink)
+    const ok = await db.saveNostrLink(body.trading_pubkey, v.nostrPubkey)
+    if (!ok) return c.json({ error: "ALREADY_LINKED" }, 400)
     return c.json({ ok: true, nostr_pubkey: v.nostrPubkey })
-  })
-
-  router.delete("/identity/nostr-link", async (c) => {
-    const body = await c.req.json().catch(() => null) as { trading_pubkey?: string; sig?: string } | null
-    if (!body?.trading_pubkey || !body?.sig) return c.json({ error: "missing fields" }, 400)
-    if (!verifySecretSignature(body.sig, `unlink:${body.trading_pubkey}`, canonicalPubkey(body.trading_pubkey))) {
-      return c.json({ error: "INVALID_SIGNATURE" }, 400)
-    }
-    await db.deleteNostrLink(body.trading_pubkey)
-    return c.json({ ok: true })
   })
 
   // ── Nostr link status: the web reads the caller's own link (if any) so the

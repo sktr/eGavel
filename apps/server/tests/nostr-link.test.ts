@@ -15,7 +15,7 @@ function signEvent(event: { pubkey: string; created_at: number; kind: number; ta
   return { ...event, id, sig };
 }
 
-describe("POST/DELETE /api/identity/nostr-link", async () => {
+describe("POST /api/identity/nostr-link", async () => {
   let db: Db;
   let app: Hono;
   let tradingSk: Uint8Array;
@@ -116,36 +116,46 @@ describe("POST/DELETE /api/identity/nostr-link", async () => {
     expect(await db.getNostrLink(tradingPubkey)).toBeNull();
   });
 
-  it("DELETE removes the link with a valid unlink signature", async () => {
+  it("rejects linking the same trading key to a different Nostr key (ALREADY_LINKED)", async () => {
     await db.saveNostrLink(tradingPubkey, nostrPubkey);
+    const otherNostrSk = schnorr.utils.randomSecretKey();
+    const otherNostrPubkey = bytesToHex(schnorr.getPublicKey(otherNostrSk));
+    const otherEvent = signEvent(
+      {
+        pubkey: otherNostrPubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        kind: 27235,
+        tags: [["u", "https://egavel.vercel.app"], ["method", "LINK"]],
+        content: tradingPubkey,
+      },
+      otherNostrSk,
+    );
     const res = await app.request("http://localhost/api/identity/nostr-link", {
-      method: "DELETE",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         trading_pubkey: tradingPubkey,
-        sig: signSecret(`unlink:${tradingPubkey}`, bytesToHex(tradingSk)),
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean };
-    expect(body.ok).toBe(true);
-    expect(await db.getNostrLink(tradingPubkey)).toBeNull();
-  });
-
-  it("DELETE rejects a signature from a different trading key", async () => {
-    await db.saveNostrLink(tradingPubkey, nostrPubkey);
-    const otherSk = schnorr.utils.randomSecretKey();
-    const res = await app.request("http://localhost/api/identity/nostr-link", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        trading_pubkey: tradingPubkey,
-        sig: signSecret(`unlink:${tradingPubkey}`, bytesToHex(otherSk)),
+        sig: signSecret(`link:${tradingPubkey}`, bytesToHex(tradingSk)),
+        event: otherEvent,
       }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("INVALID_SIGNATURE");
+    expect(body.error).toBe("ALREADY_LINKED");
+    expect(await db.getNostrLink(tradingPubkey)).toEqual({ nostr_pubkey: nostrPubkey });
+  });
+
+  it("is idempotent when re-linking the same pair", async () => {
+    await db.saveNostrLink(tradingPubkey, nostrPubkey);
+    const res = await app.request("http://localhost/api/identity/nostr-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(linkBody()),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; nostr_pubkey: string };
+    expect(body.ok).toBe(true);
+    expect(body.nostr_pubkey).toBe(nostrPubkey);
     expect(await db.getNostrLink(tradingPubkey)).toEqual({ nostr_pubkey: nostrPubkey });
   });
 

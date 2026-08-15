@@ -242,12 +242,18 @@ export function createD1Db(d1: D1Database): Db {
     },
 
     async saveNostrLink(tradingPubkey, nostrPubkey) {
+      const existing = await d1
+        .prepare("SELECT nostr_pubkey FROM nostr_links WHERE trading_pubkey = ?")
+        .bind(tradingPubkey)
+        .first<{ nostr_pubkey: string }>()
+      if (existing && existing.nostr_pubkey !== nostrPubkey) return false
       await d1
         .prepare(
           "INSERT OR REPLACE INTO nostr_links (trading_pubkey, nostr_pubkey, created_at) VALUES (?, ?, ?)",
         )
         .bind(tradingPubkey, nostrPubkey, Date.now())
         .run()
+      return true
     },
 
     async getNostrLink(tradingPubkey) {

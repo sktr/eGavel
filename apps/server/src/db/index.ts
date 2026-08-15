@@ -29,8 +29,8 @@ export interface Db {
   settleAuction: (auctionId: string, winnerNpub: string | null, winningAmount: number) => Promise<boolean>
   /** Remove a listing (only valid for auctions with no bids). */
   deleteAuction: (auctionId: string) => Promise<void>
-  /** Upsert a trading↔nostr pubkey link. */
-  saveNostrLink: (tradingPubkey: string, nostrPubkey: string) => Promise<void>
+  /** Link a trading↔nostr pubkey. False when a different link already exists (no overwrite); same-pair re-post returns true. */
+  saveNostrLink: (tradingPubkey: string, nostrPubkey: string) => Promise<boolean>
   getNostrLink: (tradingPubkey: string) => Promise<{ nostr_pubkey: string } | null>
   /** All trading↔nostr links (used to batch-enrich auction list responses). */
   getAllNostrLinks: () => Promise<Array<{ trading_pubkey: string; nostr_pubkey: string }>>
@@ -356,9 +356,12 @@ export function initDb(): Db {
     },
 
     async saveNostrLink(tradingPubkey, nostrPubkey) {
+      const existing = db.prepare("SELECT nostr_pubkey FROM nostr_links WHERE trading_pubkey = ?").get(tradingPubkey) as { nostr_pubkey: string } | undefined
+      if (existing && existing.nostr_pubkey !== nostrPubkey) return false
       db.prepare(
         "INSERT OR REPLACE INTO nostr_links (trading_pubkey, nostr_pubkey, created_at) VALUES (?, ?, ?)",
       ).run(tradingPubkey, nostrPubkey, Date.now())
+      return true
     },
 
     async getNostrLink(tradingPubkey) {
