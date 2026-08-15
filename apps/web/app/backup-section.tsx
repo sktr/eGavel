@@ -6,7 +6,7 @@ import { bytesToHex } from "../lib/hex";
 
 /**
  * Account backup section: shows/copies the 12-word recovery phrase and
- * provides a restore form (phrase or hex secret key).
+ * provides a restore form (12 or 24-word recovery phrase).
  *
  * The phrase restores EVERYTHING: the account key, bid funds (server-side),
  * and — via NUT-13 deterministic secrets — the unspent balance created with
@@ -42,7 +42,7 @@ export function BackupSection() {
     setStatus(null);
     setError(null);
     if (!input.trim()) {
-      setError("Enter a 12-word phrase or a 64-char hex secret key");
+      setError("Enter a 12 or 24-word recovery phrase");
       return;
     }
     const res = restore(input);
@@ -75,7 +75,7 @@ export function BackupSection() {
         <h2 style={{ fontSize: 17, fontWeight: 600 }}>Account backup</h2>
       </div>
       <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
-        These 12 words (or the secret key) are your account. Enter them after clearing browser data
+        These words (12 or 24) are your account. Enter them after clearing browser data
         or on another device to restore your identity, your bids, and the balance created with this
         phrase. Restoring automatically recovers your balance — no mint URL needed. Never share the
         phrase with anyone.
@@ -195,7 +195,7 @@ export function BackupSection() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="12-word phrase (or 64-char secret key)"
+          placeholder="12 or 24-word recovery phrase"
           autoComplete="off"
           style={{ marginBottom: 8 }}
         />

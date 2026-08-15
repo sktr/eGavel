@@ -19,7 +19,7 @@ const LOGGED_OUT_KEY = "egavel-logged-out";
 export interface Identity {
   pubkey: string;
   secretKey: Uint8Array;
-  /** Recovery phrase (12 words). null for legacy raw-key accounts. */
+  /** Recovery phrase (12 or 24 words). null for legacy raw-key accounts. */
   recoveryPhrase: string | null;
 }
 
@@ -123,7 +123,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     setShowBackupPrompt(false);
   }, []);
 
-  // Restore the account from a phrase or hex secret key (replaces the current key)
+  // Restore the account from a recovery phrase (replaces the current key)
   const restore = useCallback((input: string): { ok: boolean; error?: string } => {
     try {
       const { account } = parseRestoreInput(input);
