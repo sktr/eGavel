@@ -350,7 +350,7 @@ export default async function AuctionPage({
                       fontSize: 12,
                     }}
                   >
-                    {shortId(auction.winner_npub)}
+                    — 
                   </td>
                 </tr>
               )}
@@ -478,7 +478,7 @@ export default async function AuctionPage({
                     fontSize: 13,
                   }}
                 >
-                  {shortId(auction.winner_npub)}
+                  Winner — anonymous
                 </code>
               </div>
             ) : (
@@ -500,7 +500,7 @@ export default async function AuctionPage({
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
                                Seller: <code title={auction.seller_pubkey}>{shortNpub(auction.seller_pubkey)}</code>
               {auction.winner_npub && (
-                <> · Winner: <code>{shortId(auction.winner_npub)}</code></>
+                <> · Winner: <code>anonymous</code></>
               )}
             </div>
           </div>

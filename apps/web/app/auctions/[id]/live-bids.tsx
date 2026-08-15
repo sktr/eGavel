@@ -8,11 +8,6 @@ import { refundBid } from "../../../lib/claim";
 import { bytesToHex } from "../../../lib/hex";
 import { apiUrl } from "../../../lib/api";
 
-function shortId(s: string) {
-  if (s.length <= 16) return s;
-  return s.slice(0, 8) + "..." + s.slice(-6);
-}
-
 /**
  * Live bid panel + history. Polls the server every few seconds so the
  * current bid updates when the user places a bid (which is processed
@@ -166,7 +161,7 @@ export function LiveBids({
             No bids yet.
           </div>
         ) : (
-          bids.map((b: PublicBid) => (
+          bids.map((b: PublicBid, idx: number) => (
             <div
               key={b.id}
               style={{
@@ -179,7 +174,7 @@ export function LiveBids({
               }}
             >
               <span style={{ color: "var(--accent)", fontWeight: 500 }}>
-                {shortId(b.bidder_npub)}
+                Bidder {idx + 1}
               </span>
               <span
                 style={{
