@@ -84,7 +84,11 @@ describe("POST/DELETE /api/identity/nostr-link", async () => {
       { pubkey: nostrPubkey, created_at: Math.floor(Date.now() / 1000), kind: 27235, tags: [], content: tradingPubkey },
       nostrSk,
     );
-    const tampered = { ...event, content: "02evil" };
+    const tampered = {
+      ...event,
+      content: "02evil",
+      id: bytesToHex(sha256(new TextEncoder().encode(JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, "02evil"])))),
+    };
     const res = await app.request("http://localhost/api/identity/nostr-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

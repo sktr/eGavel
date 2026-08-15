@@ -21,6 +21,25 @@ describe("verifyNip98Event", () => {
     if (res.ok) { expect(res.nostrPubkey).toBe(pk); expect(res.content).toBe("02trading"); }
   });
 
+  it("rejects a validly signed event with a stale created_at", () => {
+    const sk = schnorr.utils.randomSecretKey();
+    const pk = bytesToHex(schnorr.getPublicKey(sk));
+    const event = signEvent({ pubkey: pk, created_at: Math.floor(Date.now()/1000) - 3600, kind: 27235, tags: [], content: "02trading" }, sk);
+    const res = verifyNip98Event(event);
+    expect(res.ok).toBe(false);
+    if (!res.ok) { expect(res.error).toBe("STALE_EVENT"); }
+  });
+
+  it("rejects a validly signed event with a forged id", () => {
+    const sk = schnorr.utils.randomSecretKey();
+    const pk = bytesToHex(schnorr.getPublicKey(sk));
+    const event = signEvent({ pubkey: pk, created_at: Math.floor(Date.now()/1000), kind: 27235, tags: [], content: "02trading" }, sk);
+    const forged = { ...event, id: "a".repeat(64) };
+    const res = verifyNip98Event(forged);
+    expect(res.ok).toBe(false);
+    if (!res.ok) { expect(res.error).toBe("ID_MISMATCH"); }
+  });
+
   it("rejects a tampered event", () => {
     const sk = schnorr.utils.randomSecretKey();
     const pk = bytesToHex(schnorr.getPublicKey(sk));

@@ -27,7 +27,18 @@ export function verifyNip98Event(input: unknown):
   if (typeof event.pubkey !== "string" || !/^[0-9a-fA-F]{64}$/.test(event.pubkey)) return { ok: false, error: "INVALID_PUBKEY" }
   if (typeof event.content !== "string") return { ok: false, error: "INVALID_CONTENT" }
   if (typeof event.sig !== "string" || !/^[0-9a-fA-F]{128}$/.test(event.sig)) return { ok: false, error: "INVALID_SIG" }
+
+  // Reject stale events (replay defense): NIP-98 created_at within ±5 minutes.
+  const now = Math.floor(Date.now() / 1000)
+  if (typeof event.created_at !== "number" || Math.abs(now - event.created_at) > 300) {
+    return { ok: false, error: "STALE_EVENT" }
+  }
+
   const id = eventId(event)
+  if (typeof event.id === "string" && event.id !== id) {
+    return { ok: false, error: "ID_MISMATCH" }
+  }
+
   try {
     // NIP-01 signs the sha256 of the serialized event (the event id digest).
     // Verify against the raw digest bytes — identical to nostr-tools' verifyEvent:
