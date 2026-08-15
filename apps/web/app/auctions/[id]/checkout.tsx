@@ -41,53 +41,60 @@ export function Checkout({ winnerNpub }: { winnerNpub: string }) {
       </p>
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          flexWrap: "wrap",
           background: "var(--bg)",
           border: "1px solid var(--border)",
           borderRadius: "var(--radius)",
-          padding: "10px 12px",
+          padding: "12px 14px",
         }}
       >
-        <code style={{ wordBreak: "break-all", fontSize: 12, flex: 1, minWidth: 0 }}>
+        <code
+          style={{
+            display: "block",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
           {npub}
         </code>
-        <button
-          type="button"
-          onClick={copyNpub}
-          style={{
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            background: "var(--surface)",
-            color: "var(--fg)",
-            padding: "6px 12px",
-            fontSize: 12,
-            fontFamily: "inherit",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {copied ? "Copied ✓" : "Copy"}
-        </button>
-        <a
-          href={nostrUri}
-          style={{
-            border: "1px solid var(--accent)",
-            borderRadius: "var(--radius)",
-            background: "var(--accent-soft)",
-            color: "var(--accent)",
-            padding: "6px 12px",
-            fontSize: 12,
-            fontWeight: 600,
-            fontFamily: "inherit",
-            textDecoration: "none",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Open in Nostr app
-        </a>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button
+            type="button"
+            onClick={copyNpub}
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              background: "var(--surface)",
+              color: "var(--fg)",
+              padding: "6px 12px",
+              fontSize: 12,
+              fontFamily: "inherit",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy"}
+          </button>
+          <a
+            href={nostrUri}
+            style={{
+              border: "1px solid var(--accent)",
+              borderRadius: "var(--radius)",
+              background: "var(--accent-soft)",
+              color: "var(--accent)",
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: "inherit",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Open in Nostr app
+          </a>
+        </div>
       </div>
     </div>
   );
