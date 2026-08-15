@@ -32,6 +32,8 @@ export interface Db {
   /** Upsert a trading↔nostr pubkey link. */
   saveNostrLink: (tradingPubkey: string, nostrPubkey: string) => Promise<void>
   getNostrLink: (tradingPubkey: string) => Promise<{ nostr_pubkey: string } | null>
+  /** All trading↔nostr links (used to batch-enrich auction list responses). */
+  getAllNostrLinks: () => Promise<Array<{ trading_pubkey: string; nostr_pubkey: string }>>
   /** Unlink a trading pubkey from its nostr pubkey. */
   deleteNostrLink: (tradingPubkey: string) => Promise<void>
   exec: (sql: string) => Promise<void>
@@ -361,6 +363,10 @@ export function initDb(): Db {
 
     async getNostrLink(tradingPubkey) {
       return (db.prepare("SELECT nostr_pubkey FROM nostr_links WHERE trading_pubkey = ?").get(tradingPubkey) ?? null) as { nostr_pubkey: string } | null
+    },
+
+    async getAllNostrLinks() {
+      return db.prepare("SELECT trading_pubkey, nostr_pubkey FROM nostr_links").all() as Array<{ trading_pubkey: string; nostr_pubkey: string }>
     },
 
     async deleteNostrLink(tradingPubkey) {

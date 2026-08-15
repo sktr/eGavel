@@ -39,6 +39,12 @@ export interface Auction {
   current_amount?: number
   /** True once the seller has claimed the winning bid (claim idempotency). */
   claimed?: boolean
+  /**
+   * Nostr pubkey the seller linked to their trading key (NIP-07 identity
+   * link). Present on API responses only when a nostr_links row exists for
+   * this auction's seller; gates the nostr.at profile link on the web.
+   */
+  seller_nostr_pubkey?: string
 }
 
 export interface Bid {

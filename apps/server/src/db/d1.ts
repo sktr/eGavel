@@ -257,6 +257,13 @@ export function createD1Db(d1: D1Database): Db {
         .first<{ nostr_pubkey: string }>()
     },
 
+    async getAllNostrLinks() {
+      const { results } = await d1
+        .prepare("SELECT trading_pubkey, nostr_pubkey FROM nostr_links")
+        .all<{ trading_pubkey: string; nostr_pubkey: string }>()
+      return results
+    },
+
     async deleteNostrLink(tradingPubkey) {
       await d1.prepare("DELETE FROM nostr_links WHERE trading_pubkey = ?").bind(tradingPubkey).run()
     },

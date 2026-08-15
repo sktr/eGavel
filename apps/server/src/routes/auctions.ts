@@ -66,10 +66,16 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     // Lazy settle: any auction past E+grace settles the moment it is read.
     const settled = [];
     for (const a of auctions) settled.push(await settleIfDue(db, a));
+    // Batch-load nostr links for every seller on the page (single query, no
+    // N+1) so the web can gate the nostr.at seller link on having a link.
+    const nostrLinks = new Map<string, string>();
+    for (const l of await db.getAllNostrLinks()) nostrLinks.set(l.trading_pubkey, l.nostr_pubkey);
     const listed = [];
     for (const a of settled) {
       const withPrice = { ...a, current_amount: await standingPrice(db, a) };
-      listed.push(withPrice.images ? { ...withPrice, images: withPrice.images.slice(0, 1) } : withPrice);
+      const nostrLink = nostrLinks.get(a.seller_pubkey);
+      const enriched = nostrLink ? { ...withPrice, seller_nostr_pubkey: nostrLink } : withPrice;
+      listed.push(enriched.images ? { ...enriched, images: enriched.images.slice(0, 1) } : enriched);
     }
     return c.json(listed);
   });
@@ -194,13 +200,18 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const auction = await db.getAuction(c.req.param("id")!);
     if (!auction) return c.json({ error: "not found" }, 404);
     const settled = await settleIfDue(db, auction);
+    // Seller's linked Nostr pubkey (if any) — gates the nostr.at seller link.
+    const nostrLink = await db.getNostrLink(settled.seller_pubkey);
+    const enriched = nostrLink
+      ? { ...settled, seller_nostr_pubkey: nostrLink.nostr_pubkey }
+      : settled;
     // Combined read for the detail page's live poll: one request instead of
     // two (auction + bids), halving polling load (adaptive-backoff client).
     if (c.req.query("with_bids") === "1") {
       const bids = (await db.getVerifiedBids(auction.id)).map(toPublicBid);
-      return c.json({ auction: { ...settled, current_amount: await standingPrice(db, settled) }, bids });
+      return c.json({ auction: { ...enriched, current_amount: await standingPrice(db, settled) }, bids });
     }
-    return c.json({ ...settled, current_amount: await standingPrice(db, settled) });
+    return c.json({ ...enriched, current_amount: await standingPrice(db, settled) });
   });
 
   router.get("/auctions/:id/bids", async (c) => {
@@ -591,6 +602,20 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
     await db.deleteNostrLink(body.trading_pubkey)
     return c.json({ ok: true })
+  })
+
+  // ── Nostr link status: the web reads the caller's own link (if any) so the
+  // dashboard can show "Nostr verified" / "Link Nostr". Signed like /bids so a
+  // third party cannot probe another trading key's link. ──
+  router.get("/identity/nostr-link", async (c) => {
+    const tradingPubkey = c.req.query("trading_pubkey") ?? ""
+    const sig = c.req.query("sig") ?? ""
+    if (!tradingPubkey || !sig) return c.json({ error: "missing params" }, 400)
+    if (!verifySecretSignature(sig, `nostr-link:${tradingPubkey}`, canonicalPubkey(tradingPubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400)
+    }
+    const link = await db.getNostrLink(tradingPubkey)
+    return c.json(link ? { ok: true, nostr_pubkey: link.nostr_pubkey } : { ok: false })
   })
 
   return router;

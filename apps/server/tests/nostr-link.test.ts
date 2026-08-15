@@ -148,4 +148,37 @@ describe("POST/DELETE /api/identity/nostr-link", async () => {
     expect(body.error).toBe("INVALID_SIGNATURE");
     expect(await db.getNostrLink(tradingPubkey)).toEqual({ nostr_pubkey: nostrPubkey });
   });
+
+  it("GET returns the link for a valid signed request", async () => {
+    await db.saveNostrLink(tradingPubkey, nostrPubkey);
+    const sig = signSecret(`nostr-link:${tradingPubkey}`, bytesToHex(tradingSk));
+    const res = await app.request(
+      `http://localhost/api/identity/nostr-link?trading_pubkey=${tradingPubkey}&sig=${sig}`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; nostr_pubkey: string };
+    expect(body.ok).toBe(true);
+    expect(body.nostr_pubkey).toBe(nostrPubkey);
+  });
+
+  it("GET returns ok:false when the trading key has no link", async () => {
+    const sig = signSecret(`nostr-link:${tradingPubkey}`, bytesToHex(tradingSk));
+    const res = await app.request(
+      `http://localhost/api/identity/nostr-link?trading_pubkey=${tradingPubkey}&sig=${sig}`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(false);
+  });
+
+  it("GET rejects a signature from a different trading key", async () => {
+    const otherSk = schnorr.utils.randomSecretKey();
+    const sig = signSecret(`nostr-link:${tradingPubkey}`, bytesToHex(otherSk));
+    const res = await app.request(
+      `http://localhost/api/identity/nostr-link?trading_pubkey=${tradingPubkey}&sig=${sig}`,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("INVALID_SIGNATURE");
+  });
 });
