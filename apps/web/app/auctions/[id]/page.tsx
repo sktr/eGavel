@@ -321,7 +321,7 @@ export default async function AuctionPage({
                     fontSize: 12,
                   }}
                 >
-                  <code title={hexToNpub(auction.seller_pubkey)}>{shortNpub(auction.seller_pubkey)}</code>
+                  <code title={auction.seller_pubkey}>{shortNpub(auction.seller_pubkey)}</code>
                 </td>
               </tr>
               {auction.winner_npub && (
@@ -425,7 +425,7 @@ export default async function AuctionPage({
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                 }}
-                title={hexToNpub(auction.seller_pubkey)}
+                title={auction.seller_pubkey}
               >
                 {shortNpub(auction.seller_pubkey)}
               </div>
@@ -494,7 +494,7 @@ export default async function AuctionPage({
               Contact
             </h3>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                               Seller: <code title={hexToNpub(auction.seller_pubkey)}>{shortNpub(auction.seller_pubkey)}</code>
+                               Seller: <code title={auction.seller_pubkey}>{shortNpub(auction.seller_pubkey)}</code>
               {auction.winner_npub && (
                 <> · Winner: <code>{shortId(auction.winner_npub)}</code></>
               )}
