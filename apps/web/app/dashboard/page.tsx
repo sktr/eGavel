@@ -1594,7 +1594,11 @@ export default function DashboardPage() {
                       marginTop: 2,
                     }}
                   >
-                    Winner: {shortId(a.winner_npub ?? "")} — {a.winning_amount?.toLocaleString()}{" "}
+                    Winner:{" "}
+                    <code title={a.winner_npub ? fullNpub(a.winner_npub) : ""}>
+                      {a.winner_npub ? shortNpub(a.winner_npub) : ""}
+                    </code>{" "}
+                    — {a.winning_amount?.toLocaleString()}{" "}
                     sats
                   </div>
                 </div>
