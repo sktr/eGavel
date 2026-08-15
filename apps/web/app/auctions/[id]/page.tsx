@@ -9,11 +9,6 @@ import { apiUrl } from "../../../lib/api"
 import { hexToNpub, nostrAtProfileUrl } from "../../../lib/npub"
 import { shortHex } from "../../../lib/ident"
 
-function shortId(s: string) {
-  if (s.length <= 16) return s
-  return s.slice(0, 8) + "..." + s.slice(-6)
-}
-
 function fullNpub(pubkeyHex: string): string {
   return /^[0-9a-fA-F]{64}$/.test(pubkeyHex) ? hexToNpub(pubkeyHex) : pubkeyHex
 }
