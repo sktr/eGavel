@@ -474,7 +474,11 @@ export default function DashboardPage() {
         updatePendingBidStatus(e.bidId, "live");
         setLockedFunds((l) => l.map((x) => (x.bidId === e.bidId ? { ...x, status: "live" } : x)));
       } else {
-        window.alert(`retry failed: ${result.error}`);
+        window.alert(
+          result.error === "LINK_REQUIRED"
+            ? "Link your Nostr identity before bidding (Account → Link Nostr)."
+            : `retry failed: ${result.error}`,
+        );
       }
     } finally {
       setRecovering((r) => ({ ...r, [e.bidId]: false }));
