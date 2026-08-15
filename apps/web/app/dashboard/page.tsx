@@ -18,6 +18,7 @@ import {
   retryEntry,
   recoverAfterLocktime,
 } from "../../lib/pending-bids";
+import { locktimeExpiredWinningEntries } from "../../lib/auto-recover";
 import { bytesToHex } from "../../lib/hex";
 import { apiUrl } from "../../lib/api";
 import type { Auction, PublicBid } from "@egavel/shared";
@@ -373,6 +374,49 @@ export default function DashboardPage() {
       clearInterval(retryTimer);
     };
   }, [bids, identity]);
+
+  // Auto-recover winner funds after locktime when the seller never claims.
+  // Same pattern as the outbid auto-refund: poll every 15s, retry failures
+  // with a throttle. claim = 取引成立, no-claim past locktime = 取引不成立.
+  const failedRecoverRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!identity) return;
+    const skHex = bytesToHex(identity.secretKey);
+    let cancelled = false;
+    const run = async () => {
+      const entries = loadPendingBids();
+      const eligible = locktimeExpiredWinningEntries(
+        entries,
+        auctionLookup,
+        identity.pubkey,
+      );
+      for (const e of eligible) {
+        if (cancelled) return;
+        if (failedRecoverRef.current.has(e.bidId)) continue;
+        try {
+          await recoverAfterLocktime(e, skHex);
+          failedRecoverRef.current.delete(e.bidId);
+          updatePendingBidStatus(e.bidId, "refunded");
+          removePendingBid(e.bidId);
+          setLockedFunds((l) => l.filter((x) => x.bidId !== e.bidId));
+        } catch {
+          // "locktime not reached" lands here too — the retryTimer clears the
+          // throttle every 5 min so recovery retries once locktime arrives.
+          failedRecoverRef.current.add(e.bidId);
+        }
+      }
+    };
+    run();
+    const timer = setInterval(run, 15000);
+    const retryTimer = setInterval(() => {
+      failedRecoverRef.current.clear();
+    }, 300_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      clearInterval(retryTimer);
+    };
+  }, [identity, auctionLookup]);
 
   // Auto-collect change (proxy-bidding excess) for won auctions. The change
   // output only exists after the seller's claim swap, so this polls every 15s
