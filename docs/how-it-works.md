@@ -24,7 +24,7 @@ Lock every bid token to **three keys** with `n_sigs = 2`:
 data    = seller
 pubkeys = [server, bidder]
 n_sigs  = 2
-locktime = auction_end + 24h
+locktime = auction_end + 7 days
 refund  = bidder
 ```
 
@@ -58,7 +58,7 @@ The bidder creates a P2PK bundle worth their **maximum** bid (see "Proxy
 bidding" below) and submits it to the server. The server verifies:
 
 - the P2PK structure (data == seller, pubkeys ⊇ {server, bidder}, `n_sigs == 2`,
-  locktime ≥ end + 24h, refund ⊇ bidder, `sigflag = SIG_INPUTS`)
+  locktime ≥ end + 7 days, refund ⊇ bidder, `sigflag = SIG_INPUTS`)
 - the mint: NUT-06 capabilities, best-effort NUT-12 DLEQ, **NUT-07 unspent**
 - that the same proofs are not already locked by another bid (double-lock guard)
 

@@ -27,7 +27,7 @@ only about **money safety**.
 ## Money flows (all 2-of-3)
 
 1. **Bid**: the bidder creates a P2PK bundle locked to `{seller, server, bidder}`,
-   `n_sigs = 2`, `locktime = end + 24h`, `refund = bidder`. The server verifies
+   `n_sigs = 2`, `locktime = end + 7 days`, `refund = bidder`. The server verifies
    the lock structure, the mint (NUT-06/07/12) and records the proofs.
 2. **Instant refund (outbid)**: bidder signature + server co-signature over the
    proof secrets → the bidder swaps the proofs back to themselves. No locktime wait.
@@ -39,7 +39,7 @@ only about **money safety**.
 ## Controls in place
 
 - **P2PK structure validation** (`verify`): data == seller, pubkeys ⊇ {server,
-  bidder}, `n_sigs == 2`, locktime ≥ end + 24h, refund ⊇ bidder, sigflag =
+  bidder}, `n_sigs == 2`, locktime ≥ end + 7 days, refund ⊇ bidder, sigflag =
   SIG_INPUTS. Rejects malformed locks.
 - **Mint checks**: NUT-06 capability check (mint must support NUT-07/08/10/11),
   best-effort NUT-12 DLEQ, NUT-07 unspent check — **fail-closed**: if the mint
@@ -53,9 +53,11 @@ only about **money safety**.
   claim, bidder for refund). The claimed-proof endpoints return proofs, but
   they are 2-of-3 locked and harmless to disclose — the effective auth gate is
   the co-sign signature check.
-- **Shipping**: winner-key Schnorr signature over the payload string.
+- **Winner contact (npub handoff)**: after settlement the winner's npub is
+  shown to the seller; contact happens in the user's own Nostr client. The
+  platform collects no shipping address.
 - **Rate limits** (`lib/rate-limit.ts`): bids 30/min, auction creation
-  10/min, co-sign 20/min, claim-data/shipping/refund-data 30/min.
+  10/min, co-sign 20/min, claim-data/refund-data 30/min.
 - **Max secrecy**: the API exposes only the standing price; `max_amount`
   stays server-side (second-price incentive protection).
 
