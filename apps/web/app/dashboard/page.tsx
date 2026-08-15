@@ -21,6 +21,7 @@ import {
 import { bytesToHex } from "../../lib/hex";
 import { apiUrl } from "../../lib/api";
 import type { Auction, PublicBid } from "@egavel/shared";
+import { LOCKTIME_MS } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
 import { BackupSection } from "../backup-section";
 import { WalletPanel } from "../../components/wallet-panel";
@@ -875,11 +876,11 @@ export default function DashboardPage() {
         {activeBids.map((b, idx) => {
           const auction = auctionLookup[b.auction_id];
           const st = bidStatus(b);
-          // refund is only possible after locktime (end_time + 24h) — spec §2.2
+          // refund is only possible after locktime (end_time + 7 days) — spec §2.2
           const recoverable =
             b.status === "outbid" &&
             auction !== undefined &&
-            Date.now() > auction.end_time + 24 * 60 * 60 * 1000;
+            Date.now() > auction.end_time + LOCKTIME_MS;
           const rowStyle = {
             display: "grid",
             gridTemplateColumns: "56px 1fr auto",
@@ -1005,12 +1006,12 @@ export default function DashboardPage() {
                 const auction = auctionLookup[b.auction_id];
                 const isWinner =
                   auction?.winner_npub === identity?.pubkey && b.status === "verified"; // proxy bidding: max ≠ winning price
-                // refund is only possible after locktime (end_time + 24h) — spec §2.2
+                // refund is only possible after locktime (end_time + 7 days) — spec §2.2
                 const recoverable =
                   !isWinner &&
                   b.status === "outbid" &&
                   auction !== undefined &&
-                  Date.now() > auction.end_time + 24 * 60 * 60 * 1000;
+                  Date.now() > auction.end_time + LOCKTIME_MS;
                 const rowStyle = {
                   display: "grid",
                   gridTemplateColumns: "56px 1fr auto",

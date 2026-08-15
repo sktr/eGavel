@@ -4,6 +4,7 @@ import { processBid, processPendingBid } from "../src/process-bid.js"
 import { createAuctionRoutes } from "../src/routes/auctions.js"
 import { schnorr } from "@noble/curves/secp256k1.js"
 import { bytesToHex, hexToBytes } from "../src/lib/hex.js"
+import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
 
 const SELLER = "02deadbeef"
@@ -48,7 +49,7 @@ function p2pk(data: string, locktime: number, refund: string, nonce: string): st
 }
 
 function payload(auction: Auction, max: number, nonce: string, bidder = BIDDER) {
-  const locktime = Math.ceil((auction.end_time + 24 * 3600_000) / 1000) + 100
+  const locktime = Math.ceil((auction.end_time + LOCKTIME_MS) / 1000) + 100
   return {
     proofs: [{
       id: "keyset1",
@@ -143,7 +144,7 @@ describe("processBid (proxy bidding)", async () => {
     await db.saveAuction(auction2)
 
     // Same locktime / same secret → same Y (= same proofs) used on two auctions
-    const locktime = Math.ceil((auction1.end_time + 24 * 3600_000) / 1000) + 100
+    const locktime = Math.ceil((auction1.end_time + LOCKTIME_MS) / 1000) + 100
     const sameProofs = (auctionId: string, amount: number) => ({
       proofs: [{ id: "ks1", amount, secret: p2pk(SELLER, locktime, BIDDER, "n1"), C: "c" }],
       mint_url: "test://local",
@@ -384,7 +385,7 @@ describe("POST /api/bids — response carries the new standing price", async () 
   const SERVER_PUB = bytesToHex(schnorr.getPublicKey(hexToBytes(SERVER_KEY_64)))
 
   function routePayload(auction: Auction, max: number, nonce: string, bidder = BIDDER) {
-    const locktime = Math.ceil((auction.end_time + 24 * 3600_000) / 1000) + 100
+    const locktime = Math.ceil((auction.end_time + LOCKTIME_MS) / 1000) + 100
     return {
       proofs: [
         {

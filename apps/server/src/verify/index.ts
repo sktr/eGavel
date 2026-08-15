@@ -1,13 +1,14 @@
 import { Mint } from "@cashu/cashu-ts"
 import { getSecretKind, getDataField, getTag } from "@cashu/cashu-ts"
 import { hashToCurve } from "@cashu/cashu-ts"
+import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
 import { canonicalPubkey } from "../lib/canonical.js"
 import { hasValidDleq } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import { isValidMintUrl } from "../lib/mint-url.js"
 
-const LOCKTIME_MARGIN_MS = 24 * 60 * 60 * 1000
+const LOCKTIME_MARGIN_MS = LOCKTIME_MS
 const END_TIME_MARGIN_MS = 30_000
 const TEST_MINT_URL = "test://local"
 

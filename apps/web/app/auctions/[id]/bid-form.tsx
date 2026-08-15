@@ -8,6 +8,7 @@ import { DEV_TOOLS } from "../../../lib/dev-tools"
 import { DEFAULT_MINT, TEST_MINT_URL } from "../../../lib/config"
 import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
+import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
 import { useWallet } from "../../../lib/wallet"
 import { buildPendingEntry, savePendingBid, placeBid } from "../../../lib/pending-bids"
@@ -203,7 +204,7 @@ export function BidForm({
 
     try {
       const locktime = Math.ceil(
-        (auction.end_time + 24 * 60 * 60 * 1000) / 1000,
+        (auction.end_time + LOCKTIME_MS) / 1000,
       )
 
       // 1. Create proof (real P2PK or test dummy)

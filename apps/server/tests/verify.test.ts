@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi, afterEach } from "vitest"
 import { initDb, type Db } from "../src/db/index.js"
+import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
 import { canonicalPubkey } from "../src/lib/canonical.js"
 
@@ -191,7 +192,7 @@ describe("verifyBid", () => {
   })
 
   it("accepts a max strictly above the current price", async () => {
-    const locktime = auction.end_time + 48 * 3600_000
+    const locktime = auction.end_time + LOCKTIME_MS
     const secret = makeP2PKSecret(SELLER_PUBKEY, locktime, BIDDER_PUBKEY)
     const result = await verifyBid(
       {
@@ -244,8 +245,8 @@ describe("verifyBid", () => {
     if (!result.ok) expect(result.error.code).toBe("PUBKEY_MISMATCH")
   })
 
-  it("rejects if locktime is too early", async () => {
-    const locktime = Math.floor(auction.end_time / 1000) + 1 // only 1 second margin (seconds)
+  it("rejects if locktime is too early (1s below the 7-day floor)", async () => {
+    const locktime = Math.ceil((auction.end_time + LOCKTIME_MS) / 1000) - 1
     const secret = makeP2PKSecret(SELLER_PUBKEY, locktime, BIDDER_PUBKEY)
     const result = await verifyBid(
       {
@@ -264,7 +265,7 @@ describe("verifyBid", () => {
   })
 
   it("rejects if refund does not include bidder", async () => {
-    const locktime = auction.end_time + 48 * 3600_000
+    const locktime = auction.end_time + LOCKTIME_MS
     const secret = JSON.stringify([
       "P2PK",
       {
@@ -339,7 +340,7 @@ describe("verifyBid lock structure checks", () => {
     winning_amount: null,
     mint_url: "https://mint.example",
   }
-  const locktime = Math.floor((auction.end_time + 24 * 3600_000) / 1000) + 100
+  const locktime = Math.floor((auction.end_time + LOCKTIME_MS) / 1000) + 100
 
   function bidPayload(secret: string, overrides: Record<string, unknown> = {}) {
     return {
@@ -474,11 +475,11 @@ describe("verifyBid lock structure checks", () => {
     expect(result.ok).toBe(true)
   })
 
-  it("accepts a bid whose locktime is exactly ceil((end_time + 24h)/1000)", async () => {
+  it("accepts a bid whose locktime is exactly ceil((end_time + 7 days)/1000)", async () => {
     // Regression: the web bid form previously computed locktime with Math.floor,
     // which is always < the server's Math.ceil floor → every real bid was rejected
     // with LOCKTIME_TOO_EARLY. This test fails with floor and passes with ceil.
-    const exactCeilLocktime = Math.ceil((auction.end_time + 24 * 3600_000) / 1000)
+    const exactCeilLocktime = Math.ceil((auction.end_time + LOCKTIME_MS) / 1000)
     const secret = makeP2PKSecret("02deadbeef", exactCeilLocktime, "03cafebabe", "n-ceil")
     const result = await verifyBid(
       bidPayload(secret, { mint_url: "test://local" }),
@@ -487,6 +488,19 @@ describe("verifyBid lock structure checks", () => {
       SERVER_PUBKEY,
     )
     expect(result.ok).toBe(true)
+  })
+
+  it("rejects a bid one second below the 7-day locktime floor", async () => {
+    const tooEarlyLocktime = Math.ceil((auction.end_time + LOCKTIME_MS) / 1000) - 1
+    const secret = makeP2PKSecret("02deadbeef", tooEarlyLocktime, "03cafebabe", "n-too-early")
+    const result = await verifyBid(
+      bidPayload(secret, { mint_url: "test://local" }),
+      auction as never,
+      undefined,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe("LOCKTIME_TOO_EARLY")
   })
 
   it("rejects test://local bids when ALLOW_TEST_BIDS is off", async () => {
@@ -525,7 +539,7 @@ describe("verifyBid mint checks", () => {
     winning_amount: null,
     mint_url: "", // set per-test: checkMintCapabilities caches per mint URL
   }
-  const locktime = Math.floor((auction.end_time + 24 * 3600_000) / 1000) + 100
+  const locktime = Math.floor((auction.end_time + LOCKTIME_MS) / 1000) + 100
 
   function payload(mintUrl: string) {
     const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "m1")

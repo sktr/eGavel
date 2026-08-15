@@ -5,6 +5,10 @@ export type AuctionState =
   | "CLOSED"
   | "SETTLED"
 
+/** Bid locktime margin: how long after auction end the seller has to claim
+ * before the winner can recover their funds. 7 days to allow shipping prep. */
+export const LOCKTIME_MS = 7 * 24 * 60 * 60 * 1000
+
 export interface Auction {
   id: string
   item: string
