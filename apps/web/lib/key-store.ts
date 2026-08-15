@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * An account is a keypair derived from a 12-word BIP-39 recovery phrase — the
- * standard Cashu wallet UX (seed generation → backup → restore).
+ * An account is a keypair derived from a 12 or 24-word BIP-39 recovery phrase —
+ * the standard Cashu wallet UX (seed generation → backup → restore).
  * Legacy localStorage keys (raw secretKey) still load (backward compatible).
  */
 import { schnorr } from "@noble/curves/secp256k1.js";
@@ -65,19 +65,17 @@ export function deriveAccountFromHex(hex: string): Account {
 }
 
 export function validateMnemonicInput(words: string): boolean {
-  return words.trim().split(/\s+/).length === 12 && validateWords(words.trim());
+  const count = words.trim().split(/\s+/).length;
+  return (count === 12 || count === 24) && validateWords(words.trim());
 }
 
-export type RestoreInput = { kind: "words"; account: Account } | { kind: "hex"; account: Account };
+export type RestoreInput = { kind: "words"; account: Account };
 
-/** Interpret a restore input (12-word phrase or 64-hex secret key). */
+/** Interpret a restore input (a 12 or 24-word recovery phrase only). */
 export function parseRestoreInput(input: string): RestoreInput {
   const trimmed = input.trim();
   if (validateMnemonicInput(trimmed)) {
     return { kind: "words", account: deriveAccountFromWords(trimmed) };
-  }
-  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return { kind: "hex", account: deriveAccountFromHex(trimmed.toLowerCase()) };
   }
   throw new Error("INVALID_RECOVERY_INPUT");
 }

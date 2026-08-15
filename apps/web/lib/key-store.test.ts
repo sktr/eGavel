@@ -11,6 +11,8 @@ import {
   parseRestoreInput,
   clearAccount,
 } from "./key-store"
+import { generateMnemonic } from "@scure/bip39"
+import { wordlist } from "@scure/bip39/wordlists/english.js"
 
 const BACKUP_SEEN_KEY = "egavel-backup-seen"
 
@@ -46,13 +48,25 @@ describe("key-store (BIP-39 recovery phrase)", () => {
     expect(validateMnemonicInput("")).toBe(false)
   })
 
-  it("parses both a mnemonic and a hex secret key for restore", () => {
+  it("accepts 24-word mnemonics", () => {
+    const words = generateMnemonic(wordlist, 256)
+    expect(words.split(" ")).toHaveLength(24)
+    expect(validateMnemonicInput(words)).toBe(true)
+    const fromWords = parseRestoreInput(words)
+    expect(fromWords.kind).toBe("words")
+  })
+
+  it("accepts 12-word mnemonics for restore", () => {
     const acct = createAccount()
     const fromWords = parseRestoreInput(acct.words!)
     expect(fromWords.kind).toBe("words")
-    const fromHex = parseRestoreInput(acct.secretKeyHex)
-    expect(fromHex.kind).toBe("hex")
     expect(() => parseRestoreInput("garbage input")).toThrow()
+  })
+
+  it("rejects a 64-hex secret key on restore", () => {
+    const acct = createAccount()
+    expect(() => parseRestoreInput(acct.secretKeyHex)).toThrow()
+    expect(() => parseRestoreInput("3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d")).toThrow()
   })
 
   it("save/load round-trips through localStorage, preserving words", () => {

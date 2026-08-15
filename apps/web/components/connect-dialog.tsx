@@ -5,7 +5,7 @@ import { useState } from "react"
 /**
  * Connect dialog shown when a logged-out user presses "Connect".
  * Offers two paths: use the account stored on this device (same key as
- * before), or restore a different account from a recovery phrase / secret key.
+ * before), or restore a different account from a recovery phrase.
  */
 export function ConnectDialog({
   onUseDevice,
@@ -183,7 +183,7 @@ export function ConnectDialog({
                 Restore from a recovery phrase
               </span>
               <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                Switch to a different account using your 12-word phrase (or secret key).
+                Switch to a different account using your 12 or 24-word recovery phrase.
               </span>
             </span>
           </button>
@@ -193,7 +193,7 @@ export function ConnectDialog({
           <textarea
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
-            placeholder="12-word recovery phrase (or 64-char secret key)"
+            placeholder="12 or 24-word recovery phrase"
             rows={2}
             style={{
               width: "100%",
