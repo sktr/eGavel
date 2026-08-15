@@ -25,6 +25,7 @@ import type { Auction, PublicBid } from "@egavel/shared";
 import { LOCKTIME_MS } from "@egavel/shared";
 import { ClaimPanel } from "../auctions/[id]/claim-panel";
 import { BackupSection } from "../backup-section";
+import { IdentityNostrSection } from "../identity-nostr-section";
 import { WalletPanel } from "../../components/wallet-panel";
 import { hexToNpub } from "../../lib/npub";
 function shortId(s: string) {
@@ -754,6 +755,8 @@ export default function DashboardPage() {
 
       <BackupSection />
 
+      <IdentityNostrSection />
+
       {/* ===== Watching ===== */}
       {ids.length > 0 && (
         <section style={{ marginTop: 24 }}>
@@ -1267,21 +1270,42 @@ export default function DashboardPage() {
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <a
-                      href={`/auctions/${a.id}`}
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "inherit",
-                        textDecoration: "none",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        display: "block",
-                      }}
-                    >
-                      {a.item}
-                    </a>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <a
+                        href={`/auctions/${a.id}`}
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 500,
+                          color: "inherit",
+                          textDecoration: "none",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          minWidth: 0,
+                        }}
+                      >
+                        {a.item}
+                      </a>
+                      {a.seller_nostr_pubkey && (
+                        <span
+                          title="Nostr identity linked via NIP-07"
+                          style={{
+                            display: "inline-block",
+                            fontSize: 9,
+                            padding: "1px 7px",
+                            borderRadius: "var(--radius-full)",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.03em",
+                            background: "oklch(92% 0.04 145)",
+                            color: "oklch(40% 0.10 145)",
+                            flexShrink: 0,
+                          }}
+                        >
+                          Nostr verified
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                       Winner:{" "}
                       <code title={a.winner_npub ? fullNpub(a.winner_npub) : ""}>

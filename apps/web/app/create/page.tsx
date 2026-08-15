@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useIdentity } from "../../lib/identity";
 import { apiUrl } from "../../lib/api";
+import { bytesToHex } from "../../lib/hex";
+import { fetchNostrLinkStatus } from "../../lib/nostr-link";
 import { DEFAULT_MINT } from "../../lib/config";
 import { compressImage } from "../../lib/image";
 import { ItemPlaceholder } from "../../components/item-placeholder";
@@ -66,6 +68,26 @@ export default function CreateAuctionPage() {
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
+
+  // Whether the seller has linked a Nostr identity (null = unknown yet).
+  const [nostrLinked, setNostrLinked] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!identity) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const st = await fetchNostrLinkStatus(identity.pubkey, bytesToHex(identity.secretKey));
+        if (!cancelled && st.ok && st.nostrPubkey) setNostrLinked(true);
+        else if (!cancelled) setNostrLinked(false);
+      } catch {
+        if (!cancelled) setNostrLinked(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [identity]);
 
   // Toast state
   const [toast, setToast] = useState<{ msg: string; icon: string } | null>(null);
@@ -316,6 +338,27 @@ export default function CreateAuctionPage() {
           Create Listing
         </h1>
       </div>
+
+      {/* Link-Nostr hint: encourage sellers to verify their Nostr identity */}
+      {nostrLinked === false && (
+        <div
+          style={{
+            background: "color-mix(in srgb, var(--accent) 6%, transparent)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: "10px 16px",
+            fontSize: 13,
+            color: "var(--muted)",
+            marginBottom: 24,
+          }}
+        >
+          Link your Nostr identity to help buyers trust your listing.{" "}
+          <a href="/dashboard" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+            Link on your dashboard
+          </a>
+          .
+        </div>
+      )}
 
       {/* Form grid: two columns */}
       <div

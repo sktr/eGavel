@@ -22,6 +22,55 @@ function shortNpub(pubkeyHex: string): string {
   return npub.length > 20 ? npub.slice(0, 12) + "…" + npub.slice(-8) : npub
 }
 
+/** "Nostr verified" pill — shown next to a seller's npub when the seller has
+ * linked a NIP-07 Nostr key to their trading key (seller_nostr_pubkey present). */
+function NostrVerifiedBadge() {
+  return (
+    <span
+      title="Nostr identity linked via NIP-07"
+      style={{
+        display: "inline-block",
+        fontSize: 9,
+        padding: "1px 7px",
+        borderRadius: "var(--radius-full)",
+        fontWeight: 600,
+        textTransform: "uppercase",
+        letterSpacing: "0.03em",
+        background: "oklch(92% 0.04 145)",
+        color: "oklch(40% 0.10 145)",
+        marginLeft: 6,
+        verticalAlign: "middle",
+      }}
+    >
+      Nostr verified
+    </span>
+  )
+}
+
+/** Seller display, gated on having a nostr link: a verified seller's npub links
+ * to their linked Nostr profile on nostr.at (with the badge); an unlinked
+ * seller shows the short npub without a link (nothing to resolve to). */
+function SellerIdentity({ auction }: { auction: Auction }) {
+  const verified = auction.seller_nostr_pubkey
+  if (verified) {
+    return (
+      <>
+        <a
+          href={nostrAtProfileUrl(verified)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={verified}
+          style={{ color: "inherit", textDecoration: "underline dotted" }}
+        >
+          {shortNpub(verified)}
+        </a>
+        <NostrVerifiedBadge />
+      </>
+    )
+  }
+  return <span title={auction.seller_pubkey}>{shortNpub(auction.seller_pubkey)}</span>
+}
+
 async function fetchAuction(id: string): Promise<Auction | null> {
   const res = await fetch(
     apiUrl(`/auctions/${id}`, process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL),
@@ -325,15 +374,8 @@ export default async function AuctionPage({
                     fontSize: 12,
                   }}
                 >
-                  <code title={auction.seller_pubkey}>
-                    <a
-                      href={nostrAtProfileUrl(auction.seller_pubkey)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: "inherit", textDecoration: "underline dotted" }}
-                    >
-                      {shortNpub(auction.seller_pubkey)}
-                    </a>
+                  <code>
+                    <SellerIdentity auction={auction} />
                   </code>
                 </td>
               </tr>
@@ -440,14 +482,7 @@ export default async function AuctionPage({
                 }}
                 title={auction.seller_pubkey}
               >
-                <a
-                  href={nostrAtProfileUrl(auction.seller_pubkey)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: "inherit", textDecoration: "underline dotted" }}
-                >
-                  {shortNpub(auction.seller_pubkey)}
-                </a>
+                <SellerIdentity auction={auction} />
               </div>
             </div>
           </div>
@@ -514,12 +549,7 @@ export default async function AuctionPage({
               Contact
             </h3>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                               Seller: <code title={auction.seller_pubkey}><a
-                  href={nostrAtProfileUrl(auction.seller_pubkey)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: "inherit", textDecoration: "underline dotted" }}
-                >{shortNpub(auction.seller_pubkey)}</a></code>
+                               Seller: <code><SellerIdentity auction={auction} /></code>
               {auction.winner_npub && (
                 <> · Winner: <code>anonymous</code></>
               )}
