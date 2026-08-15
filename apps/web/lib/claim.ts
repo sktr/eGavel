@@ -185,6 +185,25 @@ export interface ChangeReturn {
   mint_url: string;
 }
 
+/** Seller reads the winner's shipping address. Auth = Schnorr signature over
+ * `shipping:<auctionId>`; the server requires key-ownership proof so a third
+ * party cannot read the winner's address. Returns nulls on any rejection
+ * (not the seller, bad sig, or not yet submitted) — the dashboard renders "—". */
+export async function fetchShippingData(
+  auctionId: string,
+  sellerPubkey: string,
+  sellerSkHex: string,
+  apiBase = API_BASE,
+): Promise<{ address: string | null; note: string | null }> {
+  const sellerSig = signSecretHex(`shipping:${auctionId}`, sellerSkHex);
+  const res = await fetch(
+    `${apiBase}/api/auctions/${auctionId}/shipping?seller_pubkey=${sellerPubkey}&seller_sig=${sellerSig}`,
+    { signal: AbortSignal.timeout(10000) },
+  );
+  if (!res.ok) return { address: null, note: null };
+  return res.json() as Promise<{ address: string | null; note: string | null }>;
+}
+
 export async function fetchChangeData(
   auctionId: string,
   bidderPubkey: string,

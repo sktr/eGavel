@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useIdentity } from "../../lib/identity";
 import { useWatchlist } from "../../lib/watchlist";
-import { refundBid, signSecretHex } from "../../lib/claim";
+import { refundBid, signSecretHex, fetchShippingData } from "../../lib/claim";
 import {
   collectibleChangeAuctions,
   autoCollectChange,
@@ -48,24 +48,15 @@ function timeLeft(ms: number) {
   return `${days}d ${hours % 24}h`;
 }
 
-// Seller view: fetch the winner's registered shipping address for a settled auction.
-// API_BASE already carries the /api prefix, so it resolves to /api/auctions/:id/shipping.
-// Auth = Schnorr signature over `shipping:<auctionId>` (the pubkey alone is
-// public listing data — the server requires key-ownership proof).
+// Seller view: fetch the winner's registered shipping address for a settled
+// auction (delegated to lib/claim.ts — the fetch URL must include the /api
+// prefix like every other API call; a root-relative URL 404s on the Worker).
 async function loadShipping(
   auctionId: string,
   sellerPubkeyHex: string,
   sellerSkHex: string,
 ): Promise<{ address: string | null; note: string | null }> {
-  const sellerSig = signSecretHex(`shipping:${auctionId}`, sellerSkHex);
-  const res = await fetch(
-    `${API_BASE}/auctions/${auctionId}/shipping?seller_pubkey=${sellerPubkeyHex}&seller_sig=${sellerSig}`,
-    {
-      signal: AbortSignal.timeout(10000),
-    },
-  );
-  if (!res.ok) return { address: null, note: null };
-  return res.json();
+  return fetchShippingData(auctionId, sellerPubkeyHex, sellerSkHex);
 }
 
 function statusPill(label: string, variant: "active" | "winning" | "outbid" | "won" | "pending") {
