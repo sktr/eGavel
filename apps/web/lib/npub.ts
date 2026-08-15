@@ -20,3 +20,9 @@ export function hexToNpub(hexPubkey: string): string {
 export function nostrProfileUri(hexPubkey: string): string {
   return `nostr:${hexToNpub(hexPubkey)}`;
 }
+
+/** Web gateway URL (nostr.at, the njump instance run by fiatjaf) for a
+ * profile — opens in any browser without a Nostr client installed. */
+export function nostrAtProfileUrl(hexPubkey: string): string {
+  return `https://nostr.at/${hexToNpub(hexPubkey)}`;
+}

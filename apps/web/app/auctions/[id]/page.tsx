@@ -6,7 +6,7 @@ import { Checkout } from "./checkout"
 import { Gallery } from "./gallery"
 import { DeleteListingButton } from "./delete-listing-button"
 import { apiUrl } from "../../../lib/api"
-import { hexToNpub } from "../../../lib/npub"
+import { hexToNpub, nostrAtProfileUrl } from "../../../lib/npub"
 
 function shortId(s: string) {
   if (s.length <= 16) return s
@@ -325,7 +325,16 @@ export default async function AuctionPage({
                     fontSize: 12,
                   }}
                 >
-                  <code title={auction.seller_pubkey}>{shortNpub(auction.seller_pubkey)}</code>
+                  <code title={auction.seller_pubkey}>
+                    <a
+                      href={nostrAtProfileUrl(auction.seller_pubkey)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "inherit", textDecoration: "underline dotted" }}
+                    >
+                      {shortNpub(auction.seller_pubkey)}
+                    </a>
+                  </code>
                 </td>
               </tr>
               {auction.winner_npub && (
@@ -431,7 +440,14 @@ export default async function AuctionPage({
                 }}
                 title={auction.seller_pubkey}
               >
-                {shortNpub(auction.seller_pubkey)}
+                <a
+                  href={nostrAtProfileUrl(auction.seller_pubkey)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "inherit", textDecoration: "underline dotted" }}
+                >
+                  {shortNpub(auction.seller_pubkey)}
+                </a>
               </div>
             </div>
           </div>
@@ -498,7 +514,12 @@ export default async function AuctionPage({
               Contact
             </h3>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                               Seller: <code title={auction.seller_pubkey}>{shortNpub(auction.seller_pubkey)}</code>
+                               Seller: <code title={auction.seller_pubkey}><a
+                  href={nostrAtProfileUrl(auction.seller_pubkey)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "inherit", textDecoration: "underline dotted" }}
+                >{shortNpub(auction.seller_pubkey)}</a></code>
               {auction.winner_npub && (
                 <> · Winner: <code>anonymous</code></>
               )}
