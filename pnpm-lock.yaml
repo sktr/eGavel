@@ -279,6 +279,9 @@ importers:
       '@noble/hashes':
         specifier: ^2.3.0
         version: 2.3.0
+      '@scure/base':
+        specifier: ^2.3.0
+        version: 2.3.0
       '@scure/bip32':
         specifier: ^2.3.0
         version: 2.3.0
@@ -1971,7 +1974,7 @@ snapshots:
     dependencies:
       '@noble/curves': 2.3.0
       '@noble/hashes': 2.3.0
-      '@scure/base': 2.2.0
+      '@scure/base': 2.3.0
       '@scure/bip32': 2.2.0
 
   '@cloudflare/kv-asset-handler@0.5.0': {}
