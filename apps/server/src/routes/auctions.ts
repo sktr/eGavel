@@ -75,7 +75,13 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       const withPrice = { ...a, current_amount: await standingPrice(db, a) };
       const nostrLink = nostrLinks.get(a.seller_pubkey);
       const enriched = nostrLink ? { ...withPrice, seller_nostr_pubkey: nostrLink } : withPrice;
-      listed.push(enriched.images ? { ...enriched, images: enriched.images.slice(0, 1) } : enriched);
+      // Winner links are rare in the active list (only settled winners), so a
+      // per-row lookup is fine. Guard the empty-string case (no winner).
+      const winnerNostrLink = a.winner_npub ? await db.getNostrLink(a.winner_npub) : null;
+      const withWinner = winnerNostrLink
+        ? { ...enriched, winner_nostr_pubkey: winnerNostrLink.nostr_pubkey }
+        : enriched;
+      listed.push(withWinner.images ? { ...withWinner, images: withWinner.images.slice(0, 1) } : withWinner);
     }
     return c.json(listed);
   });
@@ -205,13 +211,20 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const enriched = nostrLink
       ? { ...settled, seller_nostr_pubkey: nostrLink.nostr_pubkey }
       : settled;
+    // Winner's linked Nostr pubkey (if any) — same link table, winner_npub key.
+    const winnerNostrLink = settled.winner_npub
+      ? await db.getNostrLink(settled.winner_npub)
+      : null;
+    const withWinner = winnerNostrLink
+      ? { ...enriched, winner_nostr_pubkey: winnerNostrLink.nostr_pubkey }
+      : enriched;
     // Combined read for the detail page's live poll: one request instead of
     // two (auction + bids), halving polling load (adaptive-backoff client).
     if (c.req.query("with_bids") === "1") {
       const bids = (await db.getVerifiedBids(auction.id)).map(toPublicBid);
-      return c.json({ auction: { ...enriched, current_amount: await standingPrice(db, settled) }, bids });
+      return c.json({ auction: { ...withWinner, current_amount: await standingPrice(db, settled) }, bids });
     }
-    return c.json({ ...enriched, current_amount: await standingPrice(db, settled) });
+    return c.json({ ...withWinner, current_amount: await standingPrice(db, settled) });
   });
 
   router.get("/auctions/:id/bids", async (c) => {

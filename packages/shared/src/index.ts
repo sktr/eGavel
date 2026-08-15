@@ -45,6 +45,8 @@ export interface Auction {
    * this auction's seller; gates the nostr.at profile link on the web.
    */
   seller_nostr_pubkey?: string
+  /** The winner's linked Nostr key (Model B contact), when the winner has linked. */
+  winner_nostr_pubkey?: string
 }
 
 export interface Bid {

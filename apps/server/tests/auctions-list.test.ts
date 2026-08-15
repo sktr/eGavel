@@ -155,4 +155,43 @@ describe("auctions list standing price", () => {
     const combined = (await withBids.json()) as { auction: Auction; bids: Bid[] };
     expect(combined.auction.seller_nostr_pubkey).toBe("03linkednostr");
   });
+
+  it("GET /api/auctions includes winner_nostr_pubkey when the winner is linked", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    await db.saveAuction(
+      makeAuction({ state: "SETTLED", winner_npub: BIDDER, winning_amount: 3600 }),
+    );
+    await db.saveNostrLink(BIDDER, "03winnerlink");
+
+    const res = await app.request("http://localhost/api/auctions");
+    const list = (await res.json()) as Auction[];
+    expect(list[0]!.winner_nostr_pubkey).toBe("03winnerlink");
+  });
+
+  it("GET /api/auctions omits winner_nostr_pubkey when the winner is not linked", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    await db.saveAuction(
+      makeAuction({ state: "SETTLED", winner_npub: BIDDER, winning_amount: 3600 }),
+    );
+
+    const res = await app.request("http://localhost/api/auctions");
+    const list = (await res.json()) as Auction[];
+    expect(list[0]!.winner_nostr_pubkey).toBeUndefined();
+  });
+
+  it("GET /api/auctions/:id includes winner_nostr_pubkey when linked (with and without with_bids)", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    await db.saveAuction(
+      makeAuction({ state: "SETTLED", winner_npub: BIDDER, winning_amount: 3600 }),
+    );
+    await db.saveNostrLink(BIDDER, "03winnerlink");
+
+    const plain = await app.request("http://localhost/api/auctions/a1");
+    const auction = (await plain.json()) as Auction;
+    expect(auction.winner_nostr_pubkey).toBe("03winnerlink");
+
+    const withBids = await app.request("http://localhost/api/auctions/a1?with_bids=1");
+    const combined = (await withBids.json()) as { auction: Auction; bids: Bid[] };
+    expect(combined.auction.winner_nostr_pubkey).toBe("03winnerlink");
+  });
 });
