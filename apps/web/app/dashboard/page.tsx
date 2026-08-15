@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useIdentity } from "../../lib/identity";
 import { useWatchlist } from "../../lib/watchlist";
-import { refundBid, signSecretHex, fetchShippingData } from "../../lib/claim";
+import { refundBid, signSecretHex } from "../../lib/claim";
 import {
   collectibleChangeAuctions,
   autoCollectChange,
@@ -51,17 +51,6 @@ function timeLeft(ms: number) {
   if (hours < 24) return `${hours}h ${rem}m`;
   const days = Math.floor(hours / 24);
   return `${days}d ${hours % 24}h`;
-}
-
-// Seller view: fetch the winner's registered shipping address for a settled
-// auction (delegated to lib/claim.ts — the fetch URL must include the /api
-// prefix like every other API call; a root-relative URL 404s on the Worker).
-async function loadShipping(
-  auctionId: string,
-  sellerPubkeyHex: string,
-  sellerSkHex: string,
-): Promise<{ address: string | null; note: string | null }> {
-  return fetchShippingData(auctionId, sellerPubkeyHex, sellerSkHex);
 }
 
 function statusPill(label: string, variant: "active" | "winning" | "outbid" | "won" | "pending") {
@@ -155,9 +144,6 @@ export default function DashboardPage() {
   const [bids, setBids] = useState<PublicBid[]>([]);
   const [auctionLookup, setAuctionLookup] = useState<Record<string, Auction>>({});
   const [watchNames, setWatchNames] = useState<Record<string, string>>({});
-  const [shippingByAuction, setShippingByAuction] = useState<
-    Record<string, { address: string | null; note: string | null }>
-  >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lockedFunds, setLockedFunds] = useState<ReturnType<typeof loadPendingBids>>([]);
@@ -187,7 +173,6 @@ export default function DashboardPage() {
       setAuctions([]);
       setBids([]);
       setAuctionLookup({});
-      setShippingByAuction({});
       setError("Identity not available — Connect to view your dashboard.");
       setLoading(false);
       return;
@@ -314,29 +299,6 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [ids, fetchAuctionById]);
-
-  // Seller view: fetch shipping addresses for settled listings the user sold
-  useEffect(() => {
-    if (!identity) return;
-    const settledListings = auctions.filter(
-      (a) => a.state === "SETTLED" && a.seller_pubkey === identity.pubkey && a.winner_npub,
-    );
-    if (settledListings.length === 0) {
-      setShippingByAuction({});
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const map: Record<string, { address: string | null; note: string | null }> = {};
-      for (const a of settledListings) {
-        map[a.id] = await loadShipping(a.id, identity.pubkey, bytesToHex(identity.secretKey));
-      }
-      if (!cancelled) setShippingByAuction(map);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [identity, auctions]);
 
   // Auto-refund outbid bids: when a bid is no longer the highest, the funds
   // return immediately via bidder+server co-sign (2-of-3, spec §6.4).
@@ -599,7 +561,7 @@ export default function DashboardPage() {
   );
   const totalSpent = wonAuctions.reduce((sum, a) => sum + (a.winning_amount ?? 0), 0);
 
-  // Settled listings the user sold to a winner (seller view → shipping address)
+  // Settled listings the user sold to a winner (seller view)
   const settledListings = auctions.filter(
     (a) => a.state === "SETTLED" && a.seller_pubkey === identity?.pubkey && a.winner_npub,
   );
@@ -1258,7 +1220,7 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* ===== Sold — Shipping (seller view) ===== */}
+      {/* ===== Sold (seller view) ===== */}
       {settledListings.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <div
@@ -1278,7 +1240,7 @@ export default function DashboardPage() {
                 letterSpacing: "-0.02em",
               }}
             >
-              Sold — Shipping
+              Sold
             </h2>
           </div>
 
@@ -1291,7 +1253,6 @@ export default function DashboardPage() {
             }}
           >
             {settledListings.map((a, idx) => {
-              const sh = shippingByAuction[a.id];
               return (
                 <div
                   key={a.id}
@@ -1328,20 +1289,6 @@ export default function DashboardPage() {
                       </code>{" "}
                       — {a.winning_amount?.toLocaleString()} sats
                     </div>
-                  </div>
-                  <div style={{ textAlign: "right", fontSize: 13, maxWidth: "50%" }}>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>Shipping</div>
-                    <div
-                      style={{
-                        fontWeight: 500,
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {sh?.address ?? "—"}
-                    </div>
-                    {sh?.note && (
-                      <div style={{ fontSize: 12, color: "var(--muted)" }}>Note: {sh.note}</div>
-                    )}
                   </div>
                 </div>
               );

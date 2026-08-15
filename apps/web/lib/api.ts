@@ -4,8 +4,7 @@
  * Convention (normalized in commit 59470f9): NEXT_PUBLIC_API_URL / SSR_API_URL
  * point at the origin WITHOUT a trailing /api (the Worker serves routes at
  * /api/*, except /health which is mounted at the root). Every caller must add
- * the /api prefix explicitly; these helpers make that impossible to get wrong
- * the way loadShipping did (root-relative URL → 404 on the Worker).
+ * the /api prefix explicitly; these helpers make that impossible to get wrong.
  */
 
 const DEFAULT_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";

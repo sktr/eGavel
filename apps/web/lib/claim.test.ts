@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { signSecretHex, buildWitness, swapLockedProofs, collectChange, fetchShippingData } from "./claim";
+import { signSecretHex, buildWitness, swapLockedProofs, collectChange } from "./claim";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "./hex";
@@ -90,33 +90,5 @@ describe("swapLockedProofs", () => {
     } as unknown as Proof;
     const sk = schnorr.utils.randomSecretKey();
     await expect(swapLockedProofs([proof], 100, bytesToHex(sk))).rejects.toThrow();
-  });
-});
-
-describe("fetchShippingData (seller reads the winner's shipping address)", () => {
-  it("fetches /api/auctions/:id/shipping with the seller pubkey and signature", async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toMatch(/^https:\/\/api\.example\/api\/auctions\/a1\/shipping\?/);
-      expect(url).toContain("seller_pubkey=02seller");
-      expect(url).toContain("seller_sig=");
-      return new Response(JSON.stringify({ address: "Tokyo", note: "leave at door" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await fetchShippingData("a1", "02seller", "ab".repeat(32), "https://api.example");
-    expect(result).toEqual({ address: "Tokyo", note: "leave at door" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns null address/note when the server rejects (404, wrong seller, bad sig)", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ error: "NOT_SELLER" }), { status: 400 })),
-    );
-    const result = await fetchShippingData("a1", "02seller", "ab".repeat(32), "https://api.example");
-    expect(result).toEqual({ address: null, note: null });
   });
 });

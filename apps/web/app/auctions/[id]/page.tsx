@@ -508,7 +508,7 @@ export default async function AuctionPage({
 
         {/* ===== BELOW THE GRID: Winner Checkout ===== */}
         <div style={{ gridColumn: "1 / -1" }}>
-          <Checkout auctionId={auction.id} winnerNpub={auction.winner_npub ?? ""} />
+          <Checkout winnerNpub={auction.winner_npub ?? ""} />
         </div>
       </div>
     </div>
