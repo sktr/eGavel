@@ -87,6 +87,7 @@ describe("POST /api/auctions with images", async () => {
     }
     process.env.DB_PATH = testPath
     db = initDb()
+    await db.saveNostrLink("02deadbeef", "03sellerlink")
     app = new Hono()
     app.route("/api", createAuctionRoutes(db))
   })

@@ -187,6 +187,7 @@ describe("POST /api/auctions (create listing, HTTP-direct)", async () => {
 
   beforeEach(async () => {
     db = initDb();
+    await db.saveNostrLink(SELLER, "03sellerlink");
     app = new Hono();
     app.route("/api", createAuctionRoutes(db));
   });
@@ -216,6 +217,26 @@ describe("POST /api/auctions (create listing, HTTP-direct)", async () => {
     expect(auction.seller_pubkey).toBe(SELLER);
     expect(auction.start_price).toBe(100);
     expect((await db.getAuction(auction.id))?.item).toBe("test item");
+  });
+
+  it("rejects listing when the seller has no Nostr link (LINK_REQUIRED)", async () => {
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody({ seller_pubkey: "02unlinked" })),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "LINK_REQUIRED" });
+  });
+
+  it("accepts listing when the seller is linked", async () => {
+    await db.saveNostrLink(SELLER, "03sellerlink");
+    const res = await app.request("http://localhost/api/auctions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validBody()),
+    });
+    expect(res.status).toBe(200);
   });
 
   it("passes through optional fields (reserve, buy-now, category, image)", async () => {

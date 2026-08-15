@@ -166,6 +166,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       images = body.images as string[];
     }
 
+    const sellerLink = await db.getNostrLink(sellerPubkey);
+    if (!sellerLink) return c.json({ error: "LINK_REQUIRED" }, 400);
+
     const auction: Auction = {
       id: `${sellerPubkey}-${Date.now()}`,
       item,

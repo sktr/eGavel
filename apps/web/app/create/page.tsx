@@ -202,7 +202,15 @@ export default function CreateAuctionPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "listing creation failed");
+        const errCode = (err as { error?: string }).error;
+        if (errCode === "LINK_REQUIRED") {
+          const msg = "Link your Nostr identity before listing (Account → Link Nostr).";
+          setError(msg);
+          showToast(msg, "error_outline");
+          setSubmitting(false);
+          return;
+        }
+        throw new Error(errCode ?? "listing creation failed");
       }
 
       showToast("Auction created!");
