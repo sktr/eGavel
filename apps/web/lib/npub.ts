@@ -14,3 +14,9 @@ export function hexToNpub(hexPubkey: string): string {
   }
   return bech32.encode("npub", bech32.toWords(bytes), false);
 }
+
+/** NIP-21 `nostr:` URI for a profile — opens the user's default Nostr client
+ * (damus, Amethyst, Primal, ...) at that profile. */
+export function nostrProfileUri(hexPubkey: string): string {
+  return `nostr:${hexToNpub(hexPubkey)}`;
+}
