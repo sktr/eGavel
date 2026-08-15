@@ -86,6 +86,19 @@ describe("per-account wallet store namespacing", () => {
     expect(localStorage.getItem("cashu-wallet-v1")).toBeNull();
   });
 
+  it("dedupes proofs already present in the store (auto-collect may re-fetch the same change)", () => {
+    const listeners = stubWindow();
+    void listeners;
+    const proof = { id: "k1", amount: 10, secret: "sA", C: "cA" } as unknown as Proof;
+
+    storeProofsInWallet([proof], "https://mint.example", "pubkey-a");
+    storeProofsInWallet([proof], "https://mint.example", "pubkey-a");
+    storeProofsInWallet([proof], "https://mint.example", "pubkey-a");
+
+    const storeA = JSON.parse(localStorage.getItem("cashu-wallet-v1:pubkey-a") ?? "{}") as Record<string, string[]>;
+    expect(storeA["https://mint.example"]).toHaveLength(1);
+  });
+
   it("migrates the legacy shared store into the first account that touches it", () => {
     const listeners = stubWindow();
     void listeners;

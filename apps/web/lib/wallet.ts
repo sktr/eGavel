@@ -281,7 +281,14 @@ export function useWallet(mintUrl: string, pubkey: string) {
 export function storeProofsInWallet(proofs: Proof[], mintUrl: string, pubkey: string) {
   const store = loadStore(pubkey)
   const existing = deserializeProofs(store[mintUrl] ?? [])
-  store[mintUrl] = serializeProofs([...existing, ...proofs])
+  // Dedupe by C (the point): auto-collect / two tabs may re-fetch the same
+  // change proofs; storing them twice would double the displayed balance and
+  // leave a stale (spent) copy behind after the first one is used.
+  const seen = new Set(existing.map((p) => p.C))
+  const fresh = proofs.filter((p) => !seen.has(p.C))
+  store[mintUrl] = serializeProofs([...existing, ...fresh])
+  // Always go through saveStore so balance UIs still get the refresh event
+  // even when nothing new was added (existing dispatch contract).
   saveStore(pubkey, store)
 }
 

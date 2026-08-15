@@ -446,7 +446,13 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (!auction) return c.json({ error: "not found" }, 404);
     const bidderPubkey = c.req.query("bidder_pubkey") ?? "";
     const change = await db.getChange(auction.id);
-    if (!change) return c.json({ error: "NO_CHANGE" }, 400);
+    if (!change) {
+      // Auto-collect needs to distinguish "not yet" from "never": before the
+      // seller's claim swap the change output does not exist yet (NOT_CLAIMED —
+      // keep polling); after the claim, a missing output means the winner's max
+      // matched the winning price (NO_CHANGE — permanent, stop polling).
+      return c.json({ error: auction.claimed ? "NO_CHANGE" : "NOT_CLAIMED" }, 400);
+    }
     if (canonicalPubkey(bidderPubkey) !== canonicalPubkey(change.bidder_npub)) {
       return c.json({ error: "NOT_BIDDER" }, 400);
     }

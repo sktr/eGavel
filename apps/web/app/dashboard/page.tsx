@@ -3,7 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useIdentity } from "../../lib/identity";
 import { useWatchlist } from "../../lib/watchlist";
-import { refundBid, collectChange, signSecretHex } from "../../lib/claim";
+import { refundBid, signSecretHex } from "../../lib/claim";
+import {
+  collectibleChangeAuctions,
+  autoCollectChange,
+  loadHandledChange,
+  saveHandledChange,
+} from "../../lib/auto-change";
 import {
   loadPendingBids,
   updatePendingBidStatus,
@@ -143,60 +149,8 @@ async function recoverBid(bid: PublicBid, identity: { pubkey: string; secretKey:
 
 // Proxy bidding: the winner locked their full MAX, but pays only the standing
 // price. The excess is returned as a change output during the seller's claim —
-// this collects it into the winner's wallet (1-of-1 P2PK to the winner).
-function ChangeCollector({ auctionId, bidderPubkey }: { auctionId: string; bidderPubkey: string }) {
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const collect = async () => {
-    setBusy(true);
-    setError(null);
-    setStatus(null);
-    try {
-      const res = await collectChange(auctionId, bidderPubkey);
-      setStatus(`Collected ${res.amount} sats of change into your wallet`);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div style={{ marginTop: 6 }}>
-      <button
-        type="button"
-        onClick={collect}
-        disabled={busy}
-        style={{
-          border: "1px solid var(--accent)",
-          borderRadius: "var(--radius)",
-          background: "var(--accent-soft)",
-          color: "var(--accent)",
-          padding: "4px 10px",
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: busy ? "wait" : "pointer",
-          fontFamily: "inherit",
-          lineHeight: 1.4,
-        }}
-      >
-        {busy ? "Collecting…" : "Collect change"}
-      </button>
-      {status && (
-        <div style={{ fontSize: 11, color: "var(--accent2)", marginTop: 4 }}>{status}</div>
-      )}
-      {error && (
-        <div style={{ fontSize: 11, color: "var(--amber)", marginTop: 4 }}>
-          {error === "Error: NO_CHANGE"
-            ? "Nothing to collect yet — the seller hasn't claimed the auction, or your max matched the winning price."
-            : error}
-        </div>
-      )}
-    </div>
-  );
-}
+// collected automatically into the winner's wallet (1-of-1 P2PK to the
+// winner), see the auto-collect effect in DashboardPage.
 
 export default function DashboardPage() {
   const { identity, isLoaded } = useIdentity();
@@ -424,6 +378,48 @@ export default function DashboardPage() {
       clearInterval(retryTimer);
     };
   }, [bids, identity]);
+
+  // Auto-collect change (proxy-bidding excess) for won auctions. The change
+  // output only exists after the seller's claim swap, so this polls every 15s
+  // until it appears. Outcomes:
+  //   - collected   → store proofs into the wallet, remember (stop polling)
+  //   - no-change   → claimed but max == winning price, permanent (stop polling)
+  //   - not-claimed → seller has not claimed yet (keep polling)
+  //   - error       → transient (keep polling)
+  // Handled auctions are remembered per pubkey in localStorage — a server-side
+  // flag would break multi-device collection, so this is purely client-side.
+  const handledChangeRef = useRef<{ pubkey: string; set: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!identity) return;
+    if (!handledChangeRef.current || handledChangeRef.current.pubkey !== identity.pubkey) {
+      handledChangeRef.current = { pubkey: identity.pubkey, set: loadHandledChange(identity.pubkey) };
+    }
+    const handled = handledChangeRef.current.set;
+    let cancelled = false;
+    const run = async () => {
+      if (cancelled) return;
+      const candidates = collectibleChangeAuctions(bids, auctionLookup, identity.pubkey).filter(
+        (id) => !handled.has(id),
+      );
+      if (candidates.length === 0) return;
+      const outcomes = await autoCollectChange(candidates, identity.pubkey);
+      if (cancelled) return;
+      let dirty = false;
+      for (const o of outcomes) {
+        if (o.kind === "collected" || o.kind === "no-change") {
+          handled.add(o.auctionId);
+          dirty = true;
+        }
+      }
+      if (dirty) saveHandledChange(identity.pubkey, handled);
+    };
+    run();
+    const timer = setInterval(run, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [bids, auctionLookup, identity]);
 
   // Reconcile local pending-bid entries against the server on load.
   useEffect(() => {
@@ -1091,9 +1087,6 @@ export default function DashboardPage() {
                         >
                           Recover
                         </button>
-                      )}
-                      {isWinner && identity && (
-                        <ChangeCollector auctionId={b.auction_id} bidderPubkey={identity.pubkey} />
                       )}
                     </div>
                   </>

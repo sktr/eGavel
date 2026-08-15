@@ -497,7 +497,17 @@ describe("change-return route", async () => {
     expect(body.error).toBe("NOT_BIDDER");
   });
 
-  it("returns NO_CHANGE when nothing is stored", async () => {
+  it("returns NOT_CLAIMED before the seller claims (auto-collect keeps polling)", async () => {
+    const res = await app.request(
+      `http://localhost/api/auctions/a1/change?bidder_pubkey=${BIDDER}`,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("NOT_CLAIMED");
+  });
+
+  it("returns NO_CHANGE once claimed with no change output (permanent — stop polling)", async () => {
+    await db.markClaimed("a1");
     const res = await app.request(
       `http://localhost/api/auctions/a1/change?bidder_pubkey=${BIDDER}`,
     );
