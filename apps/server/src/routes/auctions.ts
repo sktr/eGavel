@@ -14,6 +14,7 @@ import {
 } from "../claim.js";
 import { verifySecretSignature, signSecret } from "../lib/schnorr.js";
 import { canonicalPubkey } from "../lib/canonical.js";
+import { verifyNip98Event } from "../lib/nip98.js";
 import { toPublicBid } from "../lib/public-bid.js";
 import { auctionFeeBps } from "../lib/auction-fee.js";
 import { settleIfDue } from "../lib/settle.js";
@@ -562,6 +563,35 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     await db.saveBid(bid);
     return c.json({ ok: true });
   });
+
+  // ── Nostr identity link (Model B): seller binds their NIP-07 Nostr key to
+  // their eGavel trading key. content of the NIP-98 event = trading pubkey. ──
+  router.post("/identity/nostr-link", async (c) => {
+    const body = await c.req.json().catch(() => null) as { trading_pubkey?: string; sig?: string; event?: unknown } | null
+    if (!body?.trading_pubkey || !body?.sig || !body?.event) return c.json({ error: "missing fields" }, 400)
+    // 1. prove control of the trading key
+    const tradingContent = `link:${body.trading_pubkey}`
+    if (!verifySecretSignature(body.sig, tradingContent, canonicalPubkey(body.trading_pubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400)
+    }
+    // 2. verify the NIP-98 event
+    const v = verifyNip98Event(body.event)
+    if (!v.ok) return c.json({ error: v.error }, 400)
+    if (v.content !== body.trading_pubkey) return c.json({ error: "CONTENT_MISMATCH" }, 400)
+    // 3. store the link
+    await db.saveNostrLink(body.trading_pubkey, v.nostrPubkey)
+    return c.json({ ok: true, nostr_pubkey: v.nostrPubkey })
+  })
+
+  router.delete("/identity/nostr-link", async (c) => {
+    const body = await c.req.json().catch(() => null) as { trading_pubkey?: string; sig?: string } | null
+    if (!body?.trading_pubkey || !body?.sig) return c.json({ error: "missing fields" }, 400)
+    if (!verifySecretSignature(body.sig, `unlink:${body.trading_pubkey}`, canonicalPubkey(body.trading_pubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400)
+    }
+    await db.deleteNostrLink(body.trading_pubkey)
+    return c.json({ ok: true })
+  })
 
   return router;
 }
