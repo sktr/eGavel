@@ -405,7 +405,11 @@ export default function DashboardPage() {
         (id) => !handled.has(id),
       );
       if (candidates.length === 0) return;
-      const outcomes = await autoCollectChange(candidates, identity.pubkey);
+      const outcomes = await autoCollectChange(
+        candidates,
+        identity.pubkey,
+        bytesToHex(identity.secretKey),
+      );
       if (cancelled) return;
       let dirty = false;
       for (const o of outcomes) {

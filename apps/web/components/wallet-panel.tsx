@@ -7,7 +7,7 @@ import {
   Amount,
   MintQuoteState,
 } from "@cashu/cashu-ts";
-import { useWallet, useTotalBalance, storeProofsInWallet, loadStore, pickWithdrawMint } from "../lib/wallet";
+import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
@@ -22,7 +22,7 @@ export function WalletPanel() {
   const { identity } = useIdentity();
   const pubkey = identity?.pubkey ?? "";
   const wallet = useWallet(DEFAULT_MINT, pubkey);
-  const { total, byMint, loading, refresh } = useTotalBalance(pubkey);
+  const { total, byMint, loading, refresh, stale } = useTotalBalance(pubkey);
 
   // Withdraw mint: the wallet may hold balances on several mints (Receive
   // accepts tokens from any mint), so let the user pick which one to spend.
@@ -149,10 +149,19 @@ export function WalletPanel() {
       const store = loadStore(pubkey);
       const stored = deserializeProofs(store[mintUrl] ?? []);
       const { unspent } = await w.groupProofsByState(stored);
-      if (unspent.length === 0) throw new Error("no spendable balance on this mint");
-      const result = await w.ops.send(Amount.from(amt), unspent).includeFees(true).run();
+      // Leftover P2PK proofs (old un-swapped winner change) are 1-of-1 locked
+      // to this wallet — sign them so the mint accepts the send. Proofs that
+      // need another key are dropped (they cannot be spent here).
+      const spendable = unspentWithoutP2PK(unspent);
+      const ownP2PK = unspent.filter(
+        (p) => typeof p.secret === "string" && isP2PKSecret(p.secret),
+      );
+      const skHex = walletPrivkeyHex(pubkey);
+      let op = w.ops.send(Amount.from(amt), [...spendable, ...ownP2PK]).includeFees(true);
+      if (skHex && ownP2PK.length > 0) op = op.privkey(skHex);
+      const result = await op.run();
       if (result.send.length === 0) throw new Error("send produced no output proofs");
-      storeProofsInWallet(result.keep, mintUrl, pubkey);
+      replaceMintProofs(result.keep, mintUrl, pubkey);
       setWdToken(getEncodedToken({ mint: mintUrl, proofs: result.send }));
     } catch (err) {
       setWdErr(err instanceof Error ? err.message : String(err));
@@ -185,11 +194,21 @@ export function WalletPanel() {
       const store = loadStore(pubkey);
       const stored = deserializeProofs(store[mintUrl] ?? []);
       const { unspent } = await w.groupProofsByState(stored);
-      const result = await w.ops.send(Amount.from(need), unspent).includeFees(true).run();
+      const spendable = unspentWithoutP2PK(unspent);
+      const ownP2PK = unspent.filter(
+        (p) => typeof p.secret === "string" && isP2PKSecret(p.secret),
+      );
+      const skHex = walletPrivkeyHex(pubkey);
+      let op = w.ops.send(Amount.from(need), [...spendable, ...ownP2PK]).includeFees(true);
+      if (skHex && ownP2PK.length > 0) op = op.privkey(skHex);
+      const result = await op.run();
       if (result.send.length === 0) throw new Error("insufficient balance for invoice + fees");
       const melt = await w.ops.meltBolt11(quoteRes, result.send).run();
       const keep = [...result.keep, ...(melt.change ?? [])];
-      storeProofsInWallet(keep, mintUrl, pubkey);
+      // Replace, not merge: the swap + melt consumed input proofs at the mint.
+      // Keeping them would over-count the optimistic balance while the mint is
+      // unreachable (the stale-number bug).
+      replaceMintProofs(keep, mintUrl, pubkey);
       setLnMsg(`Paid ${Number(quoteRes.amount)} sats to the invoice.`);
       setLnInvoice("");
     } catch (err) {
@@ -216,9 +235,19 @@ export function WalletPanel() {
         <h2 style={{ fontSize: 17, fontWeight: 600 }}>Wallet</h2>
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 20 }}>
-        <span style={{ fontFamily: "var(--font-display)", fontSize: 30, fontWeight: 600 }}>
+        <span style={{ fontFamily: "var(--font-display)", fontSize: 30, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 8 }}>
           {loading ? "…" : total.toLocaleString()}{" "}
           <span style={{ fontSize: 15, fontWeight: 400, color: "var(--muted)" }}>sats</span>
+          {stale && (
+            <span
+              className="material-icons"
+              style={{ fontSize: 16, color: "var(--red)", cursor: "help" }}
+              title="Mint unreachable — balance not verified (may be stale)"
+              aria-label="Balance not verified — mint unreachable"
+            >
+              warning
+            </span>
+          )}
         </span>
         <button
           type="button"

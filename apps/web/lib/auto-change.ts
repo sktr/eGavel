@@ -38,9 +38,10 @@ export function collectibleChangeAuctions(
 export async function tryCollectChange(
   auctionId: string,
   bidderPubkey: string,
+  bidderSkHex: string,
 ): Promise<CollectOutcome> {
   try {
-    const res = await collectChange(auctionId, bidderPubkey);
+    const res = await collectChange(auctionId, bidderPubkey, bidderSkHex);
     return { kind: "collected", auctionId, amount: res.amount };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -54,10 +55,11 @@ export async function tryCollectChange(
 export async function autoCollectChange(
   auctionIds: string[],
   bidderPubkey: string,
+  bidderSkHex: string,
 ): Promise<CollectOutcome[]> {
   const outcomes: CollectOutcome[] = [];
   for (const id of auctionIds) {
-    outcomes.push(await tryCollectChange(id, bidderPubkey));
+    outcomes.push(await tryCollectChange(id, bidderPubkey, bidderSkHex));
   }
   return outcomes;
 }

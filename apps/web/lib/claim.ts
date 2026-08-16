@@ -199,15 +199,57 @@ export async function fetchChangeData(
 }
 
 /** The winner sweeps the excess (locked max − standing price) into their wallet.
- * The change proofs are 1-of-1 P2PK to the winner, so no server interaction is
- * needed to spend them — storing them in the wallet is enough (same as the
- * seller's claim proofs). */
+ * The change proofs are 1-of-1 P2PK to the winner. They are swapped (with the
+ * winner's key signing the witness) into ordinary spendable proofs before being
+ * stored — storing raw P2PK proofs would make the balance over-count AND break
+ * later withdrawals ("Witness signatures not provided"). */
 export async function collectChange(
   auctionId: string,
   bidderPubkey: string,
+  bidderSkHex: string,
   apiBase?: string,
 ): Promise<ChangeReturn> {
   const data = await fetchChangeData(auctionId, bidderPubkey, apiBase);
-  storeProofsInWallet(data.proofs as unknown as Proof[], data.mint_url, bidderPubkey);
-  return data;
+  if (data.proofs.length === 0) return data;
+  // Only P2PK-locked proofs need a swap (witness signature). Ordinary proofs
+  // are stored as-is.
+  const locked = data.proofs.filter((sp) => isP2PKSecret(sp.secret));
+  const plain = data.proofs.filter((sp) => !isP2PKSecret(sp.secret));
+  if (locked.length === 0) {
+    storeProofsInWallet(plain as unknown as Proof[], data.mint_url, bidderPubkey);
+    return data;
+  }
+  // Attach the mint URL the same way swapLockedProofs expects.
+  const proofs = locked.map((sp) => {
+    const p = {
+      id: sp.keyset_id,
+      amount: sp.amount,
+      secret: sp.secret,
+      C: sp.C,
+    } as unknown as Proof;
+    (p as unknown as { mint_url: string }).mint_url = data.mint_url;
+    return p;
+  });
+  const swapped = await swapLockedProofs(proofs, data.amount, bidderSkHex);
+  storeProofsInWallet(
+    [...swapped, ...(plain as unknown as Proof[])],
+    data.mint_url,
+    bidderPubkey,
+  );
+  return {
+    proofs: [...swapped, ...plain] as unknown as StoredProof[],
+    amount: data.amount,
+    mint_url: data.mint_url,
+  };
+}
+
+/** True when a proof secret is a NUT-11 P2PK lock (1-of-1 winner change,
+ * 2-of-3 bid, etc.) — such proofs need a witness to spend. */
+function isP2PKSecret(secret: string): boolean {
+  try {
+    const parsed = JSON.parse(secret) as unknown
+    return Array.isArray(parsed) && parsed[0] === "P2PK"
+  } catch {
+    return false
+  }
 }

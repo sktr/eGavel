@@ -13,7 +13,7 @@ import { ConnectDialog } from "../components/connect-dialog"
 export function Header() {
   const { identity, isLoaded, login, logout, restore } = useIdentity()
   const { theme, setTheme } = useTheme()
-  const { total, byMint, loading, refreshing, refresh } = useTotalBalance(identity?.pubkey ?? "")
+  const { total, byMint, loading, refreshing, refresh, stale } = useTotalBalance(identity?.pubkey ?? "")
   const [open, setOpen] = useState(false)
   const [showConnect, setShowConnect] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -136,7 +136,19 @@ export function Header() {
                   )}
                 </span>
                 {!loading && (
-                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600 }}>
+                  <span
+                    style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}
+                    title={stale ? "Mint unreachable — balance not verified" : undefined}
+                  >
+                    {stale && (
+                      <span
+                        className="material-icons"
+                        style={{ fontSize: 13, color: "var(--red, #dc2626)" }}
+                        aria-hidden="true"
+                      >
+                        warning
+                      </span>
+                    )}
                     {total.toLocaleString()}
                     <span style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)" }}> sats</span>
                   </span>
@@ -180,6 +192,11 @@ export function Header() {
                         <p style={{ fontFamily: "var(--font-mono)", fontSize: 22, fontWeight: 600, marginTop: 2 }}>
                           {total.toLocaleString()} <span style={{ fontSize: 13, fontWeight: 400, color: "var(--muted)" }}>sats</span>
                         </p>
+                        {stale && (
+                          <p style={{ fontSize: 11, color: "var(--red, #dc2626)", marginTop: 4, lineHeight: 1.4 }}>
+                            Mint unreachable — this balance is not verified. It may be stale; refresh once the mint is back.
+                          </p>
+                        )}
                         {byMint.length > 0 && (
                           <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
                             {byMint.map((m) => (

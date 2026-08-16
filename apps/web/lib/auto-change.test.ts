@@ -6,8 +6,22 @@ import {
   loadHandledChange,
   saveHandledChange,
 } from "./auto-change";
+import { swapLockedProofs } from "./claim";
+import type { Proof } from "@cashu/cashu-ts";
+
+// Partial module mock: swapLockedProofs talks to a live mint; stub it so
+// change collection tests only exercise the classification/store logic.
+vi.mock("./claim", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    swapLockedProofs: vi.fn(),
+  };
+});
 
 const PUBKEY = "03cafebabe";
+// Dummy bidder secret key — collectChange swaps with it (mocked fetch).
+const SK = "11".repeat(32);
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -63,12 +77,18 @@ describe("tryCollectChange (single auction outcome)", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     localStorage.clear();
   });
 
   it("returns collected with the amount on success", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(changeBody)));
-    const outcome = await tryCollectChange("a1", PUBKEY);
+    // collectChange swaps the P2PK change proofs before storing them; stub the
+    // swap so the outcome classification is what this test asserts.
+    (swapLockedProofs as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: "ks1", amount: 200, secret: "swapped", C: "cs" } as unknown as Proof,
+    ]);
+    const outcome = await tryCollectChange("a1", PUBKEY, SK);
     expect(outcome).toEqual({ kind: "collected", auctionId: "a1", amount: 200 });
   });
 
@@ -77,7 +97,7 @@ describe("tryCollectChange (single auction outcome)", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ error: "NOT_CLAIMED" }, 400)),
     );
-    const outcome = await tryCollectChange("a1", PUBKEY);
+    const outcome = await tryCollectChange("a1", PUBKEY, SK);
     expect(outcome).toEqual({ kind: "not-claimed", auctionId: "a1" });
   });
 
@@ -86,7 +106,7 @@ describe("tryCollectChange (single auction outcome)", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ error: "NO_CHANGE" }, 400)),
     );
-    const outcome = await tryCollectChange("a1", PUBKEY);
+    const outcome = await tryCollectChange("a1", PUBKEY, SK);
     expect(outcome).toEqual({ kind: "no-change", auctionId: "a1" });
   });
 
@@ -95,7 +115,7 @@ describe("tryCollectChange (single auction outcome)", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ error: "boom" }, 500)),
     );
-    const outcome = await tryCollectChange("a1", PUBKEY);
+    const outcome = await tryCollectChange("a1", PUBKEY, SK);
     expect(outcome.kind).toBe("error");
     if (outcome.kind === "error") expect(outcome.auctionId).toBe("a1");
   });
@@ -118,7 +138,7 @@ describe("autoCollectChange (batch)", () => {
         }),
       ),
     );
-    const outcomes = await autoCollectChange(["a1", "a2"], PUBKEY);
+    const outcomes = await autoCollectChange(["a1", "a2"], PUBKEY, SK);
     expect(outcomes.filter((o) => o.kind === "collected")).toHaveLength(2);
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
   });

@@ -13,6 +13,7 @@ import {
   type MintQuoteBolt11Response,
 } from "@cashu/cashu-ts"
 import { buildWallet } from "./deterministic-wallet"
+import { loadAccount } from "./key-store"
 
 const LEGACY_KEY = "cashu-wallet-v1";
 /** Set once the legacy shared store has been claimed by an account. */
@@ -67,6 +68,16 @@ function saveStore(pubkey: string, data: WalletStore) {
   // Every mutation funnels through here (receive/sendP2PK/claimMint/refresh/
   // storeProofsInWallet) — one dispatch point keeps every balance UI in sync.
   notifyWalletChanged()
+}
+
+/**
+ * Write the store WITHOUT firing WALLET_CHANGED_EVENT. Used for internal
+ * self-healing writes (e.g. useTotalBalance dropping mint-confirmed spent
+ * proofs) where the caller already owns the UI refresh — dispatching here
+ * would re-trigger the caller and loop.
+ */
+function saveStoreQuiet(pubkey: string, data: WalletStore) {
+  localStorage.setItem(walletStoreKey(pubkey), JSON.stringify(data))
 }
 
 export function useWallet(mintUrl: string, pubkey: string) {
@@ -216,13 +227,20 @@ export function useWallet(mintUrl: string, pubkey: string) {
 
       if (unspent.length === 0) throw new Error("No unspent proofs available")
 
-      const result = await wallet.ops
+      // The store may hold P2PK-locked proofs (winner change, seller claim)
+      // that this wallet owns 1-of-1. Sign them so the mint accepts the swap
+      // — otherwise it rejects with "Witness signatures not provided".
+      const skHex = walletPrivkeyHex(pubkey)
+      const sendOp = wallet.ops
         .send(Amount.from(amount), unspent)
         .asP2PK(options)
         .includeFees(true)
-        .run()
+      if (skHex) sendOp.privkey(skHex)
+      const result = await sendOp.run()
 
-      // Store keep proofs back
+      // Replace (not merge): the swap consumed the input proofs at the mint;
+      // keeping them would inflate the optimistic balance while the mint is
+      // unreachable. Mirrors replaceMintProofs semantics.
       store[mintUrl] = serializeProofs(result.keep)
       saveStore(pubkey, store)
 
@@ -316,6 +334,19 @@ export function storeProofsInWallet(proofs: Proof[], mintUrl: string, pubkey: st
   saveStore(pubkey, store)
 }
 
+/**
+ * Replace a mint's proofs in the store with an exact set — used after a swap
+ * that CONSUMED input proofs (withdraw, melt). Merging via storeProofsInWallet
+ * would keep the spent proofs, so when the mint is unreachable the optimistic
+ * balance over-counts them (the "stale previous number" bug). Replacement
+ * mirrors what sendP2PK already did for bids.
+ */
+export function replaceMintProofs(proofs: Proof[], mintUrl: string, pubkey: string) {
+  const store = loadStore(pubkey)
+  store[mintUrl] = serializeProofs(proofs)
+  saveStore(pubkey, store)
+}
+
 // ── Total balance across all mints in the local wallet store ──────────────
 export interface MintBalance {
   mint: string
@@ -326,18 +357,93 @@ export interface MintBalance {
  * Sum the amounts of serialized proof JSON strings without touching the mint
  * server. Used for the optimistic first paint so the header/dashboard/wallet
  * never flash "0 sats" while the (slow) mint verification runs.
+ *
+ * P2PK-locked proofs (e.g. an unspent winner change still locked to the
+ * winner's key) are NOT spendable as ordinary proofs, so they are excluded —
+ * otherwise the optimistic balance over-counts until the mint can be reached
+ * to swap them.
  */
 export function sumStoredAmounts(raw: string[]): number {
   if (raw.length === 0) return 0
   let total = 0
   for (const s of raw) {
     try {
-      total += Number(JSON.parse(s).amount ?? 0)
+      const p = JSON.parse(s) as { amount?: number; secret?: string }
+      if (typeof p.secret === "string" && isP2PKSecret(p.secret)) continue
+      total += Number(p.amount ?? 0)
     } catch {
       // unparseable entry — skip
     }
   }
   return total
+}
+
+/** True when a proof secret is a NUT-11 P2PK lock (1-of-1 winner change,
+ * 2-of-3 bid, etc.) — such proofs need a witness to spend. */
+export function isP2PKSecret(secret: string): boolean {
+  try {
+    const parsed = JSON.parse(secret) as unknown
+    return Array.isArray(parsed) && parsed[0] === "P2PK"
+  } catch {
+    return false
+  }
+}
+
+/** Filter P2PK-locked proofs out of an unspent list: the wallet cannot spend
+ * them as ordinary proofs (a witness is required), so handing them to
+ * send/melt fails at the mint with "Witness signatures not provided". */
+export function unspentWithoutP2PK(proofs: Proof[]): Proof[] {
+  return proofs.filter((p) => typeof p.secret !== "string" || !isP2PKSecret(p.secret))
+}
+
+export interface MintVerifyResult {
+  mint: string
+  amount: number
+  /** false = mint unreachable — the optimistic local estimate is kept. */
+  ok: boolean
+}
+
+export interface MergedBalance {
+  byMint: MintBalance[]
+  total: number
+  /** True when at least one mint could not be verified (stale estimate shown). */
+  stale: boolean
+}
+
+/**
+ * Merge per-mint verification results with the optimistic local estimates.
+ * Verified mints contribute their mint-confirmed amount; unreachable mints
+ * keep the local estimate and mark the result stale so the UI can warn that
+ * the number is not mint-confirmed.
+ */
+export function mergeMintBalances(
+  localByMint: MintBalance[],
+  results: MintVerifyResult[],
+): MergedBalance {
+  const byMint: MintBalance[] = []
+  let stale = false
+  for (const r of results) {
+    if (r.ok) {
+      if (r.amount > 0) byMint.push({ mint: r.mint, amount: r.amount })
+    } else {
+      stale = true
+      const local = localByMint.find((m) => m.mint === r.mint)
+      if (local && local.amount > 0) byMint.push(local)
+    }
+  }
+  return { byMint, total: byMint.reduce((acc, m) => acc + m.amount, 0), stale }
+}
+
+/**
+ * The account's secret key (hex) when it matches the pubkey the wallet is
+ * operating on — used to sign P2PK witnesses (winner change, seller claim)
+ * before spending them at the mint. Returns null for a logged-out or
+ * mismatched account so spend flows can skip signing.
+ */
+export function walletPrivkeyHex(pubkey: string): string | null {
+  const account = loadAccount()
+  if (!account || account.pubkey !== pubkey) return null
+  return account.secretKeyHex
 }
 
 /**
@@ -370,6 +476,9 @@ export function useTotalBalance(pubkey: string) {
   const [byMint, setByMint] = useState<MintBalance[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  // True when at least one mint could not be reached: the displayed number is
+  // the local estimate, not a mint-confirmed balance.
+  const [stale, setStale] = useState(false)
 
   const load = useCallback(async () => {
     if (!pubkey) {
@@ -377,6 +486,7 @@ export function useTotalBalance(pubkey: string) {
       setByMint([])
       setLoading(false)
       setRefreshing(false)
+      setStale(false)
       return
     }
     const store = loadStore(pubkey)
@@ -386,6 +496,7 @@ export function useTotalBalance(pubkey: string) {
       setByMint([])
       setLoading(false)
       setRefreshing(false)
+      setStale(false)
       return
     }
 
@@ -400,24 +511,31 @@ export function useTotalBalance(pubkey: string) {
     setLoading(false)
 
     const results = await Promise.all(
-      entries.map(async ([mint, raw]): Promise<MintBalance> => {
+      entries.map(async ([mint, raw]): Promise<MintVerifyResult> => {
         try {
           const wallet = buildWallet(mint)
           await wallet.loadMint()
           const stored = deserializeProofs(raw)
           const { unspent } = await wallet.groupProofsByState(stored)
           const amount = unspent.length > 0 ? Number(sumProofs(unspent)) : 0
-          return { mint, amount }
+          // Self-heal the store: drop proofs the mint reports spent so the
+          // optimistic estimate stays honest for the next mint-down window.
+          // Quiet write — this load already owns the UI update.
+          const next = loadStore(pubkey)
+          next[mint] = serializeProofs(unspent)
+          saveStoreQuiet(pubkey, next)
+          return { mint, amount, ok: true }
         } catch {
-          // mint unreachable — keep the optimistic local estimate as-is
-          return { mint, amount: sumStoredAmounts(raw) }
+          // mint unreachable — keep the optimistic local estimate, mark stale
+          return { mint, amount: sumStoredAmounts(raw), ok: false }
         }
       }),
     )
 
-    const valid = results.filter((r) => r.amount > 0)
-    setByMint(valid)
-    setTotal(valid.reduce((acc, r) => acc + r.amount, 0))
+    const merged = mergeMintBalances(localByMint, results)
+    setByMint(merged.byMint)
+    setTotal(merged.total)
+    setStale(merged.stale)
     setRefreshing(false)
   }, [pubkey])
 
@@ -446,5 +564,5 @@ export function useTotalBalance(pubkey: string) {
     await load()
   }, [load])
 
-  return { total, byMint, loading, refreshing, refresh }
+  return { total, byMint, loading, refreshing, refresh, stale }
 }
