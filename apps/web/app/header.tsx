@@ -242,21 +242,6 @@ export function Header() {
                             textDecoration: "none",
                           }}
                         >
-                          <span
-                            style={{
-                              display: "inline-block",
-                              fontSize: 9,
-                              padding: "1px 7px",
-                              borderRadius: "var(--radius-full)",
-                              fontWeight: 600,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.03em",
-                              background: "oklch(92% 0.04 145)",
-                              color: "oklch(40% 0.10 145)",
-                            }}
-                          >
-                            Nostr verified
-                          </span>
                           <span style={{ wordBreak: "break-all" }}>
                             {(() => {
                               try {
