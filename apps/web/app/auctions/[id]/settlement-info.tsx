@@ -18,15 +18,35 @@ function shortNpub(pubkeyHex: string): string {
   return npub.length > 20 ? npub.slice(0, 12) + "…" + npub.slice(-8) : npub
 }
 
+/** Seller display: linked seller's npub (nostr.at link) when available, else
+ * the short trading-key hex. The seller's identity is public info. */
+function SellerDisplay({ auction }: { auction: Auction }) {
+  const linked = auction.seller_nostr_pubkey
+  if (linked) {
+    return (
+      <a
+        href={nostrAtProfileUrl(linked)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={linked}
+        style={{ color: "inherit", textDecoration: "underline dotted" }}
+      >
+        {shortNpub(linked)}
+      </a>
+    )
+  }
+  return <span title={auction.seller_pubkey}>{shortHex(auction.seller_pubkey)}</span>
+}
+
 /**
  * Settlement Info for a settled auction.
  *
- * The winner stays anonymous to everyone EXCEPT the seller: the server only
- * reveals the winner's linked Nostr pubkey when the request is signed by the
- * seller's key (GET /auctions/:id?seller_pubkey=&seller_sig=). This component
- * re-fetches with that signature when the viewer IS the seller, so they can
- * verify an inbound contact is the genuine winner. Everyone else sees
- * "Winner — anonymous".
+ * The winner stays anonymous to the public. It is revealed in two cases:
+ * - the viewer IS the seller (server requires a Schnorr signature over
+ *   `winner-view:<id>` — only then does the response include the winner's
+ *   linked Nostr pubkey), so they can verify an inbound contact is genuine;
+ * - the viewer IS the winner themselves (their own key is already known).
+ * Everyone else sees "Winner — anonymous".
  */
 export function SettlementInfo({
   auction,
@@ -38,11 +58,15 @@ export function SettlementInfo({
   const { identity, isLoaded } = useIdentity()
   const [sellerView, setSellerView] = useState<Auction | null>(null)
 
-  // If the current account is the seller, fetch the seller-signed view to
-  // reveal the winner's identity.
+  const isWinnerViewer = identity?.pubkey === auction.winner_npub
+
+  // If the current account is the seller or the winner, fetch the signed view
+  // to reveal the winner's identity (their own handle for the winner).
   useEffect(() => {
     if (!isLoaded || !identity) return
-    if (identity.pubkey !== auction.seller_pubkey) return
+    const canView =
+      identity.pubkey === auction.seller_pubkey || identity.pubkey === auction.winner_npub
+    if (!canView) return
     let cancelled = false
     ;(async () => {
       try {
@@ -61,9 +85,17 @@ export function SettlementInfo({
     return () => {
       cancelled = true
     }
-  }, [isLoaded, identity, auction.id, auction.seller_pubkey])
+  }, [isLoaded, identity, auction.id, auction.seller_pubkey, auction.winner_npub])
 
-  const winnerNostrPubkey = sellerView?.winner_nostr_pubkey
+  // The winner is revealed to the seller (via the signed fetch) or to the
+  // winner themselves (their own linked key).
+  const winnerNostrPubkey =
+    sellerView?.winner_nostr_pubkey ??
+    (isWinnerViewer && auction.winner_npub
+      ? auction.winner_nostr_pubkey
+      : undefined)
+
+  const winnerHandle = winnerNostrPubkey ? shortNpub(winnerNostrPubkey) : "anonymous"
 
   return (
     <div
@@ -109,12 +141,14 @@ export function SettlementInfo({
                   title={winnerNostrPubkey}
                   style={{ color: "inherit", textDecoration: "underline dotted" }}
                 >
-                  {shortNpub(winnerNostrPubkey)}
+                  {winnerHandle}
                 </a>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                  {" "}
-                  (visible to you as the seller)
-                </span>
+                {!isWinnerViewer && (
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    {" "}
+                    (visible to you as the seller)
+                  </span>
+                )}
               </>
             ) : (
               <code style={{ fontSize: 13 }}>Winner — anonymous</code>
@@ -138,14 +172,24 @@ export function SettlementInfo({
         Contact
       </h3>
       <div style={{ fontSize: 13, color: "var(--muted)" }}>
-        Seller: <code>{shortHex(auction.seller_pubkey)}</code>
+        Seller: <SellerDisplay auction={auction} />
         {auction.winner_npub && (
           <>
             {" "}
             · Winner:{" "}
-            <code>
-              {winnerNostrPubkey ? shortNpub(winnerNostrPubkey) : "anonymous"}
-            </code>
+            {winnerNostrPubkey ? (
+              <a
+                href={nostrAtProfileUrl(winnerNostrPubkey)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={winnerNostrPubkey}
+                style={{ color: "inherit", textDecoration: "underline dotted" }}
+              >
+                {winnerHandle}
+              </a>
+            ) : (
+              <code>anonymous</code>
+            )}
           </>
         )}
       </div>

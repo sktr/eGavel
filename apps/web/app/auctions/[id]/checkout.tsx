@@ -54,8 +54,8 @@ export function Checkout({
     >
       <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>You won</h2>
       <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 12px" }}>
-        Your contact handle is shared with the seller once the auction settles —
-        they can see it in the Settlement Info and reach you on Nostr.
+        The seller can see your Nostr handle in the Settlement Info — reach out to them on
+        Nostr to arrange delivery and payment. Your handle:
       </p>
       <div
         style={{

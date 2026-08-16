@@ -231,6 +231,33 @@ describe("auctions list standing price", () => {
     expect(sellerView.winner_nostr_pubkey).toBe("03winnerlink");
   });
 
+  it("GET /api/auctions/:id reveals winner_nostr_pubkey to the winner themselves (signed)", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    const seller = sellerKey();
+    const winner = sellerKey(); // the winner's real trading key
+    await db.saveAuction(
+      makeAuction({
+        state: "SETTLED",
+        seller_pubkey: seller.pubkey,
+        winner_npub: winner.pubkey,
+        winning_amount: 3600,
+      }),
+    );
+    await db.saveNostrLink(winner.pubkey, "03winnerlink");
+
+    // Anonymous viewer: no winner link.
+    const anon = (await (await app.request("http://localhost/api/auctions/a1")).json()) as Auction;
+    expect(anon.winner_nostr_pubkey).toBeUndefined();
+
+    // Winner-signed viewer: their own linked Nostr pubkey is revealed.
+    const sig = signSecret("winner-view:a1", winner.skHex);
+    const winnerRes = await app.request(
+      `http://localhost/api/auctions/a1?seller_pubkey=${winner.pubkey}&seller_sig=${sig}`,
+    );
+    const winnerView = (await winnerRes.json()) as Auction;
+    expect(winnerView.winner_nostr_pubkey).toBe("03winnerlink");
+  });
+
   it("GET /api/auctions/:id rejects a forged seller signature", async () => {
     const app = createApp(db, { serverKey: SERVER });
     const seller = sellerKey();

@@ -210,21 +210,26 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const enriched = nostrLink
       ? { ...settled, seller_nostr_pubkey: nostrLink.nostr_pubkey }
       : settled;
-    // The winner stays anonymous to everyone EXCEPT the seller. The seller
-    // proves identity with a Schnorr signature over `winner-view:<id>` (same
-    // pattern as DELETE /auctions/:id) — only then is the winner's linked
-    // Nostr pubkey included, so the seller can verify a contact is genuine.
-    const sellerPubkey = c.req.query("seller_pubkey") ?? "";
-    const sellerSig = c.req.query("seller_sig") ?? "";
+    // The winner stays anonymous to everyone EXCEPT the seller and the winner
+    // themselves. The viewer proves identity with a Schnorr signature over
+    // `winner-view:<id>` (same pattern as DELETE /auctions/:id) — only then is
+    // the winner's linked Nostr pubkey included, so the seller can verify a
+    // contact is genuine and the winner sees their own handle.
+    const viewerPubkey = c.req.query("seller_pubkey") ?? "";
+    const viewerSig = c.req.query("seller_sig") ?? "";
     const isSeller =
-      canonicalPubkey(sellerPubkey) === canonicalPubkey(settled.seller_pubkey) &&
-      sellerSig !== "" &&
-      verifySecretSignature(sellerSig, `winner-view:${auction.id}`, canonicalPubkey(sellerPubkey));
-    if (sellerPubkey && !isSeller) {
+      canonicalPubkey(viewerPubkey) === canonicalPubkey(settled.seller_pubkey);
+    const isWinner =
+      !!settled.winner_npub &&
+      canonicalPubkey(viewerPubkey) === canonicalPubkey(settled.winner_npub);
+    const sigValid =
+      viewerSig !== "" &&
+      verifySecretSignature(viewerSig, `winner-view:${auction.id}`, canonicalPubkey(viewerPubkey));
+    if (viewerPubkey && !sigValid) {
       return c.json({ error: "INVALID_SIGNATURE" }, 401);
     }
     let withWinner = enriched;
-    if (isSeller && settled.winner_npub) {
+    if (sigValid && (isSeller || isWinner) && settled.winner_npub) {
       const winnerNostrLink = await db.getNostrLink(settled.winner_npub);
       if (winnerNostrLink) {
         withWinner = { ...enriched, winner_nostr_pubkey: winnerNostrLink.nostr_pubkey };
