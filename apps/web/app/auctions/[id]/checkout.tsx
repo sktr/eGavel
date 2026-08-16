@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useIdentity } from "../../../lib/identity";
-import { hexToNpub, nostrProfileUri } from "../../../lib/npub";
+import { hexToNpub } from "../../../lib/npub";
 import { shortHex } from "../../../lib/ident";
 
 function shortNpub(npub: string): string {
@@ -28,7 +28,6 @@ export function Checkout({
   // Nostr identity, so no nostr: link in that case.
   const hasLinkedNostr = Boolean(winnerNostrPubkey);
   const npub = hasLinkedNostr ? hexToNpub(winnerNostrPubkey) : shortHex(identity.pubkey);
-  const nostrUri = hasLinkedNostr ? nostrProfileUri(winnerNostrPubkey) : "";
   // Full handle for the hover title: the full npub when linked, the full
   // trading-key hex otherwise (the short form is just a truncated display).
   const titleHandle = hasLinkedNostr ? npub : identity.pubkey;
@@ -55,8 +54,8 @@ export function Checkout({
     >
       <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>You won</h2>
       <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 12px" }}>
-        Share your contact handle so the seller can reach you. The seller can open it in
-        their Nostr app and message you directly.
+        Your contact handle is shared with the seller once the auction settles —
+        they can see it in the Settlement Info and reach you on Nostr.
       </p>
       <div
         style={{
@@ -79,44 +78,25 @@ export function Checkout({
         >
           {shortNpub(npub)}
         </code>
-        {hasLinkedNostr && (
-          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={copyNpub}
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius)",
-                background: "var(--surface)",
-                color: "var(--fg)",
-                padding: "6px 12px",
-                fontSize: 12,
-                fontFamily: "inherit",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {copied ? "Copied ✓" : "Copy"}
-            </button>
-            <a
-              href={nostrUri}
-              style={{
-                border: "1px solid var(--accent)",
-                borderRadius: "var(--radius)",
-                background: "var(--accent-soft)",
-                color: "var(--accent)",
-                padding: "6px 12px",
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: "inherit",
-                textDecoration: "none",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Open in Nostr app
-            </a>
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={copyNpub}
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              background: "var(--surface)",
+              color: "var(--fg)",
+              padding: "6px 12px",
+              fontSize: 12,
+              fontFamily: "inherit",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy"}
+          </button>
+        </div>
       </div>
     </div>
   );

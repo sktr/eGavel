@@ -1295,25 +1295,6 @@ export default function DashboardPage() {
                       >
                         {a.item}
                       </a>
-                      {a.seller_nostr_pubkey && (
-                        <span
-                          title="Nostr identity linked via NIP-07"
-                          style={{
-                            display: "inline-block",
-                            fontSize: 9,
-                            padding: "1px 7px",
-                            borderRadius: "var(--radius-full)",
-                            fontWeight: 600,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.03em",
-                            background: "oklch(92% 0.04 145)",
-                            color: "oklch(40% 0.10 145)",
-                            flexShrink: 0,
-                          }}
-                        >
-                          Nostr verified
-                        </span>
-                      )}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                       Winner:{" "}

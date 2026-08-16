@@ -2,10 +2,20 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { initDb, type Db } from "../src/db/index.js";
 import { createApp } from "../src/app.js";
 import type { Auction, Bid } from "@egavel/shared";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { signSecret } from "../src/lib/schnorr.js";
+import { bytesToHex, hexToBytes } from "../src/lib/hex.js";
 
 const SELLER = "02deadbeef";
 const SERVER = "04server";
 const BIDDER = "03cafebabe";
+
+/** Real keypair for seller-signed requests (the SELLER constant is a stub). */
+function sellerKey() {
+  const skHex = bytesToHex(schnorr.utils.randomSecretKey());
+  const pubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(skHex)));
+  return { skHex, pubkey };
+}
 
 function makeAuction(overrides: Partial<Auction> = {}): Auction {
   return {
@@ -156,7 +166,7 @@ describe("auctions list standing price", () => {
     expect(combined.auction.seller_nostr_pubkey).toBe("03linkednostr");
   });
 
-  it("GET /api/auctions includes winner_nostr_pubkey when the winner is linked", async () => {
+  it("GET /api/auctions omits winner_nostr_pubkey (winner stays anonymous publicly)", async () => {
     const app = createApp(db, { serverKey: SERVER });
     await db.saveAuction(
       makeAuction({ state: "SETTLED", winner_npub: BIDDER, winning_amount: 3600 }),
@@ -165,7 +175,7 @@ describe("auctions list standing price", () => {
 
     const res = await app.request("http://localhost/api/auctions");
     const list = (await res.json()) as Auction[];
-    expect(list[0]!.winner_nostr_pubkey).toBe("03winnerlink");
+    expect(list[0]!.winner_nostr_pubkey).toBeUndefined();
   });
 
   it("GET /api/auctions omits winner_nostr_pubkey when the winner is not linked", async () => {
@@ -179,7 +189,7 @@ describe("auctions list standing price", () => {
     expect(list[0]!.winner_nostr_pubkey).toBeUndefined();
   });
 
-  it("GET /api/auctions/:id includes winner_nostr_pubkey when linked (with and without with_bids)", async () => {
+  it("GET /api/auctions/:id omits winner_nostr_pubkey for anonymous viewers", async () => {
     const app = createApp(db, { serverKey: SERVER });
     await db.saveAuction(
       makeAuction({ state: "SETTLED", winner_npub: BIDDER, winning_amount: 3600 }),
@@ -188,10 +198,59 @@ describe("auctions list standing price", () => {
 
     const plain = await app.request("http://localhost/api/auctions/a1");
     const auction = (await plain.json()) as Auction;
-    expect(auction.winner_nostr_pubkey).toBe("03winnerlink");
+    expect(auction.winner_nostr_pubkey).toBeUndefined();
 
     const withBids = await app.request("http://localhost/api/auctions/a1?with_bids=1");
     const combined = (await withBids.json()) as { auction: Auction; bids: Bid[] };
-    expect(combined.auction.winner_nostr_pubkey).toBe("03winnerlink");
+    expect(combined.auction.winner_nostr_pubkey).toBeUndefined();
+  });
+
+  it("GET /api/auctions/:id reveals winner_nostr_pubkey to the seller only (signed)", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    const seller = sellerKey();
+    await db.saveAuction(
+      makeAuction({
+        state: "SETTLED",
+        seller_pubkey: seller.pubkey,
+        winner_npub: BIDDER,
+        winning_amount: 3600,
+      }),
+    );
+    await db.saveNostrLink(BIDDER, "03winnerlink");
+
+    // Anonymous viewer: no winner link.
+    const anon = (await (await app.request("http://localhost/api/auctions/a1")).json()) as Auction;
+    expect(anon.winner_nostr_pubkey).toBeUndefined();
+
+    // Seller-signed viewer: winner link is revealed.
+    const sig = signSecret("winner-view:a1", seller.skHex);
+    const sellerRes = await app.request(
+      `http://localhost/api/auctions/a1?seller_pubkey=${seller.pubkey}&seller_sig=${sig}`,
+    );
+    const sellerView = (await sellerRes.json()) as Auction;
+    expect(sellerView.winner_nostr_pubkey).toBe("03winnerlink");
+  });
+
+  it("GET /api/auctions/:id rejects a forged seller signature", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    const seller = sellerKey();
+    await db.saveAuction(
+      makeAuction({
+        state: "SETTLED",
+        seller_pubkey: seller.pubkey,
+        winner_npub: BIDDER,
+        winning_amount: 3600,
+      }),
+    );
+    await db.saveNostrLink(BIDDER, "03winnerlink");
+
+    const forged = signSecret("winner-view:a1", bytesToHex(schnorr.utils.randomSecretKey()));
+    const res = await app.request(
+      `http://localhost/api/auctions/a1?seller_pubkey=${seller.pubkey}&seller_sig=${forged}`,
+    );
+    // Forged signature must not leak the winner: 401 + no winner link.
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as Auction & { error?: string };
+    expect(body.winner_nostr_pubkey).toBeUndefined();
   });
 });

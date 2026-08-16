@@ -74,14 +74,10 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     for (const a of settled) {
       const withPrice = { ...a, current_amount: await standingPrice(db, a) };
       const nostrLink = nostrLinks.get(a.seller_pubkey);
+      // Seller identity is public; the winner stays anonymous in listings
+      // (revealed only to the seller via GET /auctions/:id, signed).
       const enriched = nostrLink ? { ...withPrice, seller_nostr_pubkey: nostrLink } : withPrice;
-      // Winner links are rare in the active list (only settled winners), so a
-      // per-row lookup is fine. Guard the empty-string case (no winner).
-      const winnerNostrLink = a.winner_npub ? await db.getNostrLink(a.winner_npub) : null;
-      const withWinner = winnerNostrLink
-        ? { ...enriched, winner_nostr_pubkey: winnerNostrLink.nostr_pubkey }
-        : enriched;
-      listed.push(withWinner.images ? { ...withWinner, images: withWinner.images.slice(0, 1) } : withWinner);
+      listed.push(enriched.images ? { ...enriched, images: enriched.images.slice(0, 1) } : enriched);
     }
     return c.json(listed);
   });
@@ -214,13 +210,26 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const enriched = nostrLink
       ? { ...settled, seller_nostr_pubkey: nostrLink.nostr_pubkey }
       : settled;
-    // Winner's linked Nostr pubkey (if any) — same link table, winner_npub key.
-    const winnerNostrLink = settled.winner_npub
-      ? await db.getNostrLink(settled.winner_npub)
-      : null;
-    const withWinner = winnerNostrLink
-      ? { ...enriched, winner_nostr_pubkey: winnerNostrLink.nostr_pubkey }
-      : enriched;
+    // The winner stays anonymous to everyone EXCEPT the seller. The seller
+    // proves identity with a Schnorr signature over `winner-view:<id>` (same
+    // pattern as DELETE /auctions/:id) — only then is the winner's linked
+    // Nostr pubkey included, so the seller can verify a contact is genuine.
+    const sellerPubkey = c.req.query("seller_pubkey") ?? "";
+    const sellerSig = c.req.query("seller_sig") ?? "";
+    const isSeller =
+      canonicalPubkey(sellerPubkey) === canonicalPubkey(settled.seller_pubkey) &&
+      sellerSig !== "" &&
+      verifySecretSignature(sellerSig, `winner-view:${auction.id}`, canonicalPubkey(sellerPubkey));
+    if (sellerPubkey && !isSeller) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    }
+    let withWinner = enriched;
+    if (isSeller && settled.winner_npub) {
+      const winnerNostrLink = await db.getNostrLink(settled.winner_npub);
+      if (winnerNostrLink) {
+        withWinner = { ...enriched, winner_nostr_pubkey: winnerNostrLink.nostr_pubkey };
+      }
+    }
     // Combined read for the detail page's live poll: one request instead of
     // two (auction + bids), halving polling load (adaptive-backoff client).
     if (c.req.query("with_bids") === "1") {

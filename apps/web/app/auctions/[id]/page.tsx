@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
+import { SettlementInfo } from "./settlement-info"
 import { Gallery } from "./gallery"
 import { DeleteListingButton } from "./delete-listing-button"
 import { apiUrl } from "../../../lib/api"
@@ -18,50 +19,21 @@ function shortNpub(pubkeyHex: string): string {
   return npub.length > 20 ? npub.slice(0, 12) + "…" + npub.slice(-8) : npub
 }
 
-/** "Nostr verified" pill — shown next to a seller's npub when the seller has
- * linked a NIP-07 Nostr key to their trading key (seller_nostr_pubkey present). */
-function NostrVerifiedBadge() {
-  return (
-    <span
-      title="Nostr identity linked via NIP-07"
-      style={{
-        display: "inline-block",
-        fontSize: 9,
-        padding: "1px 7px",
-        borderRadius: "var(--radius-full)",
-        fontWeight: 600,
-        textTransform: "uppercase",
-        letterSpacing: "0.03em",
-        background: "oklch(92% 0.04 145)",
-        color: "oklch(40% 0.10 145)",
-        marginLeft: 6,
-        verticalAlign: "middle",
-      }}
-    >
-      Nostr verified
-    </span>
-  )
-}
-
-/** Seller display, gated on having a nostr link: a verified seller's npub links
- * to their linked Nostr profile on nostr.at (with the badge); an unlinked
- * seller shows the short npub without a link (nothing to resolve to). */
+/** Seller display: a linked seller's npub links to their Nostr profile on
+ * nostr.at; an unlinked seller shows the short trading-key hex. */
 function SellerIdentity({ auction }: { auction: Auction }) {
   const verified = auction.seller_nostr_pubkey
   if (verified) {
     return (
-      <>
-        <a
-          href={nostrAtProfileUrl(verified)}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={verified}
-          style={{ color: "inherit", textDecoration: "underline dotted" }}
-        >
-          {shortNpub(verified)}
-        </a>
-        <NostrVerifiedBadge />
-      </>
+      <a
+        href={nostrAtProfileUrl(verified)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={verified}
+        style={{ color: "inherit", textDecoration: "underline dotted" }}
+      >
+        {shortNpub(verified)}
+      </a>
     )
   }
   return <span title={auction.seller_pubkey}>{shortHex(auction.seller_pubkey)}</span>
@@ -485,73 +457,7 @@ export default async function AuctionPage({
         </div>
 
         {/* ===== BELOW THE GRID: Settlement (for SETTLED auctions) ===== */}
-        {auction.state === "SETTLED" && (
-          <div
-            style={{
-              background: "var(--surface)",
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--border)",
-              padding: "24px 28px",
-              gridColumn: "1 / -1",
-              marginBottom: 24,
-            }}
-          >
-            <h2
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 600,
-                fontSize: 18,
-                marginBottom: 12,
-              }}
-            >
-              Settlement Info
-            </h2>
-            {auction.winner_npub ? (
-              <div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 600,
-                    fontSize: 22,
-                    color: "var(--accent2)",
-                  }}
-                >
-                  {auction.winning_amount?.toLocaleString()} sats
-                </div>
-                <code
-                  style={{
-                    marginTop: 4,
-                    display: "inline-block",
-                    fontSize: 13,
-                  }}
-                >
-                  Winner — anonymous
-                </code>
-              </div>
-            ) : (
-              <p style={{ color: "var(--muted)", fontSize: 14 }}>
-                Reserve price not met — no winner
-              </p>
-            )}
-            <h3
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 600,
-                fontSize: 15,
-                marginTop: 16,
-                marginBottom: 8,
-              }}
-            >
-              Contact
-            </h3>
-            <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                               Seller: <code><SellerIdentity auction={auction} /></code>
-              {auction.winner_npub && (
-                <> · Winner: <code>anonymous</code></>
-              )}
-            </div>
-          </div>
-        )}
+        {auction.state === "SETTLED" && <SettlementInfo auction={auction} serverNpub="" />}
 
         {/* ===== BELOW THE GRID: Winner Checkout ===== */}
         <div style={{ gridColumn: "1 / -1" }}>
