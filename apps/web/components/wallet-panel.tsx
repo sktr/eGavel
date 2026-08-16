@@ -7,7 +7,7 @@ import {
   Amount,
   MintQuoteState,
 } from "@cashu/cashu-ts";
-import { useWallet, useTotalBalance, storeProofsInWallet } from "../lib/wallet";
+import { useWallet, useTotalBalance, storeProofsInWallet, loadStore } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
@@ -111,10 +111,7 @@ export function WalletPanel() {
     try {
       const w = buildWallet(DEFAULT_MINT);
       await w.loadMint();
-      const store = JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<
-        string,
-        string[]
-      >;
+      const store = loadStore(pubkey);
       const stored = deserializeProofs(store[DEFAULT_MINT] ?? []);
       const { unspent } = await w.groupProofsByState(stored);
       if (unspent.length === 0) throw new Error("no spendable balance on this mint");
@@ -149,10 +146,7 @@ export function WalletPanel() {
       await w.loadMint();
       const quoteRes = await w.createMeltQuoteBolt11(invoice);
       const need = Number(quoteRes.amount) + Number(quoteRes.fee_reserve ?? 0);
-      const store = JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<
-        string,
-        string[]
-      >;
+      const store = loadStore(pubkey);
       const stored = deserializeProofs(store[DEFAULT_MINT] ?? []);
       const { unspent } = await w.groupProofsByState(stored);
       const result = await w.ops.send(Amount.from(need), unspent).includeFees(true).run();

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { storeProofsInWallet, WALLET_CHANGED_EVENT } from "./wallet";
+import { storeProofsInWallet, WALLET_CHANGED_EVENT, loadStore } from "./wallet";
+import { deserializeProofs } from "@cashu/cashu-ts";
 import type { Proof } from "@cashu/cashu-ts";
 
 // window is undefined in the node test env; stub just enough for the event
@@ -114,5 +115,43 @@ describe("per-account wallet store namespacing", () => {
     expect(claimed["https://mint.example"]).toContain(legacyProof);
     // A second account starts empty — no cross-account leakage.
     expect(localStorage.getItem("cashu-wallet-v1:second-account")).toBeNull();
+  });
+});
+
+describe("loadStore reads the account-namespaced store (withdraw bug regression)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    restoreWindow();
+  });
+
+  it("loadStore returns proofs stored under the account's namespaced key", () => {
+    const listeners = stubWindow();
+    void listeners;
+    const proof = { id: "k1", amount: 10, secret: "sA", C: "cA" } as unknown as Proof;
+
+    storeProofsInWallet([proof], "https://mint.example", "pubkey-a");
+
+    const store = loadStore("pubkey-a");
+    const stored = deserializeProofs(store["https://mint.example"] ?? []);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.secret).toBe("sA");
+  });
+
+  it("loadStore does not fall back to the legacy shared key once namespaced data exists", () => {
+    const listeners = stubWindow();
+    void listeners;
+    const proofA = { id: "k1", amount: 10, secret: "sA", C: "cA" } as unknown as Proof;
+    // A stale legacy store from another account must not leak into this one.
+    const legacyProof = JSON.stringify({ id: "k2", amount: 99, secret: "other", C: "cX" });
+    localStorage.setItem("cashu-wallet-v1", JSON.stringify({ "https://mint.example": [legacyProof] }));
+    localStorage.setItem("cashu-wallet-v1:migrated", "1");
+
+    storeProofsInWallet([proofA], "https://mint.example", "pubkey-a");
+
+    const store = loadStore("pubkey-a");
+    const stored = deserializeProofs(store["https://mint.example"] ?? []);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.secret).toBe("sA");
+    expect(stored[0]!.secret).not.toBe("other");
   });
 });

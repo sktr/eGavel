@@ -6,7 +6,7 @@ import {
 } from "@cashu/cashu-ts";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { deriveAccountFromWords, loadAccount } from "./key-store";
-import { storeProofsInWallet } from "./wallet";
+import { loadStore, storeProofsInWallet } from "./wallet";
 import { DEFAULT_MINT } from "./config";
 
 /**
@@ -83,19 +83,13 @@ export async function advanceCountersPastRecovery(
 }
 
 /**
- * Drop proofs whose secret is already present in the wallet store for the
- * mint. Without this, running recovery twice (or recovering onto a device
- * that already holds the balance) would duplicate tokens.
+ * Drop proofs whose secret is already present in the account's wallet store
+ * for the mint. Without this, running recovery twice (or recovering onto a
+ * device that already holds the balance) would duplicate tokens. Reads the
+ * per-account namespaced store — never the legacy shared key.
  */
-export function filterNewProofs(mintUrl: string, proofs: Proof[]): Proof[] {
-  let store: Record<string, string[]> = {};
-  try {
-    store = JSON.parse(
-      localStorage.getItem("cashu-wallet-v1") ?? "{}",
-    ) as Record<string, string[]>;
-  } catch {
-    store = {};
-  }
+export function filterNewProofs(mintUrl: string, pubkey: string, proofs: Proof[]): Proof[] {
+  const store = loadStore(pubkey);
   const existing = deserializeProofs(store[mintUrl] ?? []);
   const seen = new Set(existing.map((p) => p.secret));
   return proofs.filter((p) => !seen.has(p.secret));
@@ -171,10 +165,11 @@ export async function recoverBalanceFromSeed(opts: {
         if (proofs.length === 0) continue;
         const { unspent } = await wallet.groupProofsByState(proofs);
         if (unspent.length > 0) {
+          const account = deriveAccountFromWords(mnemonic);
           storeProofsInWallet(
-            filterNewProofs(mintUrl, unspent),
+            filterNewProofs(mintUrl, account.pubkey, unspent),
             mintUrl,
-            deriveAccountFromWords(mnemonic).pubkey,
+            account.pubkey,
           );
           recovered += unspent.reduce((a, p) => a + Number(p.amount), 0);
         }
@@ -207,10 +202,8 @@ export function autoRecoverBalance(mnemonic: string): void {
     void recoverBalanceFromSeed({ mnemonic, mintUrls: [DEFAULT_MINT] }).catch(() => {});
   };
   try {
-    const store = JSON.parse(localStorage.getItem("cashu-wallet-v1") ?? "{}") as Record<
-      string,
-      unknown
-    >;
+    const account = deriveAccountFromWords(mnemonic);
+    const store = loadStore(account.pubkey);
     const existing = store[DEFAULT_MINT];
     if (Array.isArray(existing) && existing.length > 0) return; // already populated
     attempt();

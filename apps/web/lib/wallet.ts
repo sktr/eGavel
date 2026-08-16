@@ -40,7 +40,7 @@ interface WalletStore {
   [mintUrl: string]: string[]
 }
 
-function loadStore(pubkey: string): WalletStore {
+export function loadStore(pubkey: string): WalletStore {
   const key = walletStoreKey(pubkey);
   try {
     const raw = localStorage.getItem(key);

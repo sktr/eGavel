@@ -108,18 +108,32 @@ describe("recovery helpers", () => {
     expect(r2.start).toBe(0); // undefined → untouched
   });
 
-  it("filterNewProofs drops proofs already in the store", () => {
+  it("filterNewProofs drops proofs already in the account's namespaced store", () => {
     const existing = serializeProofs([proof("s1", 2)]);
     localStorage.setItem(
-      "cashu-wallet-v1",
+      "cashu-wallet-v1:pubkey-a",
       JSON.stringify({ "https://mint.example": existing }),
     );
-    const out = filterNewProofs("https://mint.example", [
+    const out = filterNewProofs("https://mint.example", "pubkey-a", [
       proof("s1", 2),
       proof("s2", 3),
     ]);
     expect(out).toHaveLength(1);
     expect(out[0]!.secret).toBe("s2");
+  });
+
+  it("filterNewProofs ignores the legacy shared store (no cross-account leakage)", () => {
+    // Another account's legacy data must not suppress this account's proofs.
+    const legacy = serializeProofs([proof("sA", 2)]);
+    localStorage.setItem(
+      "cashu-wallet-v1",
+      JSON.stringify({ "https://mint.example": legacy }),
+    );
+    const out = filterNewProofs("https://mint.example", "pubkey-b", [
+      proof("sB", 3),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.secret).toBe("sB");
   });
 });
 
