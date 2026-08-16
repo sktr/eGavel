@@ -4,6 +4,7 @@ import {
   WALLET_CHANGED_EVENT,
   loadStore,
   pickWithdrawMint,
+  sumStoredAmounts,
 } from "./wallet";
 import { deserializeProofs } from "@cashu/cashu-ts";
 import type { Proof } from "@cashu/cashu-ts";
@@ -158,6 +159,38 @@ describe("loadStore reads the account-namespaced store (withdraw bug regression)
     expect(stored).toHaveLength(1);
     expect(stored[0]!.secret).toBe("sA");
     expect(stored[0]!.secret).not.toBe("other");
+  });
+});
+
+describe("sumStoredAmounts (optimistic balance display)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    restoreWindow();
+  });
+
+  it("sums the amounts of stored proof JSON strings", () => {
+    const raw = [
+      JSON.stringify({ amount: 10 }),
+      JSON.stringify({ amount: 25 }),
+      JSON.stringify({ amount: 5 }),
+    ];
+    expect(sumStoredAmounts(raw)).toBe(40);
+  });
+
+  it("returns 0 for an empty list", () => {
+    expect(sumStoredAmounts([])).toBe(0);
+  });
+
+  it("skips unparseable entries instead of throwing", () => {
+    const raw = [JSON.stringify({ amount: 7 }), "not-json", JSON.stringify({ amount: 3 })];
+    expect(sumStoredAmounts(raw)).toBe(10);
+  });
+
+  it("reads the optimistic balance straight from the store without the mint", () => {
+    const proofA = { id: "k1", amount: 30, secret: "sA", C: "cA" } as unknown as Proof;
+    storeProofsInWallet([proofA], "https://mint.example", "pubkey-a");
+    const store = loadStore("pubkey-a");
+    expect(sumStoredAmounts(store["https://mint.example"] ?? [])).toBe(30);
   });
 });
 

@@ -76,6 +76,24 @@ export function useWallet(mintUrl: string, pubkey: string) {
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
+  // Optimistic first paint: show the locally-stored balance immediately so the
+  // UI never flashes "0 sats" while loadMint + groupProofsByState run. The
+  // mint verification below corrects the number if any proof is spent.
+  useEffect(() => {
+    if (!mintUrl || !pubkey) return
+    const store = loadStore(pubkey)
+    const raw = store[mintUrl] ?? []
+    let local = 0
+    for (const s of raw) {
+      try {
+        local += Number(JSON.parse(s).amount ?? 0)
+      } catch {
+        // unparseable entry — skip
+      }
+    }
+    setBalance(local)
+  }, [mintUrl, pubkey])
+
   // ── Init ──────────────────────────────────────────────
   useEffect(() => {
     if (!mintUrl || !pubkey) {
@@ -305,6 +323,24 @@ export interface MintBalance {
 }
 
 /**
+ * Sum the amounts of serialized proof JSON strings without touching the mint
+ * server. Used for the optimistic first paint so the header/dashboard/wallet
+ * never flash "0 sats" while the (slow) mint verification runs.
+ */
+export function sumStoredAmounts(raw: string[]): number {
+  if (raw.length === 0) return 0
+  let total = 0
+  for (const s of raw) {
+    try {
+      total += Number(JSON.parse(s).amount ?? 0)
+    } catch {
+      // unparseable entry — skip
+    }
+  }
+  return total
+}
+
+/**
  * Decide which mint's balance a withdraw should spend from.
  *
  * Withdraws are per-mint: a Cashu token is mint-specific, and a Lightning
@@ -353,6 +389,16 @@ export function useTotalBalance(pubkey: string) {
       return
     }
 
+    // Optimistic first paint: show the locally-stored sums immediately, then
+    // correct them with mint verification below. Avoids the "0 → balance"
+    // flash on every load (initial mount, refresh, WALLET_CHANGED_EVENT).
+    const localByMint = entries
+      .map(([mint, raw]): MintBalance => ({ mint, amount: sumStoredAmounts(raw) }))
+      .filter((m) => m.amount > 0)
+    setByMint(localByMint)
+    setTotal(localByMint.reduce((acc, r) => acc + r.amount, 0))
+    setLoading(false)
+
     const results = await Promise.all(
       entries.map(async ([mint, raw]): Promise<MintBalance> => {
         try {
@@ -363,16 +409,8 @@ export function useTotalBalance(pubkey: string) {
           const amount = unspent.length > 0 ? Number(sumProofs(unspent)) : 0
           return { mint, amount }
         } catch {
-          // mint unreachable — best effort: sum the stored amounts as-is
-          let amount = 0
-          for (const s of raw) {
-            try {
-              amount += Number(JSON.parse(s).amount ?? 0)
-            } catch {
-              // unparseable entry — skip
-            }
-          }
-          return { mint, amount }
+          // mint unreachable — keep the optimistic local estimate as-is
+          return { mint, amount: sumStoredAmounts(raw) }
         }
       }),
     )
@@ -380,7 +418,6 @@ export function useTotalBalance(pubkey: string) {
     const valid = results.filter((r) => r.amount > 0)
     setByMint(valid)
     setTotal(valid.reduce((acc, r) => acc + r.amount, 0))
-    setLoading(false)
     setRefreshing(false)
   }, [pubkey])
 
