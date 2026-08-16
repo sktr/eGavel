@@ -145,7 +145,7 @@ export default function DashboardPage() {
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [bids, setBids] = useState<PublicBid[]>([]);
   const [auctionLookup, setAuctionLookup] = useState<Record<string, Auction>>({});
-  const [watchNames, setWatchNames] = useState<Record<string, string>>({});
+  const [watchAuctions, setWatchAuctions] = useState<Record<string, Auction>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lockedFunds, setLockedFunds] = useState<ReturnType<typeof loadPendingBids>>([]);
@@ -283,19 +283,19 @@ export default function DashboardPage() {
     };
   }, [identity, isLoaded, fetchAuctionById]);
 
-  // Resolve watchlist ids to auction item names (ids are 64-char hex; show the
-  // item name instead, with the id as the link).
+  // Resolve watchlist ids to full auction objects (ids are 64-char hex; the
+  // card view needs item name, image, price and end time).
   useEffect(() => {
     if (ids.length === 0) return;
     let cancelled = false;
     (async () => {
-      const names: Record<string, string> = {};
+      const resolved: Record<string, Auction> = {};
       for (const id of ids) {
         if (cancelled) return;
         const a = await fetchAuctionById(id);
-        if (a) names[id] = a.item;
+        if (a) resolved[id] = a;
       }
-      if (!cancelled) setWatchNames(names);
+      if (!cancelled) setWatchAuctions(resolved);
     })();
     return () => {
       cancelled = true;
@@ -580,8 +580,6 @@ export default function DashboardPage() {
 
   // Auctions I won but where my bid matches winning amount
   const wonViaBid = wonBids.length > 0;
-  // Combined claimable items (seller view: settled listings with a winner)
-  const claimable = settledListings.length;
 
   // Info for bid cards: determine status
   function bidStatus(b: PublicBid): {
@@ -606,37 +604,6 @@ export default function DashboardPage() {
       return { label: "Winning", variant: "winning" };
     }
     return { label: "Outbid", variant: "outbid" };
-  }
-
-  // Generate activity feed items from available data
-  const activityItems: Array<{ icon: string; text: string; time: string }> = [];
-  // Recent bid activities
-  for (const b of activeBids.slice(-3).reverse()) {
-    const a = auctionLookup[b.auction_id];
-    if (a) {
-      const st = bidStatus(b);
-      activityItems.push({
-        icon: "notifications",
-        text: `Placed bid on "${a.item}" (${b.current_amount.toLocaleString()} sats)`,
-        time: timeLeft(a.end_time),
-      });
-    }
-  }
-  // Won activities
-  for (const a of wonAuctions.slice(0, 2)) {
-    activityItems.push({
-      icon: "emoji_events",
-      text: `Won "${a.item}" (${(a.winning_amount ?? 0).toLocaleString()} sats)`,
-      time: "Closed",
-    });
-  }
-  // Listed activities
-  for (const a of activeListings.slice(0, 2)) {
-    activityItems.push({
-      icon: "ios_share",
-      text: `Listed "${a.item}"`,
-      time: timeLeft(a.end_time),
-    });
   }
 
   return (
@@ -766,44 +733,81 @@ export default function DashboardPage() {
       {ids.length > 0 && (
         <section style={{ marginTop: 24 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Watching</h2>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {ids.map((id) => (
-              <li
-                key={id}
-                style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}
-              >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+              gap: 16,
+              marginBottom: 24,
+            }}
+          >
+            {ids.map((id) => {
+              const a = watchAuctions[id];
+              return (
                 <a
+                  key={id}
                   href={`/auctions/${id}`}
                   style={{
-                    color: "var(--fg)",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    overflow: "hidden",
+                    color: "inherit",
                     textDecoration: "none",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    display: "block",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
                   }}
                 >
-                  {watchNames[id] ?? `Auction ${shortId(id)}`}
+                  <div
+                    style={{
+                      aspectRatio: "4 / 3",
+                      background: "#f3f4f6",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--muted)",
+                      fontSize: 24,
+                    }}
+                  >
+                    {a ? itemThumb(a.item) : <span className="material-icons">image</span>}
+                  </div>
+                  <div style={{ padding: "8px 12px 12px" }}>
+                    <div
+                      style={{
+                        fontWeight: 500,
+                        fontSize: 13,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        marginBottom: 4,
+                      }}
+                    >
+                      {a?.item ?? `Auction ${shortId(id)}`}
+                    </div>
+                    <div
+                      style={{
+                        color: "var(--muted)",
+                        fontSize: 12,
+                        display: "flex",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          fontFamily: "var(--font-mono)",
+                          fontVariantNumeric: "tabular-nums",
+                          color: "var(--fg)",
+                          fontSize: 13,
+                        }}
+                      >
+                        {a ? a.start_price.toLocaleString() : "—"} sats
+                      </span>
+                      <span>{a ? timeLeft(a.end_time) : ""}</span>
+                    </div>
+                  </div>
                 </a>
-                <span
-                  style={{
-                    color: "var(--muted)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    display: "block",
-                    marginTop: 2,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {id}
-                </span>
-              </li>
-            ))}
-          </ul>
+              );
+            })}
+          </div>
         </section>
       )}
 
@@ -1331,6 +1335,7 @@ export default function DashboardPage() {
                       — {a.winning_amount?.toLocaleString()} sats
                     </div>
                   </div>
+                  <ClaimPanel auction={a} isSeller={true} isWinner={false} />
                 </div>
               );
             })}
@@ -1338,322 +1343,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ===== Watchlist ===== */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: 24,
-          marginBottom: 16,
-        }}
-      >
-        <h2
-          style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 17,
-            fontWeight: 600,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Watchlist
-        </h2>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        {wonAuctions.length === 0 && activeListings.length === 0 && (
-          <p style={{ color: "var(--muted)", fontSize: 14, gridColumn: "1 / -1" }}>
-            No watched items yet.
-          </p>
-        )}
-
-        {/* Show settled auctions as watchlist cards */}
-        {wonAuctions.slice(0, 6).map((a) => (
-          <a
-            key={a.id}
-            href={`/auctions/${a.id}`}
-            style={{
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              overflow: "hidden",
-              color: "inherit",
-              textDecoration: "none",
-            }}
-          >
-            <div
-              style={{
-                aspectRatio: "4 / 3",
-                background: "#f3f4f6",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--muted)",
-                fontSize: 24,
-              }}
-            >
-              {itemThumb(a.item)}
-            </div>
-            <div style={{ padding: "8px 12px 12px" }}>
-              <div
-                style={{
-                  fontWeight: 500,
-                  fontSize: 13,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  marginBottom: 4,
-                }}
-              >
-                {a.item}
-              </div>
-              <div
-                style={{
-                  color: "var(--muted)",
-                  fontSize: 12,
-                  display: "flex",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span
-                  style={{
-                    fontWeight: 600,
-                    fontFamily: "var(--font-mono)",
-                    fontVariantNumeric: "tabular-nums",
-                    color: "var(--fg)",
-                    fontSize: 13,
-                  }}
-                >
-                  {a.winning_amount?.toLocaleString() ?? a.start_price.toLocaleString()} sats
-                </span>
-                <span>Won</span>
-              </div>
-            </div>
-          </a>
-        ))}
-        {/* If no won auctions, show active listings */}
-        {wonAuctions.length === 0 &&
-          activeListings.slice(0, 6).map((a) => (
-            <a
-              key={a.id}
-              href={`/auctions/${a.id}`}
-              style={{
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius)",
-                overflow: "hidden",
-                color: "inherit",
-                textDecoration: "none",
-              }}
-            >
-              <div
-                style={{
-                  aspectRatio: "4 / 3",
-                  background: "#f3f4f6",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--muted)",
-                  fontSize: 24,
-                }}
-              >
-                {itemThumb(a.item)}
-              </div>
-              <div style={{ padding: "8px 12px 12px" }}>
-                <div
-                  style={{
-                    fontWeight: 500,
-                    fontSize: 13,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    marginBottom: 4,
-                  }}
-                >
-                  {a.item}
-                </div>
-                <div
-                  style={{
-                    color: "var(--muted)",
-                    fontSize: 12,
-                    display: "flex",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      fontFamily: "var(--font-mono)",
-                      fontVariantNumeric: "tabular-nums",
-                      color: "var(--fg)",
-                      fontSize: 13,
-                    }}
-                  >
-                    {a.start_price.toLocaleString()} sats
-                  </span>
-                  <span>{timeLeft(a.end_time)}</span>
-                </div>
-              </div>
-            </a>
-          ))}
-      </div>
-
-      {/* ===== Recent Activity ===== */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: 24,
-          marginBottom: 16,
-        }}
-      >
-        <h2
-          style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 17,
-            fontWeight: 600,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Recent Activity
-        </h2>
-      </div>
-
-      <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius)",
-          padding: "4px 16px",
-          marginBottom: 24,
-        }}
-      >
-        {activityItems.length === 0 ? (
-          <p style={{ color: "var(--muted)", fontSize: 14, padding: "12px 0" }}>
-            No recent activity.
-          </p>
-        ) : (
-          activityItems.map((item, idx) => (
-            <div
-              key={idx}
-              style={{
-                display: "flex",
-                gap: 16,
-                padding: "8px 0",
-                alignItems: "center",
-                borderBottom: idx < activityItems.length - 1 ? "1px solid var(--border)" : "none",
-                fontSize: 13,
-              }}
-            >
-              <span
-                className="material-icons"
-                style={{ width: 20, textAlign: "center", color: "var(--muted)", fontSize: 16 }}
-              >
-                {item.icon}
-              </span>
-              <span style={{ flex: 1 }}>{item.text}</span>
-              <span
-                style={{
-                  color: "var(--muted)",
-                  fontSize: 12,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {item.time}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* ===== Ready to Claim (seller view) ===== */}
-      {claimable > 0 && (
-        <section style={{ marginBottom: 40 }}>
-          <h2
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 17,
-              fontWeight: 600,
-              letterSpacing: "-0.02em",
-              marginBottom: 16,
-            }}
-          >
-            Ready to Claim
-          </h2>
-
-          {settledListings.map((a) => (
-            <div
-              key={a.id}
-              style={{
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius)",
-                padding: "16px",
-                marginBottom: 10,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 12,
-                }}
-              >
-                <div>
-                  <a
-                    href={`/auctions/${a.id}`}
-                    style={{
-                      color: "inherit",
-                      fontWeight: 600,
-                      fontSize: 14,
-                      textDecoration: "none",
-                    }}
-                  >
-                    {a.item}
-                  </a>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--muted)",
-                      marginTop: 2,
-                    }}
-                  >
-                    Winner:{" "}
-                    <code
-                      title={
-                        a.winner_nostr_pubkey
-                          ? fullNpub(a.winner_nostr_pubkey)
-                          : a.winner_npub
-                            ? a.winner_npub
-                            : ""
-                      }
-                    >
-                      {a.winner_nostr_pubkey
-                        ? shortNpub(a.winner_nostr_pubkey)
-                        : a.winner_npub
-                          ? shortHex(a.winner_npub)
-                          : ""}
-                    </code>{" "}
-                    — {a.winning_amount?.toLocaleString()}{" "}
-                    sats
-                  </div>
-                </div>
-                {statusPill("Settled", "won")}
-              </div>
-              <ClaimPanel auction={a} isSeller={true} isWinner={false} />
-            </div>
-          ))}
-        </section>
-      )}
     </div>
   );
 }
