@@ -235,10 +235,10 @@ export function Header() {
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
-                            gap: 6,
+                            gap: 4,
                             fontSize: 11,
                             fontFamily: "var(--font-mono)",
-                            color: "var(--fg)",
+                            color: "var(--muted)",
                             textDecoration: "none",
                           }}
                         >
@@ -251,6 +251,9 @@ export function Header() {
                                 return nostrPubkey.slice(0, 14) + "…"
                               }
                             })()}
+                          </span>
+                          <span className="material-icons" style={{ fontSize: 12, color: "var(--muted)" }}>
+                            open_in_new
                           </span>
                         </a>
                       </div>
