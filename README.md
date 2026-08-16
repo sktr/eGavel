@@ -1,5 +1,7 @@
 # eGavel
 
+**▶ Try it live: [egavel.vercel.app](https://egavel.vercel.app)**
+
 A **non-custodial** auction platform built on Cashu e-cash.
 
 Bids are locked with a **2-of-3 P2PK** lock — the seller, the auction server, and the bidder each hold one key, and no one can move the funds without two signatures. The bid amount is a **maximum**; the engine bids automatically (second-price / proxy bidding) at the second-highest max plus the minimum increment. The winner pays only the standing price, and **outbid bids are refunded instantly**.
