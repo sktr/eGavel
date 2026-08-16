@@ -7,7 +7,7 @@ import {
   Amount,
   MintQuoteState,
 } from "@cashu/cashu-ts";
-import { useWallet, useTotalBalance, storeProofsInWallet, loadStore } from "../lib/wallet";
+import { useWallet, useTotalBalance, storeProofsInWallet, loadStore, pickWithdrawMint } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
@@ -22,7 +22,14 @@ export function WalletPanel() {
   const { identity } = useIdentity();
   const pubkey = identity?.pubkey ?? "";
   const wallet = useWallet(DEFAULT_MINT, pubkey);
-  const { total, loading, refresh } = useTotalBalance(pubkey);
+  const { total, byMint, loading, refresh } = useTotalBalance(pubkey);
+
+  // Withdraw mint: the wallet may hold balances on several mints (Receive
+  // accepts tokens from any mint), so let the user pick which one to spend.
+  // Defaults to the app's fixed mint (config.ts), preserving the classic
+  // single-mint behaviour.
+  const [withdrawMint, setWithdrawMint] = useState<string>(DEFAULT_MINT);
+  const activeWithdrawMint = pickWithdrawMint(byMint, withdrawMint, DEFAULT_MINT);
 
   const [copied, setCopied] = useState<string | null>(null);
   const copyText = useCallback(async (label: string, text: string) => {
@@ -93,6 +100,33 @@ export function WalletPanel() {
     };
   }, [depositStep, quote, wallet]);
 
+  // ── Receive (Cashu token) ───────────────────────────────────
+  const [rcvToken, setRcvToken] = useState("");
+  const [rcvBusy, setRcvBusy] = useState(false);
+  const [rcvMsg, setRcvMsg] = useState<string | null>(null);
+  const [rcvErr, setRcvErr] = useState<string | null>(null);
+
+  const handleReceive = useCallback(async () => {
+    setRcvErr(null);
+    setRcvMsg(null);
+    const token = rcvToken.trim();
+    if (!token) {
+      setRcvErr("Paste a Cashu token string");
+      return;
+    }
+    setRcvBusy(true);
+    try {
+      const res = await wallet.receive(token);
+      setRcvMsg(`Received ${res.amount.toLocaleString()} sats (${res.mint}).`);
+      setRcvToken("");
+      refresh();
+    } catch (err) {
+      setRcvErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRcvBusy(false);
+    }
+  }, [rcvToken, wallet, refresh]);
+
   // ── Withdraw (Cashu token) ──────────────────────────────────
   const [wdAmount, setWdAmount] = useState("");
   const [wdToken, setWdToken] = useState<string | null>(null);
@@ -109,22 +143,23 @@ export function WalletPanel() {
     }
     setWdBusy(true);
     try {
-      const w = buildWallet(DEFAULT_MINT);
+      const mintUrl = activeWithdrawMint;
+      const w = buildWallet(mintUrl);
       await w.loadMint();
       const store = loadStore(pubkey);
-      const stored = deserializeProofs(store[DEFAULT_MINT] ?? []);
+      const stored = deserializeProofs(store[mintUrl] ?? []);
       const { unspent } = await w.groupProofsByState(stored);
       if (unspent.length === 0) throw new Error("no spendable balance on this mint");
       const result = await w.ops.send(Amount.from(amt), unspent).includeFees(true).run();
       if (result.send.length === 0) throw new Error("send produced no output proofs");
-      storeProofsInWallet(result.keep, DEFAULT_MINT, pubkey);
-      setWdToken(getEncodedToken({ mint: DEFAULT_MINT, proofs: result.send }));
+      storeProofsInWallet(result.keep, mintUrl, pubkey);
+      setWdToken(getEncodedToken({ mint: mintUrl, proofs: result.send }));
     } catch (err) {
       setWdErr(err instanceof Error ? err.message : String(err));
     } finally {
       setWdBusy(false);
     }
-  }, [wdAmount]);
+  }, [wdAmount, activeWithdrawMint, pubkey]);
 
   // ── Withdraw (Lightning melt) ───────────────────────────────
   const [lnInvoice, setLnInvoice] = useState("");
@@ -142,18 +177,19 @@ export function WalletPanel() {
     }
     setLnBusy(true);
     try {
-      const w = buildWallet(DEFAULT_MINT);
+      const mintUrl = activeWithdrawMint;
+      const w = buildWallet(mintUrl);
       await w.loadMint();
       const quoteRes = await w.createMeltQuoteBolt11(invoice);
       const need = Number(quoteRes.amount) + Number(quoteRes.fee_reserve ?? 0);
       const store = loadStore(pubkey);
-      const stored = deserializeProofs(store[DEFAULT_MINT] ?? []);
+      const stored = deserializeProofs(store[mintUrl] ?? []);
       const { unspent } = await w.groupProofsByState(stored);
       const result = await w.ops.send(Amount.from(need), unspent).includeFees(true).run();
       if (result.send.length === 0) throw new Error("insufficient balance for invoice + fees");
       const melt = await w.ops.meltBolt11(quoteRes, result.send).run();
       const keep = [...result.keep, ...(melt.change ?? [])];
-      storeProofsInWallet(keep, DEFAULT_MINT, pubkey);
+      storeProofsInWallet(keep, mintUrl, pubkey);
       setLnMsg(`Paid ${Number(quoteRes.amount)} sats to the invoice.`);
       setLnInvoice("");
     } catch (err) {
@@ -161,7 +197,7 @@ export function WalletPanel() {
     } finally {
       setLnBusy(false);
     }
-  }, [lnInvoice]);
+  }, [lnInvoice, activeWithdrawMint, pubkey]);
 
   return (
     <div
@@ -193,9 +229,37 @@ export function WalletPanel() {
         </button>
       </div>
       <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
-        All funds live on the app&apos;s single mint ({DEFAULT_MINT}). Deposit via Lightning, or
-        withdraw as a Cashu token (import into any Cashu wallet) or by paying a Lightning invoice.
+        Funds live on the app&apos;s mint ({DEFAULT_MINT}) plus any mints you receive tokens
+        from. Deposit via Lightning, receive a Cashu token, or withdraw as a token (import into
+        any Cashu wallet) or by paying a Lightning invoice.
       </p>
+
+      {/* ── Receive (Cashu token) ── */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
+        <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
+          Receive Cashu token
+        </label>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <input
+            type="text"
+            value={rcvToken}
+            onChange={(e) => setRcvToken(e.target.value)}
+            placeholder="cashuA… (paste a token from any Cashu wallet)"
+            autoComplete="off"
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            onClick={handleReceive}
+            disabled={rcvBusy || !wallet.ready}
+            style={{ padding: "8px 18px", fontSize: 13 }}
+          >
+            {rcvBusy ? "Receiving…" : "Receive"}
+          </button>
+        </div>
+        {rcvMsg && <p style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>{rcvMsg}</p>}
+        {rcvErr && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{rcvErr}</p>}
+      </div>
 
       {/* ── Deposit ── */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
@@ -279,6 +343,18 @@ export function WalletPanel() {
           Withdraw as Cashu token
         </label>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <select
+            value={withdrawMint}
+            onChange={(e) => setWithdrawMint(e.target.value)}
+            style={{ maxWidth: 260, fontSize: 12 }}
+          >
+            {byMint.length === 0 && <option value={DEFAULT_MINT}>{DEFAULT_MINT}</option>}
+            {byMint.map((m) => (
+              <option key={m.mint} value={m.mint}>
+                {m.mint} ({m.amount.toLocaleString()} sats)
+              </option>
+            ))}
+          </select>
           <input
             type="number"
             min={1}
@@ -325,14 +401,28 @@ export function WalletPanel() {
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Withdraw via Lightning
         </label>
-        <input
-          type="text"
-          value={lnInvoice}
-          onChange={(e) => setLnInvoice(e.target.value)}
-          placeholder="lnbc… (paste a Lightning invoice to pay from your balance)"
-          autoComplete="off"
-          style={{ marginBottom: 8 }}
-        />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <select
+            value={withdrawMint}
+            onChange={(e) => setWithdrawMint(e.target.value)}
+            style={{ maxWidth: 260, fontSize: 12 }}
+          >
+            {byMint.length === 0 && <option value={DEFAULT_MINT}>{DEFAULT_MINT}</option>}
+            {byMint.map((m) => (
+              <option key={m.mint} value={m.mint}>
+                {m.mint} ({m.amount.toLocaleString()} sats)
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={lnInvoice}
+            onChange={(e) => setLnInvoice(e.target.value)}
+            placeholder="lnbc… (paste a Lightning invoice to pay from your balance)"
+            autoComplete="off"
+            style={{ flex: 1 }}
+          />
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
             type="button"

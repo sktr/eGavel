@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { storeProofsInWallet, WALLET_CHANGED_EVENT, loadStore } from "./wallet";
+import {
+  storeProofsInWallet,
+  WALLET_CHANGED_EVENT,
+  loadStore,
+  pickWithdrawMint,
+} from "./wallet";
 import { deserializeProofs } from "@cashu/cashu-ts";
 import type { Proof } from "@cashu/cashu-ts";
 
@@ -153,5 +158,41 @@ describe("loadStore reads the account-namespaced store (withdraw bug regression)
     expect(stored).toHaveLength(1);
     expect(stored[0]!.secret).toBe("sA");
     expect(stored[0]!.secret).not.toBe("other");
+  });
+});
+
+describe("pickWithdrawMint", () => {
+  const byMint = [
+    { mint: "https://mint-a.example", amount: 0 },
+    { mint: "https://mint-b.example", amount: 500 },
+    { mint: "https://mint-c.example", amount: 300 },
+  ];
+
+  it("prefers the user-selected mint when it has balance", () => {
+    expect(pickWithdrawMint(byMint, "https://mint-c.example", "https://default.example")).toBe(
+      "https://mint-c.example",
+    );
+  });
+
+  it("falls back to the first mint with balance when the selection has none", () => {
+    // Selected mint has zero balance → pick the first mint that holds sats.
+    const selection = "https://mint-a.example";
+    expect(pickWithdrawMint(byMint, selection, "https://default.example")).toBe(
+      "https://mint-b.example",
+    );
+  });
+
+  it("falls back to the default mint when no mint holds balance", () => {
+    const empty = [
+      { mint: "https://mint-a.example", amount: 0 },
+      { mint: "https://mint-b.example", amount: 0 },
+    ];
+    expect(pickWithdrawMint(empty, "https://mint-a.example", "https://default.example")).toBe(
+      "https://default.example",
+    );
+  });
+
+  it("falls back to the default mint when the balance list is empty", () => {
+    expect(pickWithdrawMint([], null, "https://default.example")).toBe("https://default.example");
   });
 });

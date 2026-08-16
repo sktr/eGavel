@@ -298,6 +298,31 @@ export interface MintBalance {
   amount: number
 }
 
+/**
+ * Decide which mint's balance a withdraw should spend from.
+ *
+ * Withdraws are per-mint: a Cashu token is mint-specific, and a Lightning
+ * melt is paid with one mint's proofs. The wallet store may hold balances on
+ * several mints (Receive accepts tokens from any mint), so the user picks one
+ * and we fall back sanely when their pick is empty.
+ *
+ * Priority: the user's selection (if it holds sats) → the first mint with
+ * balance → the app default mint (so the legacy single-mint behaviour
+ * "withdraw from the fixed mint" is preserved when nothing else exists).
+ */
+export function pickWithdrawMint(
+  byMint: MintBalance[],
+  selected: string | null,
+  fallback: string,
+): string {
+  if (selected) {
+    const picked = byMint.find((m) => m.mint === selected)
+    if (picked && picked.amount > 0) return selected
+  }
+  const funded = byMint.find((m) => m.amount > 0)
+  return funded ? funded.mint : fallback
+}
+
 export function useTotalBalance(pubkey: string) {
   const [total, setTotal] = useState(0)
   const [byMint, setByMint] = useState<MintBalance[]>([])
