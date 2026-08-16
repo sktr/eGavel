@@ -266,6 +266,12 @@ export function WalletPanel() {
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Deposit sats (Lightning)
         </label>
+        <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
+          Auctions run on the app&apos;s mint ({DEFAULT_MINT}). To bid, your sats must be
+          minted here — deposits via Lightning land on this mint. Tokens received from
+          another mint (see above) can be withdrawn but not used to bid; convert them
+          via Lightning first.
+        </p>
         {depositStep === "idle" || depositStep === "claiming" ? (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <input

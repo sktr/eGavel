@@ -10,7 +10,7 @@ import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
-import { useWallet } from "../../../lib/wallet"
+import { useWallet, useTotalBalance } from "../../../lib/wallet"
 import { buildPendingEntry, savePendingBid, placeBid } from "../../../lib/pending-bids"
 import { useIdentity } from "../../../lib/identity"
 import { shortHex } from "../../../lib/ident"
@@ -51,6 +51,7 @@ export function BidForm({
   // The mint is fixed app-wide (config.ts) — the wallet always operates on it.
   const mintUrl = auction.mint_url || DEFAULT_MINT
   const wallet = useWallet(mintUrl, identity?.pubkey ?? "")
+  const { byMint } = useTotalBalance(identity?.pubkey ?? "")
 
   // Form state
   const [amount, setAmount] = useState("")
@@ -189,9 +190,23 @@ export function BidForm({
         return
       }
       if (wallet.balance < bidAmount) {
-        setError(
-          `insufficient balance: ${wallet.balance} sats available, need ${bidAmount} sats`,
-        )
+        // Distinguish "nothing usable" from "funds exist on another mint":
+        // a token is mint-specific, so only this auction's mint can bid.
+        const otherMints = byMint.filter((m) => m.mint !== mintUrl && m.amount > 0)
+        if (otherMints.length > 0) {
+          const others = otherMints
+            .map((m) => `${m.amount.toLocaleString()} sats on ${m.mint}`)
+            .join(", ")
+          setError(
+            `insufficient balance on this auction's mint: ${wallet.balance} sats available, need ${bidAmount} sats. ` +
+              `You hold ${others} — withdraw via Lightning, then mint sats on ${mintUrl} to bid.`,
+          )
+        } else {
+          setError(
+            `insufficient balance: ${wallet.balance} sats available, need ${bidAmount} sats. ` +
+              `Mint sats on ${mintUrl} (Lightning) to bid.`,
+          )
+        }
         return
       }
     }
@@ -497,6 +512,12 @@ export function BidForm({
                 Receive
               </button>
             </div>
+            <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
+              Tokens from any mint are accepted here, but only tokens from this
+              auction&apos;s mint ({auction.mint_url}) can be used to bid. To bid with
+              tokens from another mint, withdraw them via Lightning first, then mint
+              sats on the auction&apos;s mint below.
+            </p>
             {receiveStatus && <p style={{ fontSize: 12, color: "var(--accent2)", marginTop: 4 }}>{receiveStatus}</p>}
             {receiveError && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{receiveError}</p>}
           </div>
@@ -511,6 +532,10 @@ export function BidForm({
                 {DEV_TOOLS
                   ? "Enter how many sats you need — they'll be minted straight into your wallet."
                   : `Pay the Lightning invoice with your wallet — ecash is minted on this auction's mint (${auction.mint_url}).`}
+              </p>
+              <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
+                To participate in this auction you need sats minted on{" "}
+                {auction.mint_url} — this is the only balance the bid can use.
               </p>
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
                 {mintStep === "idle" || mintStep === "quoting" ? (
