@@ -239,14 +239,14 @@ export function WalletPanel() {
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Receive Cashu token
         </label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
           <input
             type="text"
             value={rcvToken}
             onChange={(e) => setRcvToken(e.target.value)}
             placeholder="cashuA… (paste a token from any Cashu wallet)"
             autoComplete="off"
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 200 }}
           />
           <button
             type="button"
@@ -267,7 +267,7 @@ export function WalletPanel() {
           Deposit sats (Lightning)
         </label>
         {depositStep === "idle" || depositStep === "claiming" ? (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <input
               type="number"
               min={1}
@@ -301,7 +301,25 @@ export function WalletPanel() {
               value={quote.request}
               style={{ width: "100%", fontSize: 11, fontFamily: "var(--font-mono)", background: "var(--bg)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "8px 10px", resize: "vertical" }}
             />
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {/* One-tap wallet launch on mobile (same affordance as the bid form) */}
+              <a
+                href={`lightning:${quote.request}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  color: "var(--fg)",
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  textDecoration: "none",
+                }}
+              >
+                <span className="material-icons" style={{ fontSize: 14 }}>bolt</span>
+                Pay with wallet
+              </a>
               <button
                 type="button"
                 onClick={() => copyText("invoice", quote.request)}
@@ -320,7 +338,7 @@ export function WalletPanel() {
           </div>
         )}
         {depositStep === "done" && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, color: "var(--success)" }}>{depositMsg}</span>
             <button
               type="button"
@@ -342,7 +360,7 @@ export function WalletPanel() {
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Withdraw as Cashu token
         </label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
           <select
             value={withdrawMint}
             onChange={(e) => setWithdrawMint(e.target.value)}
@@ -401,7 +419,7 @@ export function WalletPanel() {
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Withdraw via Lightning
         </label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
           <select
             value={withdrawMint}
             onChange={(e) => setWithdrawMint(e.target.value)}
@@ -420,10 +438,10 @@ export function WalletPanel() {
             onChange={(e) => setLnInvoice(e.target.value)}
             placeholder="lnbc… (paste a Lightning invoice to pay from your balance)"
             autoComplete="off"
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 220 }}
           />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <button
             type="button"
             onClick={handleWithdrawLightning}

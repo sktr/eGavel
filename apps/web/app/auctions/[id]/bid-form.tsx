@@ -401,10 +401,10 @@ export function BidForm({
         pay the standing price if you win; the excess is returned to you after the sale.
       </p>
 
-      {/* Advanced settings (collapsible) */}
+      {/* Wallet & Funding (collapsible — opens everything at once) */}
       <details style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
         <summary suppressHydrationWarning style={{ cursor: "pointer", padding: "4px 0", fontWeight: 500 }}>
-          Advanced Settings
+          Wallet &amp; Funding
         </summary>
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
           {/* Test mode toggle — dev-only */}
@@ -441,6 +441,8 @@ export function BidForm({
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
               <span style={{ color: "var(--muted)" }}>Wallet</span>
@@ -482,14 +484,14 @@ export function BidForm({
             <label htmlFor="receive-token" style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>
               Receive token
             </label>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <input
                 id="receive-token"
                 type="text"
                 value={receiveToken}
                 onChange={(e) => setReceiveToken(e.target.value)}
                 placeholder="cashuA... (paste a token from any Cashu wallet)"
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: 200 }}
               />
               <button type="button" onClick={handleReceive} style={{ padding: "8px 16px", fontSize: 13, whiteSpace: "nowrap" }}>
                 Receive
@@ -499,22 +501,20 @@ export function BidForm({
             {receiveError && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{receiveError}</p>}
           </div>
 
-                    {/* Mint sats: dev shows the testnet faucet, production the real
-              Lightning mint flow on the auction's mint */}
+          {/* Mint sats (Lightning) — always expanded once the section is open */}
           {!testMode && (
-            <details style={{ fontSize: 13 }}>
-              <summary suppressHydrationWarning style={{ cursor: "pointer", color: "var(--muted)", padding: "4px 0" }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>
                 {DEV_TOOLS ? "Get Sats" : "Mint sats (Lightning)"}
-              </summary>
+              </label>
+              <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
+                {DEV_TOOLS
+                  ? "Enter how many sats you need — they'll be minted straight into your wallet."
+                  : `Pay the Lightning invoice with your wallet — ecash is minted on this auction's mint (${auction.mint_url}).`}
+              </p>
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
-                  {DEV_TOOLS
-                    ? "Enter how many sats you need — they'll be minted straight into your wallet."
-                    : `Pay the Lightning invoice with your wallet — ecash is minted on this auction's mint (${auction.mint_url}).`}
-                </p>
-
                 {mintStep === "idle" || mintStep === "quoting" ? (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <input
                       type="number"
                       min={1}
@@ -566,29 +566,23 @@ export function BidForm({
                         fgColor="var(--fg)"
                       />
                     </div>
-                    {/* Collapsible raw invoice */}
-                    <details>
-                      <summary style={{ fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
-                        Show invoice text
-                      </summary>
-                      <textarea
-                        readOnly
-                        rows={3}
-                        value={mintQuote.request}
-                        style={{
-                          width: "100%",
-                          border: "1px solid var(--border)",
-                          borderRadius: "var(--radius)",
-                          padding: "8px 12px",
-                          fontSize: 11,
-                          fontFamily: "var(--font-mono)",
-                          background: "var(--bg)",
-                          color: "var(--fg)",
-                          resize: "none",
-                          marginTop: 4,
-                        }}
-                      />
-                    </details>
+                    {/* Raw invoice, always visible (no nested details) */}
+                    <textarea
+                      readOnly
+                      rows={3}
+                      value={mintQuote.request}
+                      style={{
+                        width: "100%",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius)",
+                        padding: "8px 12px",
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                        background: "var(--bg)",
+                        color: "var(--fg)",
+                        resize: "none",
+                      }}
+                    />
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       {/* One-tap wallet launch on mobile */}
                       <a
@@ -651,7 +645,7 @@ export function BidForm({
                 ) : mintStep === "claiming" ? (
                   <p style={{ color: "var(--muted)", margin: 0 }}>Minting tokens…</p>
                 ) : mintStep === "done" ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                     <p style={{ color: "var(--accent2)", margin: 0 }}>
                       {mintMessage} — balance: {wallet.balance.toLocaleString()} sats
                     </p>
@@ -685,7 +679,7 @@ export function BidForm({
                   <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>{mintMessage}</p>
                 )}
               </div>
-            </details>
+            </div>
           )}
         </div>
       </details>
