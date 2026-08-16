@@ -53,9 +53,11 @@ only about **money safety**.
   claim, bidder for refund). The claimed-proof endpoints return proofs, but
   they are 2-of-3 locked and harmless to disclose — the effective auth gate is
   the co-sign signature check.
-- **Winner contact (npub handoff)**: after settlement the winner's npub is
-  shown to the seller; contact happens in the user's own Nostr client. The
-  platform collects no shipping address.
+- **Winner contact (npub handoff)**: after settlement the winner's linked
+  Nostr npub is revealed only to the seller (and to the winner themselves) via
+  a Schnorr-signed read (`winner-view:<id>`); it is never included in public
+  listings or anonymous reads. Contact happens in the user's own Nostr client.
+  The platform collects no shipping address.
 - **Rate limits** (`lib/rate-limit.ts`): bids 30/min, auction creation
   10/min, co-sign 20/min, claim-data/refund-data 30/min.
 - **Max secrecy**: the API exposes only the standing price; `max_amount`

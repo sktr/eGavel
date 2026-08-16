@@ -73,6 +73,7 @@ export default function HowItWorksPage() {
             { title: "Cashu", desc: "An ecash protocol that enables instant, private payments. Proofs are blinded signatures that can be swapped at mints." },
             { title: "P2PK (2-of-3)", desc: "Pay-to-Public-Key locks each bid proof to the seller, the auction server, AND the bidder (2-of-3). No single party can spend bid funds — the seller claims with the server's co-signature, and outbid bidders refund with the server's co-signature." },
             { title: "Proxy bidding", desc: "The bid amount is a maximum. The engine bids just enough to stay in the lead (second-highest max + the minimum increment), and the winner pays only the standing price. The excess over the standing price is returned to the winner after the sale." },
+            { title: "Nostr identity", desc: "A Nostr key is linked to your trading key with a signed event — the link is required to list and to bid, and it is permanent. The seller's handle is public; the winner's handle is revealed only to the seller (and to the winner themselves) after settlement." },
             { title: "Mint", desc: "The Cashu mint holds the actual ecash. The auction server never holds user funds — it only co-signs P2PK unlocks, so it can never move money alone." },
           ].map((tech) => (
             <div key={tech.title} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -109,7 +110,7 @@ const steps = [
   {
     title: "Create an auction",
     description:
-      "Describe your item, set a starting price and how long the auction runs. Your account is your key — there is no sign-up, no email, and no deposit required.",
+      "Describe your item, set a starting price and how long the auction runs. Your account is your key — there is no sign-up and no email. You first link a Nostr identity (via a NIP-07 extension or a private key) so buyers can verify who you are and reach you after the sale.",
   },
   {
     title: "Bidders place bids",
@@ -129,6 +130,6 @@ const steps = [
   {
     title: "Claim and change",
     description:
-      "The seller receives the full sale proceeds — eGavel charges no platform fee. The winner gets any excess back automatically, and losing bidders are refunded instantly.",
+      "The seller receives the full sale proceeds — eGavel charges no platform fee. The winner gets any excess back automatically, and losing bidders are refunded instantly. Once settled, the seller and the winner can see each other's Nostr handle and connect to arrange delivery.",
   },
 ]

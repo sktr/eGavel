@@ -11,7 +11,7 @@ Bids are locked with a **2-of-3 P2PK** lock — the seller, the auction server, 
 - **Instant outbid refunds** — the moment a higher bid arrives, the losing bid's funds return to the wallet automatically.
 - **Guaranteed payment** — winning bids are fully locked; the seller is guaranteed collection via the server's claim swap.
 - **Anti-sniping / Reserve / Buy Now / Watchlist** — standard auction features.
-- **Nostr-linked reputation** — a Nostr key (NIP-07 extension or nsec) is linked to the trading key via a signed NIP-98 event; linking is required to list and to bid, and the link is permanent.
+- **Nostr-linked identity** — a Nostr key (NIP-07 extension or nsec) is linked to the trading key via a signed NIP-98 event; linking is required to list and to bid, and the link is permanent. The seller is public (their npub links to nostr.at); the winner stays anonymous publicly and is revealed only to the seller (and themselves) after settlement.
 - **NUT-13 deterministic wallet** — every ecash output derives from your 12-word recovery phrase, so restoring the phrase on another device automatically recovers your balance (no mint URL needed).
 - **Multi-mint wallet** — receive Cashu tokens from any mint, view combined balances, and withdraw per mint (token or Lightning).
 - **Zero platform fee** — the operator takes no cut (`AUCTION_FEE_BPS` defaults to 0).
@@ -53,7 +53,7 @@ pnpm dev        # server :3001 / web :3000
 
 1. Open `http://localhost:3000`
 2. On first visit, save the 12-word recovery phrase shown to you
-3. **Create Listing** (Mint URL: `https://testnut.cashu.space`)
+3. **Create Listing** — the mint is fixed by the app config (dev builds use the testnet mint `testnut.cashu.space`)
 4. Use **Get Sats** on the detail page to get test sats
 5. **Place Bid** with a **maximum** — watch the standing price rise automatically, and see outbid bids refund instantly
 
@@ -70,9 +70,11 @@ SERVER_PRIVATE_KEY=<64-char hex> docker compose up --build
 
 ### Tests
 
+The server suite runs fully offline (in-memory SQLite, no mint needed); the web suite covers the pure logic modules.
+
 ```bash
-pnpm --filter @egavel/server test   # server 189 tests (offline, :memory: DB)
-pnpm --filter @egavel/web exec vitest run   # web 109 tests
+pnpm --filter @egavel/server test
+pnpm --filter @egavel/web exec vitest run
 ```
 
 ## Documentation

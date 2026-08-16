@@ -18,7 +18,7 @@ export default function TermsPage() {
         Terms & Guidelines
       </h1>
       <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 32 }}>
-        Last updated: 2026-08-13
+        Last updated: 2026-08-16
       </p>
 
       <section style={{ marginBottom: 28 }}>
@@ -30,6 +30,12 @@ export default function TermsPage() {
           fulfilled directly between the seller and the winning bidder. The
           platform facilitates the auction and the payment settlement, but is
           not a party to the underlying transaction.
+        </p>
+        <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--fg)", marginTop: 12 }}>
+          To list or to bid you must link a Nostr identity to your trading key.
+          The link is permanent: it cannot be removed or re-linked to a
+          different key. Your Nostr handle is how buyers and sellers identify
+          and reach each other.
         </p>
       </section>
 
@@ -77,9 +83,10 @@ export default function TermsPage() {
         <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--fg)" }}>
           Shipping and delivery are a private agreement between the seller and
           the winning bidder. After settlement, the winner's Nostr contact
-          handle (npub) is shown to the seller so they can arrange delivery.
-          The platform does not handle, insure, or guarantee delivery of any
-          physical item.
+          handle (npub) is shown to the seller — and the seller's handle is
+          shown to the winner — so they can arrange delivery. The winner stays
+          anonymous to everyone else. The platform does not handle, insure, or
+          guarantee delivery of any physical item.
         </p>
       </section>
 

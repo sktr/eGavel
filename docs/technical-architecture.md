@@ -13,7 +13,7 @@ packages/shared shared types
 - **Refunds**: outbid detection (polling) → bidder signature + server co-sign → mint swap
 - **Claim**: seller signature + server co-sign → the server splits the outputs into `[seller, operator fee, winner change]` (change = locked max − standing price; the winner collects via `GET /api/auctions/:id/change`)
 - **Timing**: event-driven — anti-sniping extends by 5 minutes at bid time for bids in the last 5 minutes before E; an auction settles (lazy) the first time it is read after `end_time + 30s` (grace)
-- **Winner contact (npub handoff)**: after settlement the winner's npub is shown to the seller in the dashboard; contact happens in the user's own Nostr client. The platform collects no shipping address.
+- **Winner contact (npub handoff)**: after settlement the winner stays anonymous publicly. The winner's linked Nostr npub is revealed only to the seller (and to the winner themselves) via a Schnorr-signed read of `GET /api/auctions/:id` (`winner-view:<id>`) — the seller sees it in Settlement Info, so they can verify an inbound contact is the genuine winner. Contact happens in the user's own Nostr client (nostr.at). The platform collects no shipping address.
 
 ## P2PK lock structure (each bid)
 

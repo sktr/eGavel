@@ -34,7 +34,7 @@ No single party can spend the token. Every unlock needs a co-signature:
 |------|---------|--------|
 | Bid | — (bidder locks) | proofs recorded as the bid |
 | Outbid → refund | bidder + server | losing bidder gets funds back **instantly** |
-| Win → claim | seller + server | seller receives proceeds (minus fee) |
+| Win → claim | seller + server | seller receives proceeds (no platform fee) |
 | Excess → change | (server swap) | winner gets back `max − standing price` |
 
 The server **never holds the funds**. It only co-signs unlocks that the
@@ -74,7 +74,8 @@ After settlement the seller signs the winning proofs and the server co-signs.
 The server runs a **single swap** that splits the winner's locked bundle into:
 
 ```
-[seller net, operator fee (AUCTION_FEE_BPS), winner change]
+[seller net, operator fee (AUCTION_FEE_BPS, defaults to 0 — the public
+instance charges no platform fee), winner change]
 ```
 
 `change = locked max − standing price` — the winner only ever pays the
