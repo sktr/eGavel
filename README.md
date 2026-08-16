@@ -11,6 +11,10 @@ Bids are locked with a **2-of-3 P2PK** lock — the seller, the auction server, 
 - **Instant outbid refunds** — the moment a higher bid arrives, the losing bid's funds return to the wallet automatically.
 - **Guaranteed payment** — winning bids are fully locked; the seller is guaranteed collection via the server's claim swap.
 - **Anti-sniping / Reserve / Buy Now / Watchlist** — standard auction features.
+- **Nostr-linked reputation** — a Nostr key (NIP-07 extension or nsec) is linked to the trading key via a signed NIP-98 event; linking is required to list and to bid, and the link is permanent.
+- **NUT-13 deterministic wallet** — every ecash output derives from your 12-word recovery phrase, so restoring the phrase on another device automatically recovers your balance (no mint URL needed).
+- **Multi-mint wallet** — receive Cashu tokens from any mint, view combined balances, and withdraw per mint (token or Lightning).
+- **Zero platform fee** — the operator takes no cut (`AUCTION_FEE_BPS` defaults to 0).
 
 ## Quick start
 
@@ -67,8 +71,8 @@ SERVER_PRIVATE_KEY=<64-char hex> docker compose up --build
 ### Tests
 
 ```bash
-pnpm --filter @egavel/server test   # server 112 tests
-cd apps/web && npx vitest run               # web 25 tests
+pnpm --filter @egavel/server test   # server 189 tests (offline, :memory: DB)
+pnpm --filter @egavel/web exec vitest run   # web 109 tests
 ```
 
 ## Documentation
