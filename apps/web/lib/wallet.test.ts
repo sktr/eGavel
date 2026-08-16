@@ -14,37 +14,7 @@ import {
 import { deserializeProofs } from "@cashu/cashu-ts";
 import type { Proof } from "@cashu/cashu-ts";
 import { deriveAccountFromWords, saveAccount } from "./key-store";
-
-// window is undefined in the node test env; stub just enough for the event
-// dispatcher that lives in wallet.ts.
-const originalWindow = (globalThis as Record<string, unknown>).window;
-
-function stubWindow() {
-  const listeners = new Map<string, Set<() => void>>();
-  (globalThis as Record<string, unknown>).window = {
-    addEventListener: (type: string, fn: () => void) => {
-      const set = listeners.get(type) ?? new Set();
-      set.add(fn);
-      listeners.set(type, set);
-    },
-    removeEventListener: (type: string, fn: () => void) => {
-      listeners.get(type)?.delete(fn);
-    },
-    dispatchEvent: (ev: Event) => {
-      listeners.get(ev.type)?.forEach((fn) => fn());
-      return true;
-    },
-  };
-  return listeners;
-}
-
-function restoreWindow() {
-  if (originalWindow === undefined) {
-    delete (globalThis as Record<string, unknown>).window;
-  } else {
-    (globalThis as Record<string, unknown>).window = originalWindow;
-  }
-}
+import { stubWindow, restoreWindow } from "./test-utils";
 
 describe("wallet change notification", () => {
   beforeEach(() => {

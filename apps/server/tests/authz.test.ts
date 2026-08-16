@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Hono } from "hono";
-import { schnorr } from "@noble/curves/secp256k1.js";
-import { bytesToHex, hexToBytes } from "../src/lib/hex.js";
 import { initDb, type Db } from "../src/db/index.js";
 import { createAuctionRoutes } from "../src/routes/auctions.js";
 import { signSecret } from "../src/lib/schnorr.js";
 import type { Auction } from "@egavel/shared";
+import { sellerKey } from "./helpers.js";
 
 function makeAuction(overrides: Partial<Auction> = {}): Auction {
   return {
@@ -25,13 +24,6 @@ function makeAuction(overrides: Partial<Auction> = {}): Auction {
     mint_url: "https://mint.example",
     ...overrides,
   };
-}
-
-/** Build a real seller keypair for signed DELETE requests. */
-function sellerKey() {
-  const skHex = bytesToHex(schnorr.utils.randomSecretKey());
-  const pubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(skHex)));
-  return { skHex, pubkey };
 }
 
 describe("DELETE /api/auctions/:id — Schnorr-signed seller auth", async () => {

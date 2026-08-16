@@ -8,6 +8,7 @@ import {
 } from "./auto-change";
 import { swapLockedProofs } from "./claim";
 import type { Proof } from "@cashu/cashu-ts";
+import { jsonResponse } from "./test-utils";
 
 // Partial module mock: swapLockedProofs talks to a live mint; stub it so
 // change collection tests only exercise the classification/store logic.
@@ -22,13 +23,6 @@ vi.mock("./claim", async (importOriginal) => {
 const PUBKEY = "03cafebabe";
 // Dummy bidder secret key — collectChange swaps with it (mocked fetch).
 const SK = "11".repeat(32);
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 describe("collectibleChangeAuctions (which auctions need auto-collection)", () => {
   const auctions = {

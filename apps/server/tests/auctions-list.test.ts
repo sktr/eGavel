@@ -4,18 +4,12 @@ import { createApp } from "../src/app.js";
 import type { Auction, Bid } from "@egavel/shared";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { signSecret } from "../src/lib/schnorr.js";
-import { bytesToHex, hexToBytes } from "../src/lib/hex.js";
+import { bytesToHex } from "../src/lib/hex.js";
+import { sellerKey } from "./helpers.js";
 
 const SELLER = "02deadbeef";
 const SERVER = "04server";
 const BIDDER = "03cafebabe";
-
-/** Real keypair for seller-signed requests (the SELLER constant is a stub). */
-function sellerKey() {
-  const skHex = bytesToHex(schnorr.utils.randomSecretKey());
-  const pubkey = bytesToHex(schnorr.getPublicKey(hexToBytes(skHex)));
-  return { skHex, pubkey };
-}
 
 function makeAuction(overrides: Partial<Auction> = {}): Auction {
   return {
