@@ -4,6 +4,9 @@ import { useState, useRef, useEffect } from "react"
 import { useIdentity } from "../lib/identity"
 import { useTotalBalance } from "../lib/wallet"
 import { shortHex } from "../lib/ident"
+import { hexToNpub, nostrAtProfileUrl } from "../lib/npub"
+import { fetchNostrLinkStatus } from "../lib/nostr-link"
+import { bytesToHex } from "../lib/hex"
 import { useTheme } from "@wrksz/themes/client"
 import { ConnectDialog } from "../components/connect-dialog"
 
@@ -15,6 +18,9 @@ export function Header() {
   const [showConnect, setShowConnect] = useState(false)
   const [copied, setCopied] = useState(false)
   const popRef = useRef<HTMLDivElement>(null)
+  // Linked Nostr pubkey (hex) — shown in the menu next to the trading key so
+  // the user can see the identity buyers/sellers see on their listings.
+  const [nostrPubkey, setNostrPubkey] = useState<string | null>(null)
 
   // Close the dropdown when clicking outside
   useEffect(() => {
@@ -27,6 +33,31 @@ export function Header() {
     document.addEventListener("mousedown", onDown)
     return () => document.removeEventListener("mousedown", onDown)
   }, [open])
+
+  // Fetch the Nostr link status so the menu can show the linked npub.
+  useEffect(() => {
+    if (!identity) {
+      setNostrPubkey(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const st = await fetchNostrLinkStatus(
+          identity.pubkey,
+          bytesToHex(identity.secretKey),
+        )
+        if (cancelled) return
+        if (st.ok && st.nostrPubkey) setNostrPubkey(st.nostrPubkey)
+        else setNostrPubkey(null)
+      } catch {
+        // transient failure — leave the previous state
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [identity])
 
   const copyKey = async () => {
     if (!identity) return
@@ -191,6 +222,54 @@ export function Header() {
                         </span>
                       </button>
                     </div>
+                    {nostrPubkey && (
+                      <div style={{ marginTop: 6 }}>
+                        <span style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 2 }}>
+                          Nostr identity
+                        </span>
+                        <a
+                          href={nostrAtProfileUrl(nostrPubkey)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={nostrPubkey}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 11,
+                            fontFamily: "var(--font-mono)",
+                            color: "var(--fg)",
+                            textDecoration: "none",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "inline-block",
+                              fontSize: 9,
+                              padding: "1px 7px",
+                              borderRadius: "var(--radius-full)",
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.03em",
+                              background: "oklch(92% 0.04 145)",
+                              color: "oklch(40% 0.10 145)",
+                            }}
+                          >
+                            Nostr verified
+                          </span>
+                          <span style={{ wordBreak: "break-all" }}>
+                            {(() => {
+                              try {
+                                const npub = hexToNpub(nostrPubkey)
+                                return npub.length > 24 ? npub.slice(0, 14) + "…" + npub.slice(-10) : npub
+                              } catch {
+                                return nostrPubkey.slice(0, 14) + "…"
+                              }
+                            })()}
+                          </span>
+                        </a>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
