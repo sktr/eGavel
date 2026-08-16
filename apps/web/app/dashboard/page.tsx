@@ -141,7 +141,7 @@ async function recoverBid(bid: PublicBid, identity: { pubkey: string; secretKey:
 
 export default function DashboardPage() {
   const { identity, isLoaded } = useIdentity();
-  const { ids } = useWatchlist();
+  const { ids, remove: removeWatchlistIds } = useWatchlist();
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [bids, setBids] = useState<PublicBid[]>([]);
   const [auctionLookup, setAuctionLookup] = useState<Record<string, Auction>>({});
@@ -284,18 +284,24 @@ export default function DashboardPage() {
   }, [identity, isLoaded, fetchAuctionById]);
 
   // Resolve watchlist ids to full auction objects (ids are 64-char hex; the
-  // card view needs item name, image, price and end time).
+  // card view needs item name, image, price and end time). Auctions the seller
+  // deleted resolve to null — drop them from the watchlist so dead cards do
+  // not linger.
   useEffect(() => {
     if (ids.length === 0) return;
     let cancelled = false;
     (async () => {
       const resolved: Record<string, Auction> = {};
+      const gone: string[] = [];
       for (const id of ids) {
         if (cancelled) return;
         const a = await fetchAuctionById(id);
         if (a) resolved[id] = a;
+        else gone.push(id);
       }
-      if (!cancelled) setWatchAuctions(resolved);
+      if (cancelled) return;
+      setWatchAuctions(resolved);
+      if (gone.length > 0) removeWatchlistIds(gone);
     })();
     return () => {
       cancelled = true;

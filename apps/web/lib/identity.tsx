@@ -129,6 +129,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       const { account } = parseRestoreInput(input);
       saveAccount(account);
       markBackupSeen(); // a restorer already holds the phrase
+      // A restore is an explicit login: clear the logged-out flag so the
+      // restored account actually loads after a reload (otherwise init sees
+      // LOGGED_OUT_KEY and stays anonymous).
+      try {
+        localStorage.removeItem(LOGGED_OUT_KEY);
+      } catch {
+        // storage unavailable — ignore
+      }
       setIdentity(toIdentity(account));
       setShowBackupPrompt(false);
       // NUT-13: with the app's single fixed mint, restoring the phrase

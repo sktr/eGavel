@@ -59,6 +59,7 @@ export function SettlementInfo({
   const [sellerView, setSellerView] = useState<Auction | null>(null)
 
   const isWinnerViewer = identity?.pubkey === auction.winner_npub
+  const isSellerViewer = identity?.pubkey === auction.seller_pubkey
 
   // If the current account is the seller or the winner, fetch the signed view
   // to reveal the winner's identity (their own handle for the winner).
@@ -143,6 +144,12 @@ export function SettlementInfo({
                 >
                   {winnerHandle}
                 </a>
+                {isSellerViewer && (
+                  <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 8, lineHeight: 1.6 }}>
+                    The winner has been shown your Nostr handle too — reach out on Nostr to
+                    arrange delivery and payment.
+                  </p>
+                )}
               </>
             ) : (
               <code style={{ fontSize: 13 }}>Winner — anonymous</code>

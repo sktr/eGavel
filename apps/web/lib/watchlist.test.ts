@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { loadWatchlist, saveWatchlist, toggleId } from "./watchlist"
+import { loadWatchlist, saveWatchlist, toggleId, removeIds } from "./watchlist"
 
 describe("watchlist storage helpers", () => {
   beforeEach(() => localStorage.clear())
@@ -17,5 +17,11 @@ describe("watchlist storage helpers", () => {
   it("saveWatchlist round-trips", () => {
     saveWatchlist(["a1", "a2"])
     expect(loadWatchlist()).toEqual(["a1", "a2"])
+  })
+
+  it("removeIds drops deleted auctions from the list", () => {
+    expect(removeIds(["a1", "a2", "a3"], ["a2"])).toEqual(["a1", "a3"])
+    expect(removeIds(["a1"], ["a1"])).toEqual([])
+    expect(removeIds([], ["a1"])).toEqual([])
   })
 })

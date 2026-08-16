@@ -26,6 +26,12 @@ export function toggleId(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
 }
 
+/** Drop the given ids from the list (e.g. auctions the seller deleted). */
+export function removeIds(ids: string[], toRemove: string[]): string[] {
+  const gone = new Set(toRemove)
+  return ids.filter((x) => !gone.has(x))
+}
+
 export function useWatchlist() {
   const [ids, setIds] = useState<string[]>([])
   const loadedRef = useRef(false)
@@ -46,5 +52,15 @@ export function useWatchlist() {
       return next
     })
   }, [])
-  return { ids, watching: (id: string) => ids.includes(id), toggle }
+
+  const remove = useCallback((toRemove: string[]) => {
+    setIds((prev) => {
+      const next = removeIds(prev, toRemove)
+      if (next.length === prev.length) return prev
+      saveWatchlist(next)
+      return next
+    })
+  }, [])
+
+  return { ids, watching: (id: string) => ids.includes(id), toggle, remove }
 }

@@ -215,13 +215,13 @@ export function Header() {
 
                   {/* Identity */}
                   <div style={{ padding: "2px 4px" }}>
-                    <span style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: "var(--fg)", display: "block", marginBottom: 4 }}>
                       In-app key
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all", background: "transparent", padding: 0 }}>
                         {identity && (
-                          <span style={{ fontSize: 11, color: "var(--muted)", wordBreak: "break-all" }}>
+                          <span style={{ fontSize: 11, color: "var(--fg)", wordBreak: "break-all" }}>
                             {identity.pubkey}
                           </span>
                         )}
@@ -241,7 +241,7 @@ export function Header() {
                     </div>
                     {nostrPubkey && (
                       <div style={{ marginTop: 6 }}>
-                        <span style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 2 }}>
+                        <span style={{ fontSize: 11, color: "var(--fg)", display: "block", marginBottom: 2 }}>
                           Nostr identity
                         </span>
                         <a
@@ -255,7 +255,7 @@ export function Header() {
                             gap: 4,
                             fontSize: 11,
                             fontFamily: "var(--font-mono)",
-                            color: "var(--muted)",
+                            color: "var(--fg)",
                             textDecoration: "none",
                           }}
                         >
@@ -269,7 +269,7 @@ export function Header() {
                               }
                             })()}
                           </span>
-                          <span className="material-icons" style={{ fontSize: 12, color: "var(--muted)" }}>
+                          <span className="material-icons" style={{ fontSize: 12, color: "var(--fg)" }}>
                             open_in_new
                           </span>
                         </a>
