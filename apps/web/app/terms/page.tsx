@@ -64,7 +64,7 @@ export default function TermsPage() {
           payment (the displayed invoice). Bids are placed and settled in
           e-cash, not directly over Lightning. After an auction ends, the
           seller claims the winning bid via a 2-of-3 co-signature, receiving
-          the sale proceeds (minus any platform fee). The winner receives the
+          the full sale proceeds — eGavel charges no platform fee. The winner receives the
           difference between their locked maximum and the standing price back
           as change.
         </p>

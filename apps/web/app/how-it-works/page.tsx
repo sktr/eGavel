@@ -129,6 +129,6 @@ const steps = [
   {
     title: "Claim and change",
     description:
-      "The seller receives the sale proceeds (minus a small platform fee). The winner gets any excess back automatically, and losing bidders are refunded instantly.",
+      "The seller receives the full sale proceeds — eGavel charges no platform fee. The winner gets any excess back automatically, and losing bidders are refunded instantly.",
   },
 ]

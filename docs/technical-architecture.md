@@ -57,5 +57,5 @@ SERVER_PRIVATE_KEY=<64-char hex>  # server signing key
 PORT=3001
 DB_PATH=data/auction.db
 ALLOW_TEST_BIDS=1                 # dev only (allows the test://local mint)
-AUCTION_FEE_BPS=500               # seller fee 5%
+AUCTION_FEE_BPS=0                 # seller fee (0 = free marketplace; 500 = 5%)
 ```
