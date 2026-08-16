@@ -143,12 +143,6 @@ export function SettlementInfo({
                 >
                   {winnerHandle}
                 </a>
-                {!isWinnerViewer && (
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                    {" "}
-                    (visible to you as the seller)
-                  </span>
-                )}
               </>
             ) : (
               <code style={{ fontSize: 13 }}>Winner — anonymous</code>
