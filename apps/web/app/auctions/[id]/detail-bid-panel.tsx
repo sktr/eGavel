@@ -56,6 +56,25 @@ export function DetailBidPanel({
   useEffect(() => {
     setMyEntries(loadPendingBids())
   }, [])
+  // Share feedback: "Copied" when the Web Share API is unavailable and we
+  // fall back to copying the URL.
+  const [shareCopied, setShareCopied] = useState(false)
+
+  const handleShare = async () => {
+    const url = window.location.href
+    const title = `${auction.item} — eGavel auction`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text: title, url })
+        return
+      }
+      await navigator.clipboard.writeText(url)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 1500)
+    } catch {
+      // user cancelled the share sheet, or clipboard unavailable — ignore
+    }
+  }
   const isOpen = auction.state === "ACTIVE" || auction.state === "EXTENDED"
   // Proxy bidding: the standing price is the leader's current_amount (2nd max + increment).
   // Prefer auction.current_amount — the server computes it on every read and
@@ -309,6 +328,7 @@ export function DetailBidPanel({
         </button>
         <button
           type="button"
+          onClick={handleShare}
           style={{
             flex: 1,
             border: "1px solid var(--border)",
@@ -328,7 +348,8 @@ export function DetailBidPanel({
             e.currentTarget.style.background = "var(--surface)"
           }}
         >
-          <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>ios_share</span> Share
+          <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>ios_share</span>{" "}
+          {shareCopied ? "Copied ✓" : "Share"}
         </button>
       </div>
     </div>
