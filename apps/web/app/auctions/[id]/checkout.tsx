@@ -20,7 +20,7 @@ function shortNpub(pubkeyHex: string): string {
  *
  * The seller's linked Nostr pubkey is public info, so the winner can reach
  * out directly: the card shows the seller's handle with a nostr.at link
- * (open the profile in any Nostr app).
+ * (open the profile in any Nostr app / browser).
  */
 export function Checkout({ auction }: { auction: Auction }) {
   const { identity } = useIdentity();
@@ -56,23 +56,26 @@ export function Checkout({ auction }: { auction: Auction }) {
       >
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Seller</div>
         {hasSellerLink ? (
-          <a
-            href={nostrAtProfileUrl(sellerNpub!)}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={sellerNpub}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              color: "var(--fg)",
-              textDecoration: "none",
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-            }}
-          >
-            <span style={{ wordBreak: "break-all" }}>{shortNpub(sellerNpub!)}</span>
-            <span
+          <>
+            <code
+              style={{
+                display: "block",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                fontSize: 12,
+                lineHeight: 1.5,
+                marginBottom: 10,
+              }}
+              title={sellerNpub}
+            >
+              {shortNpub(sellerNpub!)}
+            </code>
+            <a
+              href={nostrAtProfileUrl(sellerNpub!)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={sellerNpub}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -81,17 +84,18 @@ export function Checkout({ auction }: { auction: Auction }) {
                 borderRadius: "var(--radius)",
                 background: "var(--accent-soft)",
                 color: "var(--accent)",
-                padding: "4px 10px",
+                padding: "6px 12px",
                 fontSize: 12,
                 fontWeight: 600,
                 fontFamily: "inherit",
+                textDecoration: "none",
                 whiteSpace: "nowrap",
               }}
             >
               <span className="material-icons" style={{ fontSize: 14 }}>open_in_new</span>
               Open on nostr.at
-            </span>
-          </a>
+            </a>
+          </>
         ) : (
           <code style={{ fontSize: 12, color: "var(--muted)" }}>
             {shortHex(auction.seller_pubkey)}
