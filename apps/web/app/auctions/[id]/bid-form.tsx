@@ -11,6 +11,8 @@ import type { Proof } from "@cashu/cashu-ts"
 import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
 import { useWallet, useTotalBalance } from "../../../lib/wallet"
+import { fetchNostrLinkStatus } from "../../../lib/nostr-link"
+import { IdentityNostrSection } from "../../identity-nostr-section"
 import { buildPendingEntry, savePendingBid, placeBid } from "../../../lib/pending-bids"
 import { useIdentity } from "../../../lib/identity"
 import { shortHex } from "../../../lib/ident"
@@ -52,6 +54,32 @@ export function BidForm({
   const mintUrl = auction.mint_url || DEFAULT_MINT
   const wallet = useWallet(mintUrl, identity?.pubkey ?? "")
   const { byMint } = useTotalBalance(identity?.pubkey ?? "")
+
+  // Bidding requires a linked Nostr identity (server enforces LINK_REQUIRED).
+  // Fetch the status up front so an unlinked user sees the link UI instead of
+  // a form that fails on submit. null = unknown (transient fetch failure —
+  // never gate on that).
+  const [nostrLinked, setNostrLinked] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!identity) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const st = await fetchNostrLinkStatus(
+          identity.pubkey,
+          bytesToHex(identity.secretKey),
+        )
+        if (cancelled) return
+        if (st.ok && st.nostrPubkey) setNostrLinked(true)
+        else if (!st.error) setNostrLinked(false)
+      } catch {
+        // transient failure → stay unknown
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [identity])
 
   // Form state
   const [amount, setAmount] = useState("")
@@ -318,6 +346,48 @@ export function BidForm({
   // ── Render ───────────────────────────────────────────
   const isOpen = auction.state === "ACTIVE" || auction.state === "EXTENDED"
   if (!isOpen) return null
+
+  // Unlinked → show the link UI instead of a bid form that would fail.
+  if (nostrLinked === false) {
+    return (
+      <div
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          padding: 20,
+        }}
+      >
+        <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 12px", lineHeight: 1.6 }}>
+          Bidding requires a linked Nostr identity. Link it right here, then the bid form will
+          appear.
+        </p>
+        <IdentityNostrSection compact onLinked={() => setNostrLinked(true)} />
+      </div>
+    )
+  }
+
+  // Mint unreachable → bidding cannot work; explain why instead of a dead form.
+  if (!testMode && wallet.error) {
+    return (
+      <div
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          padding: 20,
+        }}
+      >
+        <p style={{ fontSize: 13, color: "var(--red)", margin: "0 0 8px", lineHeight: 1.6 }}>
+          Bidding is unavailable right now.
+        </p>
+        <p style={{ fontSize: 12, color: "var(--muted)", margin: 0, lineHeight: 1.6 }}>
+          {wallet.error} Your bids lock e-cash on the auction&apos;s mint, so the wallet needs
+          to reach it. Try again in a moment.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit}>

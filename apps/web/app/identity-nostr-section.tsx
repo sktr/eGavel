@@ -19,8 +19,20 @@ import {
  *
  * The nsec path is non-custodial: the key is used only to sign the NIP-98
  * link event client-side and is never persisted or sent to the server.
+ *
+ * Props:
+ * - `compact`: render as a slim inline card (used on create/bid pages) instead
+ *   of the full dashboard card.
+ * - `onLinked`: called after a successful link, so a parent page can re-check
+ *   its own state (e.g. reveal the bid form).
  */
-export function IdentityNostrSection() {
+export function IdentityNostrSection({
+  compact = false,
+  onLinked,
+}: {
+  compact?: boolean;
+  onLinked?: () => void;
+}) {
   const { identity } = useIdentity();
   const [hasExtension, setHasExtension] = useState(false);
   const [nostrPubkey, setNostrPubkey] = useState<string | null>(null);
@@ -67,6 +79,7 @@ export function IdentityNostrSection() {
       if (res.ok) {
         setNostrPubkey(res.nostrPubkey);
         setLinkStatus("linked");
+        onLinked?.();
       } else {
         setError(
           res.error === "NO_NIP07"
@@ -79,7 +92,7 @@ export function IdentityNostrSection() {
     } finally {
       setBusy(false);
     }
-  }, [identity]);
+  }, [identity, onLinked]);
 
   const handleLinkWithNsec = useCallback(async () => {
     if (!identity) return;
@@ -94,6 +107,7 @@ export function IdentityNostrSection() {
       if (res.ok) {
         setNostrPubkey(res.nostrPubkey);
         setLinkStatus("linked");
+        onLinked?.();
       } else {
         setError(
           res.error === "NCRYPTSEC_UNSUPPORTED"
@@ -109,7 +123,7 @@ export function IdentityNostrSection() {
       setNsecBusy(false);
       setNsecInput("");
     }
-  }, [identity, nsecInput]);
+  }, [identity, nsecInput, onLinked]);
 
   const shortNpub = nostrPubkey
     ? (() => {
@@ -122,26 +136,35 @@ export function IdentityNostrSection() {
       })()
     : "";
 
-  return (
-    <div
-      style={{
+  const containerStyle = compact
+    ? {
+        background: "var(--bg)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-lg)",
+        padding: 16,
+      }
+    : {
         background: "var(--surface)",
         border: "1px solid var(--border)",
         borderRadius: "var(--radius-lg)",
         padding: 24,
         marginBottom: 40,
-      }}
-    >
+      };
+
+  return (
+    <div style={containerStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span className="material-icons" style={{ fontSize: 18, color: "var(--accent)" }}>
           bolt
         </span>
-        <h2 style={{ fontSize: 17, fontWeight: 600 }}>Nostr identity</h2>
+        <h2 style={{ fontSize: compact ? 15 : 17, fontWeight: 600 }}>Nostr identity</h2>
       </div>
-      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
-        Link a Nostr key (via a NIP-07 browser extension or a private key) to show a verified
-        identity on your listings. Buyers can then reach you on nostr.at.
-      </p>
+      {!compact && (
+        <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
+          Link a Nostr key (via a NIP-07 browser extension or a private key) to show a verified
+          identity on your listings. Buyers can then reach you on nostr.at.
+        </p>
+      )}
 
       {linkStatus === "linked" && nostrPubkey ? (
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -177,6 +200,11 @@ export function IdentityNostrSection() {
         </div>
       ) : linkStatus === "unlinked" ? (
         <div>
+          {!compact && (
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12, lineHeight: 1.6 }}>
+              Linking is required to list and to bid — you can do it right here.
+            </p>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             {hasExtension ? (
               <button
@@ -208,7 +236,7 @@ export function IdentityNostrSection() {
               padding: 16,
               border: "1px solid var(--border)",
               borderRadius: "var(--radius-lg)",
-              background: "var(--bg)",
+              background: "var(--surface)",
             }}
           >
             <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>

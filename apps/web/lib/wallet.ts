@@ -106,7 +106,13 @@ export function useWallet(mintUrl: string, pubkey: string) {
 
         setReady(true)
       } catch (err) {
-        if (!cancelled) setError(String(err))
+        if (!cancelled) {
+          // mint unreachable (network / mint down / DNS) — surface a clear,
+          // actionable message instead of a raw fetch error.
+          setError(
+            `mint unreachable (${mintUrl}) — check your connection; the mint may be down.`,
+          )
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }

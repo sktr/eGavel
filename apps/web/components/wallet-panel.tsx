@@ -228,6 +228,22 @@ export function WalletPanel() {
           Refresh
         </button>
       </div>
+      {wallet.error && (
+        <p
+          style={{
+            fontSize: 12,
+            color: "var(--red)",
+            margin: "0 0 12px",
+            padding: "8px 12px",
+            border: "1px solid color-mix(in srgb, var(--red) 30%, transparent)",
+            borderRadius: "var(--radius)",
+            background: "color-mix(in srgb, var(--red) 5%, transparent)",
+            lineHeight: 1.6,
+          }}
+        >
+          {wallet.error}
+        </p>
+      )}
       <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
         Funds live on the app&apos;s mint ({DEFAULT_MINT}) plus any mints you receive tokens
         from. Deposit via Lightning, receive a Cashu token, or withdraw as a token (import into

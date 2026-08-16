@@ -9,6 +9,7 @@ import { fetchNostrLinkStatus } from "../../lib/nostr-link";
 import { DEFAULT_MINT } from "../../lib/config";
 import { compressImage } from "../../lib/image";
 import { ItemPlaceholder } from "../../components/item-placeholder";
+import { IdentityNostrSection } from "../identity-nostr-section";
 
 const DURATIONS = [
   { value: "1d", label: "1 day" },
@@ -349,28 +350,34 @@ export default function CreateAuctionPage() {
         </h1>
       </div>
 
-      {/* Link-Nostr hint: encourage sellers to verify their Nostr identity */}
-      {nostrLinked === false && (
+      {/* Link-Nostr gate: listing requires a Nostr identity — link it right
+          here instead of bouncing the seller to the dashboard. Once linked,
+          the form below appears (onLinked re-fetches the status). */}
+      {nostrLinked === false ? (
         <div
           style={{
             background: "color-mix(in srgb, var(--accent) 6%, transparent)",
             border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            padding: "10px 16px",
+            borderRadius: "var(--radius-lg)",
+            padding: "16px 20px",
             fontSize: 13,
             color: "var(--muted)",
             marginBottom: 24,
           }}
         >
-          Link your Nostr identity to help buyers trust your listing.{" "}
-          <a href="/dashboard" style={{ color: "var(--accent)", textDecoration: "underline" }}>
-            Link on your dashboard
-          </a>
-          .
+          <p style={{ margin: "0 0 12px", lineHeight: 1.6 }}>
+            Listing requires a linked Nostr identity — it&apos;s how buyers can reach you. Link
+            it right here, then the listing form will appear.
+          </p>
+          <IdentityNostrSection
+            compact
+            onLinked={() => setNostrLinked(true)}
+          />
         </div>
-      )}
+      ) : null}
 
-      {/* Form grid: two columns */}
+      {/* Form grid: two columns (hidden until Nostr is linked) */}
+      {nostrLinked !== false && (
       <div
         className="resp-grid-form"
         style={{
@@ -1152,6 +1159,7 @@ export default function CreateAuctionPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ========== CONFIRMATION MODAL ========== */}
       {showModal && (
