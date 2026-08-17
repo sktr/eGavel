@@ -235,7 +235,10 @@ export default function DashboardPage() {
         }
       }
       setAuctionLookup(lookup);
-      if (silent) setError(null);
+      // Any successful fetch clears the error — including after a re-login,
+      // where the "Identity not available" banner from the logged-out state
+      // would otherwise stay up and hide the freshly loaded data.
+      setError(null);
     };
 
     const poll = async (silent: boolean) => {
