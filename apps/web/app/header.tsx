@@ -172,7 +172,7 @@ export function Header() {
                   {/* Balance */}
                   <div style={{ padding: "4px 4px 10px", borderBottom: "1px solid var(--border)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 12, color: "var(--muted)" }}>Balance</span>
+                      <span style={{ fontSize: 12, color: "var(--fg)" }}>Balance</span>
                       <button
                         onClick={refresh}
                         disabled={refreshing}
@@ -190,7 +190,7 @@ export function Header() {
                     ) : (
                       <>
                         <p style={{ fontFamily: "var(--font-mono)", fontSize: 22, fontWeight: 600, marginTop: 2 }}>
-                          {total.toLocaleString()} <span style={{ fontSize: 13, fontWeight: 400, color: "var(--muted)" }}>sats</span>
+                          {total.toLocaleString()} <span style={{ fontSize: 13, fontWeight: 400, color: "var(--fg)" }}>sats</span>
                         </p>
                         {stale && (
                           <p style={{ fontSize: 11, color: "var(--red, #dc2626)", marginTop: 4, lineHeight: 1.4 }}>
