@@ -150,9 +150,11 @@ export function WalletPanel() {
       setReqErr("Identity not available");
       return;
     }
-    const amt = parseInt(reqAmount, 10);
-    if (isNaN(amt) || amt <= 0) {
-      setReqErr("Enter a valid amount");
+    // Amount is optional: leave it empty to let the paying wallet decide how
+    // much to send. The payer's wallet then shows the amount field.
+    const amt = reqAmount.trim() === "" ? 0 : parseInt(reqAmount, 10);
+    if (reqAmount.trim() !== "" && (isNaN(amt) || amt <= 0)) {
+      setReqErr("Enter a valid amount, or leave it empty for the payer to choose");
       return;
     }
     try {
@@ -164,7 +166,7 @@ export function WalletPanel() {
           },
         ],
         identity.pubkey, // payment id = receiver's trading pubkey
-        Amount.from(amt),
+        amt > 0 ? Amount.from(amt) : undefined,
         "sat",
         [DEFAULT_MINT],
         "eGavel deposit",
@@ -495,8 +497,9 @@ export function WalletPanel() {
           Request payment (QR)
         </label>
         <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
-          Show a QR another Cashu wallet (e.g. cashu.me) can scan to pay you. Payments arrive
-          on this app&apos;s mint ({DEFAULT_MINT}) and are collected below.
+          Show a QR another Cashu wallet (e.g. cashu.me) can scan to pay you. Set an amount, or
+          leave it empty so the payer chooses. Payments arrive on this app&apos;s mint (
+          {DEFAULT_MINT}) and are collected automatically.
         </p>
         {!reqCreq ? (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -505,8 +508,8 @@ export function WalletPanel() {
               min={1}
               value={reqAmount}
               onChange={(e) => setReqAmount(e.target.value)}
-              placeholder="Amount (sats)"
-              style={{ width: 140 }}
+              placeholder="Amount (sats) — optional"
+              style={{ width: 160 }}
             />
             <button
               type="button"
@@ -527,6 +530,9 @@ export function WalletPanel() {
                 fgColor="var(--fg)"
               />
             </div>
+            <p style={{ fontSize: 13, color: "var(--accent)", margin: 0, textAlign: "center" }}>
+              Waiting for payment…
+            </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
@@ -545,8 +551,9 @@ export function WalletPanel() {
               </button>
             </div>
             <p style={{ fontSize: 11, color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
-              Scan with a NUT-18 compatible Cashu wallet. Payments are checked automatically
-              and collected into your wallet when they arrive.
+              {reqAmount.trim() === ""
+                ? "The paying wallet chooses the amount. Payments are checked automatically and collected into your wallet when they arrive."
+                : `Requesting ${parseInt(reqAmount, 10).toLocaleString()} sats. Payments are checked automatically and collected into your wallet when they arrive.`}
             </p>
           </div>
         )}
