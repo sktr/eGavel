@@ -785,8 +785,7 @@ export function WalletPanel() {
           <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
             These tokens hold funds that left your wallet (a withdraw, or a Lightning payment
             that failed mid-way). Use <b>Return to wallet</b> to bring the sats back into this
-            wallet, or copy the token to move it elsewhere. Remove an entry once the funds are
-            safely elsewhere.
+            wallet, or copy the token to move it elsewhere.
           </p>
           {pendingWithdrawals.map((w) => (
             <div
@@ -839,16 +838,6 @@ export function WalletPanel() {
                   style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--fg)", padding: "5px 12px", fontSize: 12 }}
                 >
                   {copied === `wd-${w.token.slice(0, 8)}` ? "Copied ✓" : "Copy token"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    removePendingWithdrawal(w.token);
-                    setPendingWithdrawals(loadPendingWithdrawals());
-                  }}
-                  style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--muted)", padding: "5px 12px", fontSize: 12 }}
-                >
-                  Remove
                 </button>
               </div>
             </div>
