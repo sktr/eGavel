@@ -252,6 +252,28 @@ export function WalletPanel() {
     setPendingWithdrawals(loadPendingWithdrawals());
   }, []);
 
+  // Return a pending withdraw token into this wallet (it was never exported,
+  // so the sats are still redeemable by this key). Removes the entry on
+  // success.
+  const [wdReturning, setWdReturning] = useState<string | null>(null);
+  const handleReturnToWallet = useCallback(
+    async (w: PendingWithdrawal) => {
+      setWdErr(null);
+      setWdReturning(w.token);
+      try {
+        await wallet.receive(w.token);
+        removePendingWithdrawal(w.token);
+        setPendingWithdrawals(loadPendingWithdrawals());
+        refresh();
+      } catch (err) {
+        setWdErr(`could not return to wallet: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setWdReturning(null);
+      }
+    },
+    [wallet, refresh],
+  );
+
   const handleWithdrawToken = useCallback(async () => {
     setWdErr(null);
     setWdToken(null);
@@ -711,8 +733,9 @@ export function WalletPanel() {
           </label>
           <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
             These tokens hold funds that left your wallet (a withdraw, or a Lightning payment
-            that failed mid-way). Copy them into a Cashu wallet to recover the sats — they are
-            the only copy of these funds. Remove an entry once you have saved the token.
+            that failed mid-way). Use <b>Return to wallet</b> to bring the sats back into this
+            wallet, or copy the token to move it elsewhere. Remove an entry once the funds are
+            safely elsewhere.
           </p>
           {pendingWithdrawals.map((w) => (
             <div
@@ -753,8 +776,16 @@ export function WalletPanel() {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   type="button"
-                  onClick={() => copyText(`wd-${w.token.slice(0, 8)}`, w.token)}
+                  onClick={() => handleReturnToWallet(w)}
+                  disabled={wdReturning === w.token}
                   style={{ border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", padding: "5px 12px", fontSize: 12, fontWeight: 600 }}
+                >
+                  {wdReturning === w.token ? "Returning…" : "Return to wallet"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyText(`wd-${w.token.slice(0, 8)}`, w.token)}
+                  style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--fg)", padding: "5px 12px", fontSize: 12 }}
                 >
                   {copied === `wd-${w.token.slice(0, 8)}` ? "Copied ✓" : "Copy token"}
                 </button>
@@ -766,7 +797,7 @@ export function WalletPanel() {
                   }}
                   style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--muted)", padding: "5px 12px", fontSize: 12 }}
                 >
-                  Remove (saved)
+                  Remove
                 </button>
               </div>
             </div>
