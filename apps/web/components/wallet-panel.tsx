@@ -308,7 +308,16 @@ export function WalletPanel() {
         setPendingWithdrawals(loadPendingWithdrawals());
         refresh();
       } catch (err) {
-        setWdErr(`could not return to wallet: ${err instanceof Error ? err.message : String(err)}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        // The token was already redeemed elsewhere (e.g. imported into another
+        // wallet) — it can no longer be returned, so drop the stale entry.
+        if (/already spent|Token Already Spent/i.test(msg)) {
+          removePendingWithdrawal(w.token);
+          setPendingWithdrawals(loadPendingWithdrawals());
+          setWdErr(`This token was already spent (moved to another wallet) and was removed from pending withdrawals.`);
+        } else {
+          setWdErr(`could not return to wallet: ${msg}`);
+        }
       } finally {
         setWdReturning(null);
       }
