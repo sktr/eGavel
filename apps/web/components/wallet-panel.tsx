@@ -568,7 +568,7 @@ export function WalletPanel() {
           <button
             type="button"
             onClick={handleReceive}
-            disabled={rcvBusy || !wallet.ready}
+            disabled={rcvBusy}
             style={{ padding: "8px 18px", fontSize: 13 }}
           >
             {rcvBusy ? "Receiving…" : "Receive"}
@@ -671,7 +671,7 @@ export function WalletPanel() {
             <button
               type="button"
               onClick={handleDeposit}
-              disabled={depositStep === "claiming" || !wallet.ready}
+              disabled={depositStep === "claiming"}
               style={{ padding: "8px 18px", fontSize: 13 }}
             >
               {depositStep === "claiming" ? "Minting…" : "Deposit"}
@@ -792,7 +792,7 @@ export function WalletPanel() {
           <button
             type="button"
             onClick={handleWithdrawToken}
-            disabled={wdBusy || !wallet.ready}
+            disabled={wdBusy}
             style={{ padding: "8px 18px", fontSize: 13 }}
           >
             {wdBusy ? "Preparing…" : "Withdraw token"}
@@ -885,8 +885,8 @@ export function WalletPanel() {
                 <button
                   type="button"
                   onClick={() => handleReturnToWallet(w)}
-                  disabled={wdReturning === w.token || !wallet.ready}
-                  style={{ border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", padding: "5px 12px", fontSize: 12, fontWeight: 600, opacity: wallet.ready ? 1 : 0.5 }}
+                  disabled={wdReturning === w.token}
+                  style={{ border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", padding: "5px 12px", fontSize: 12, fontWeight: 600 }}
                 >
                   {wdReturning === w.token ? "Returning…" : "Return to wallet"}
                 </button>
@@ -934,7 +934,7 @@ export function WalletPanel() {
           <button
             type="button"
             onClick={handleWithdrawLightning}
-            disabled={lnBusy || !wallet.ready}
+            disabled={lnBusy}
             style={{ padding: "8px 18px", fontSize: 13 }}
           >
             {lnBusy ? "Paying…" : "Pay invoice"}
