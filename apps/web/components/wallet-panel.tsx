@@ -464,8 +464,15 @@ export function WalletPanel() {
         any Cashu wallet) or by paying a Lightning invoice.
       </p>
 
+      {/* ── Deposit ── */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 8 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.02em", textTransform: "uppercase", color: "var(--muted)", margin: 0 }}>
+          Deposit
+        </h3>
+      </div>
+
       {/* ── Receive (Cashu token) ── */}
-      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
+      <div style={{ paddingTop: 12, marginBottom: 20 }}>
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Receive Cashu token
         </label>
@@ -478,6 +485,20 @@ export function WalletPanel() {
             autoComplete="off"
             style={{ flex: 1, minWidth: 200 }}
           />
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const text = await navigator.clipboard.readText()
+                if (text) setRcvToken(text)
+              } catch {
+                // clipboard unavailable
+              }
+            }}
+            style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--fg)", padding: "8px 14px", fontSize: 13 }}
+          >
+            Paste
+          </button>
           <button
             type="button"
             onClick={handleReceive}
@@ -561,7 +582,7 @@ export function WalletPanel() {
         {reqErr && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{reqErr}</p>}
       </div>
 
-      {/* ── Deposit ── */}
+      {/* ── Deposit sats (Lightning) ── */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Deposit sats (Lightning)
@@ -661,8 +682,15 @@ export function WalletPanel() {
         {depositErr && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 8 }}>{depositErr}</p>}
       </div>
 
+      {/* ── Withdraw ── */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 8 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.02em", textTransform: "uppercase", color: "var(--muted)", margin: 0 }}>
+          Withdraw
+        </h3>
+      </div>
+
       {/* ── Withdraw (token) ── */}
-      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
+      <div style={{ paddingTop: 12, marginBottom: 20 }}>
         <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
           Withdraw as Cashu token
         </label>
