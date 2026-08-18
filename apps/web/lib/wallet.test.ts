@@ -10,6 +10,9 @@ import {
   sumStoredAmounts,
   unspentWithoutP2PK,
   isP2PKSecret,
+  savePendingWithdrawal,
+  loadPendingWithdrawals,
+  removePendingWithdrawal,
 } from "./wallet";
 import { deserializeProofs } from "@cashu/cashu-ts";
 import type { Proof } from "@cashu/cashu-ts";
@@ -375,5 +378,41 @@ describe("walletPrivkeyHex (P2PK witness signing)", () => {
 
   it("returns null when no account is stored", () => {
     expect(walletPrivkeyHex("03cafebabe")).toBeNull();
+  });
+});
+
+describe("pending withdrawals (token persistence across reloads)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    restoreWindow();
+  });
+
+  it("round-trips a pending withdrawal through localStorage", () => {
+    savePendingWithdrawal({
+      token: "cashuAeyJ0b2tlbiI6W3siaWQiOiJrczEifV19",
+      mint: "https://mint.example",
+      amount: 100,
+      createdAt: 1234,
+    });
+    const loaded = loadPendingWithdrawals();
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]!.token).toContain("cashuA");
+    expect(loaded[0]!.amount).toBe(100);
+    expect(loaded[0]!.mint).toBe("https://mint.example");
+  });
+
+  it("returns an empty list when nothing is stored", () => {
+    expect(loadPendingWithdrawals()).toEqual([]);
+  });
+
+  it("removePendingWithdrawal deletes by token", () => {
+    const tokenA = "cashuAeyJ0b2tlbiI6W3siaWQiOiJrczEifV19";
+    const tokenB = "cashuAeyJ0b2tlbiI6W3siaWQiOiJrczIifV19";
+    savePendingWithdrawal({ token: tokenA, mint: "m", amount: 1, createdAt: 1 });
+    savePendingWithdrawal({ token: tokenB, mint: "m", amount: 2, createdAt: 2 });
+    removePendingWithdrawal(tokenA);
+    const loaded = loadPendingWithdrawals();
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]!.token).toBe(tokenB);
   });
 });

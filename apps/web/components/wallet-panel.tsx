@@ -9,7 +9,7 @@ import {
   PaymentRequest,
   PaymentRequestTransportType,
 } from "@cashu/cashu-ts";
-import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret } from "../lib/wallet";
+import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret, savePendingWithdrawal, loadPendingWithdrawals, removePendingWithdrawal, type PendingWithdrawal } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
@@ -241,6 +241,15 @@ export function WalletPanel() {
   const [wdToken, setWdToken] = useState<string | null>(null);
   const [wdBusy, setWdBusy] = useState(false);
   const [wdErr, setWdErr] = useState<string | null>(null);
+  // Withdraw tokens that were sent at the mint but not yet exported. They are
+  // persisted to localStorage so a reload cannot orphan the funds (the input
+  // proofs are spent the moment the send runs).
+  const [pendingWithdrawals, setPendingWithdrawals] = useState<PendingWithdrawal[]>([]);
+
+  // Load persisted pending withdrawals on mount (survives a browser reload).
+  useEffect(() => {
+    setPendingWithdrawals(loadPendingWithdrawals());
+  }, []);
 
   const handleWithdrawToken = useCallback(async () => {
     setWdErr(null);
@@ -271,7 +280,18 @@ export function WalletPanel() {
       const result = await op.run();
       if (result.send.length === 0) throw new Error("send produced no output proofs");
       replaceMintProofs(result.keep, mintUrl, pubkey);
-      setWdToken(getEncodedToken({ mint: mintUrl, proofs: result.send }));
+      const token = getEncodedToken({ mint: mintUrl, proofs: result.send });
+      // Persist the sent token BEFORE showing it: if the tab dies now, the
+      // funds survive via localStorage instead of being lost at the mint.
+      const entry: PendingWithdrawal = {
+        token,
+        mint: mintUrl,
+        amount: amt,
+        createdAt: Date.now(),
+      };
+      savePendingWithdrawal(entry);
+      setPendingWithdrawals(loadPendingWithdrawals());
+      setWdToken(token);
     } catch (err) {
       setWdErr(err instanceof Error ? err.message : String(err));
     } finally {
@@ -649,6 +669,78 @@ export function WalletPanel() {
         )}
         {wdErr && <p style={{ fontSize: 12, color: "var(--red)" }}>{wdErr}</p>}
       </div>
+
+      {/* ── Pending withdrawals (survive a reload — the funds are gone from the
+            wallet the moment the send ran, so the token MUST be recoverable) ── */}
+      {pendingWithdrawals.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
+            Pending withdrawals
+          </label>
+          <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
+            These tokens were sent from your wallet but not yet exported. Copy them into a Cashu
+            wallet now — they are the only copy of these funds. Remove an entry once you have
+            saved the token.
+          </p>
+          {pendingWithdrawals.map((w) => (
+            <div
+              key={w.token}
+              style={{
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                padding: "10px 12px",
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 13 }}>
+                  {w.amount.toLocaleString()} sats
+                </span>
+                <span style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 100 }}>
+                  {w.mint.replace(/^https?:\/\//, "")}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                  {new Date(w.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+              <code
+                style={{
+                  display: "block",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  fontSize: 10,
+                  color: "var(--muted)",
+                  marginBottom: 6,
+                }}
+                title={w.token}
+              >
+                {w.token}
+              </code>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => copyText(`wd-${w.token.slice(0, 8)}`, w.token)}
+                  style={{ border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", padding: "5px 12px", fontSize: 12, fontWeight: 600 }}
+                >
+                  {copied === `wd-${w.token.slice(0, 8)}` ? "Copied ✓" : "Copy token"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    removePendingWithdrawal(w.token);
+                    setPendingWithdrawals(loadPendingWithdrawals());
+                  }}
+                  style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--muted)", padding: "5px 12px", fontSize: 12 }}
+                >
+                  Remove (saved)
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Withdraw (Lightning) ── */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>

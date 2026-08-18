@@ -458,8 +458,53 @@ export function walletPrivkeyHex(pubkey: string): string | null {
  * balance → the app default mint (so the legacy single-mint behaviour
  * "withdraw from the fixed mint" is preserved when nothing else exists).
  */
-export function pickWithdrawMint(
-  byMint: MintBalance[],
+/**
+ * A withdraw that has been SENT at the mint but whose token the user has not
+ * yet copied/exported. The input proofs are spent at the mint the moment the
+ * send runs, so the only copy of the funds is this token — it MUST survive a
+ * reload, otherwise the money is lost forever.
+ */
+export interface PendingWithdrawal {
+  token: string
+  mint: string
+  amount: number
+  createdAt: number
+}
+
+const PENDING_WD_KEY = "egavel-pending-withdrawals"
+
+export function savePendingWithdrawal(entry: PendingWithdrawal) {
+  try {
+    const all = loadPendingWithdrawals()
+    // Dedupe by token — re-running the same withdraw must not duplicate.
+    if (all.some((w) => w.token === entry.token)) return
+    all.push(entry)
+    localStorage.setItem(PENDING_WD_KEY, JSON.stringify(all))
+  } catch {
+    // storage unavailable — the token lives only in state
+  }
+}
+
+export function loadPendingWithdrawals(): PendingWithdrawal[] {
+  try {
+    const raw = localStorage.getItem(PENDING_WD_KEY)
+    const parsed = raw ? (JSON.parse(raw) as PendingWithdrawal[]) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export function removePendingWithdrawal(token: string) {
+  try {
+    const all = loadPendingWithdrawals().filter((w) => w.token !== token)
+    localStorage.setItem(PENDING_WD_KEY, JSON.stringify(all))
+  } catch {
+    // storage unavailable — ignore
+  }
+}
+
+export function pickWithdrawMint(  byMint: MintBalance[],
   selected: string | null,
   fallback: string,
 ): string {
