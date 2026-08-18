@@ -496,21 +496,26 @@ export function WalletPanel() {
         </button>
       </div>
       {wallet.error && (
-        <p
+        <div
           style={{
-            fontSize: 12,
-            color: "var(--red)",
-            margin: "0 0 12px",
-            padding: "8px 12px",
             border: "1px solid color-mix(in srgb, var(--red) 30%, transparent)",
-            borderRadius: "var(--radius)",
+            borderRadius: "var(--radius-lg)",
             background: "color-mix(in srgb, var(--red) 5%, transparent)",
-            lineHeight: 1.6,
+            padding: "20px 24px",
           }}
         >
-          {wallet.error}
-        </p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--red)", margin: "0 0 6px" }}>
+            Wallet is unavailable right now.
+          </p>
+          <p style={{ fontSize: 12, color: "var(--muted)", margin: 0, lineHeight: 1.6 }}>
+            {wallet.error} Deposits, receives and withdraws all need the mint.
+            Refresh once the mint is back.
+          </p>
+        </div>
       )}
+
+      {wallet.error ? null : (
+      <>
       <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
         Funds live on the app&apos;s mint ({DEFAULT_MINT}) plus any mints you receive tokens
         from. Deposit via Lightning, receive a Cashu token, or withdraw as a token (import into
@@ -938,6 +943,8 @@ export function WalletPanel() {
           {lnErr && <span style={{ fontSize: 12, color: "var(--red)" }}>{lnErr}</span>}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
