@@ -827,8 +827,8 @@ export function WalletPanel() {
                 <button
                   type="button"
                   onClick={() => handleReturnToWallet(w)}
-                  disabled={wdReturning === w.token}
-                  style={{ border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", padding: "5px 12px", fontSize: 12, fontWeight: 600 }}
+                  disabled={wdReturning === w.token || !wallet.ready}
+                  style={{ border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", padding: "5px 12px", fontSize: 12, fontWeight: 600, opacity: wallet.ready ? 1 : 0.5 }}
                 >
                   {wdReturning === w.token ? "Returning…" : "Return to wallet"}
                 </button>
