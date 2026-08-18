@@ -465,8 +465,16 @@ export function WalletPanel() {
       </p>
 
       {/* ── Deposit ── */}
-      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 8 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.02em", textTransform: "uppercase", color: "var(--muted)", margin: 0 }}>
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          background: "color-mix(in srgb, var(--accent) 8%, transparent)",
+          borderRadius: "var(--radius)",
+          padding: "10px 14px",
+          marginBottom: 12,
+        }}
+      >
+        <h3 style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--fg)", margin: 0 }}>
           Deposit
         </h3>
       </div>
@@ -683,8 +691,16 @@ export function WalletPanel() {
       </div>
 
       {/* ── Withdraw ── */}
-      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 8 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.02em", textTransform: "uppercase", color: "var(--muted)", margin: 0 }}>
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          background: "color-mix(in srgb, var(--accent) 8%, transparent)",
+          borderRadius: "var(--radius)",
+          padding: "10px 14px",
+          marginBottom: 12,
+        }}
+      >
+        <h3 style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--fg)", margin: 0 }}>
           Withdraw
         </h3>
       </div>
