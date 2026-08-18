@@ -443,6 +443,17 @@ export function WalletPanel() {
         </div>
         {wdToken && (
           <div>
+            {/* NUT-16 static QR: a small token (≤ a few proofs) fits one QR
+              code; mobile Cashu wallets (Minibits, cashu.me) can scan it to
+              receive. Larger tokens fall back to the copy field below. */}
+            <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+              <QRCodeSVG
+                value={wdToken}
+                size={168}
+                bgColor="transparent"
+                fgColor="var(--fg)"
+              />
+            </div>
             <textarea
               readOnly
               rows={3}
@@ -457,8 +468,8 @@ export function WalletPanel() {
               {copied === "token" ? "Copied ✓" : "Copy token"}
             </button>
             <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
-              Import this token into any Cashu wallet (e.g. Minibits) to spend it there. Treat it
-              like cash — anyone with it can redeem it.
+              Scan the QR with any Cashu wallet (e.g. Minibits), or copy the token to import it.
+              Treat it like cash — anyone with it can redeem it.
             </p>
           </div>
         )}
