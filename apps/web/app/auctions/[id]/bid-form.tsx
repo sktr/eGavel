@@ -142,7 +142,9 @@ export function BidForm({
       setReqErr("Identity not available")
       return
     }
-    setReqBusy(true)
+    // Only the manual click flips the button label — the auto-poll must not
+    // toggle it, or the button text flickers every few seconds.
+    if (!silent) setReqBusy(true)
     try {
       const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey))
       const res = await fetch(
@@ -172,7 +174,7 @@ export function BidForm({
     } catch (err) {
       setReqErr(err instanceof Error ? err.message : String(err))
     } finally {
-      setReqBusy(false)
+      if (!silent) setReqBusy(false)
     }
   }, [identity, wallet])
 
