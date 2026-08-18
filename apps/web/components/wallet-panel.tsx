@@ -8,6 +8,7 @@ import {
   MintQuoteState,
   PaymentRequest,
   PaymentRequestTransportType,
+  type Proof,
 } from "@cashu/cashu-ts";
 import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret, savePendingWithdrawal, loadPendingWithdrawals, removePendingWithdrawal, type PendingWithdrawal } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
@@ -314,8 +315,12 @@ export function WalletPanel() {
       return;
     }
     setLnBusy(true);
+    // Hoisted so the catch block can restore the wallet store on melt failure.
+    let mintUrl = "";
+    let sendResult: { keep: Proof[]; send: Proof[] } | null = null;
+    let meltToken: string | null = null;
     try {
-      const mintUrl = activeWithdrawMint;
+      mintUrl = activeWithdrawMint;
       const w = buildWallet(mintUrl);
       await w.loadMint();
       const quoteRes = await w.createMeltQuoteBolt11(invoice);
@@ -331,8 +336,24 @@ export function WalletPanel() {
       let op = w.ops.send(Amount.from(need), [...spendable, ...ownP2PK]).includeFees(true);
       if (skHex && ownP2PK.length > 0) op = op.privkey(skHex);
       const result = await op.run();
+      sendResult = result;
       if (result.send.length === 0) throw new Error("insufficient balance for invoice + fees");
+      // Persist the send BEFORE melting: if the melt fails (network / mint
+      // error), these proofs are UNSPENT at the mint but not in the wallet —
+      // persisting them as a pending token keeps the funds recoverable.
+      meltToken = getEncodedToken({ mint: mintUrl, proofs: result.send });
+      const meltEntry: PendingWithdrawal = {
+        token: meltToken,
+        mint: mintUrl,
+        amount: Number(quoteRes.amount),
+        createdAt: Date.now(),
+      };
+      savePendingWithdrawal(meltEntry);
       const melt = await w.ops.meltBolt11(quoteRes, result.send).run();
+      // Melt succeeded: the send proofs are now spent. Keep the change; drop
+      // the pending token we just saved (it can no longer be redeemed).
+      removePendingWithdrawal(meltToken);
+      setPendingWithdrawals(loadPendingWithdrawals());
       const keep = [...result.keep, ...(melt.change ?? [])];
       // Replace, not merge: the swap + melt consumed input proofs at the mint.
       // Keeping them would over-count the optimistic balance while the mint is
@@ -341,6 +362,17 @@ export function WalletPanel() {
       setLnMsg(`Paid ${Number(quoteRes.amount)} sats to the invoice.`);
       setLnInvoice("");
     } catch (err) {
+      // If the send succeeded but the melt failed, restore the change (keep)
+      // into the wallet store — the input proofs are spent, so keep is the
+      // correct remaining balance. The send token stays in pending
+      // withdrawals so the user can recover it.
+      if (mintUrl && sendResult) {
+        try {
+          replaceMintProofs(sendResult.keep, mintUrl, pubkey);
+        } catch {
+          // store write failed — the pending token still holds the funds
+        }
+      }
       setLnErr(err instanceof Error ? err.message : String(err));
     } finally {
       setLnBusy(false);
@@ -678,9 +710,9 @@ export function WalletPanel() {
             Pending withdrawals
           </label>
           <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
-            These tokens were sent from your wallet but not yet exported. Copy them into a Cashu
-            wallet now — they are the only copy of these funds. Remove an entry once you have
-            saved the token.
+            These tokens hold funds that left your wallet (a withdraw, or a Lightning payment
+            that failed mid-way). Copy them into a Cashu wallet to recover the sats — they are
+            the only copy of these funds. Remove an entry once you have saved the token.
           </p>
           {pendingWithdrawals.map((w) => (
             <div
