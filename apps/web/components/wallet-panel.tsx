@@ -690,7 +690,7 @@ export function WalletPanel() {
           <button
             type="button"
             onClick={handleWithdrawToken}
-            disabled={wdBusy}
+            disabled={wdBusy || !wallet.ready}
             style={{ padding: "8px 18px", fontSize: 13 }}
           >
             {wdBusy ? "Preparing…" : "Withdraw token"}
@@ -843,7 +843,7 @@ export function WalletPanel() {
           <button
             type="button"
             onClick={handleWithdrawLightning}
-            disabled={lnBusy}
+            disabled={lnBusy || !wallet.ready}
             style={{ padding: "8px 18px", fontSize: 13 }}
           >
             {lnBusy ? "Paying…" : "Pay invoice"}
