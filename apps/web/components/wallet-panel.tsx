@@ -176,9 +176,10 @@ export function WalletPanel() {
   }, [identity, reqAmount]);
 
   // Collect pending NUT-18 payments into the wallet (signed GET).
-  const handleCheckPayments = useCallback(async () => {
+  // `silent` suppresses the "No incoming payments" message during auto-poll.
+  const handleCheckPayments = useCallback(async (silent = false) => {
     setReqErr(null);
-    setReqMsg(null);
+    if (!silent) setReqMsg(null);
     if (!identity) {
       setReqErr("Identity not available");
       return;
@@ -198,7 +199,7 @@ export function WalletPanel() {
         receipts: Array<{ mint_url: string; proofs: string; amount: number }>;
       };
       if (data.receipts.length === 0) {
-        setReqMsg("No incoming payments.");
+        if (!silent) setReqMsg("No incoming payments.");
         return;
       }
       let total = 0;
@@ -218,6 +219,22 @@ export function WalletPanel() {
       setReqBusy(false);
     }
   }, [identity, wallet, refresh]);
+
+  // Auto-poll while the payment-request QR is showing: once the payer's
+  // wallet POSTs the token, collect it without waiting for a manual click.
+  // handleCheckPayments clears reqCreq on success, which stops this loop.
+  useEffect(() => {
+    if (!reqCreq) return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      if (cancelled) return;
+      await handleCheckPayments(true); // silent: no "no payments" spam
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [reqCreq, handleCheckPayments]);
 
   // ── Withdraw (Cashu token) ──────────────────────────────────
   const [wdAmount, setWdAmount] = useState("");
@@ -439,7 +456,7 @@ export function WalletPanel() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
-                onClick={handleCheckPayments}
+                onClick={() => handleCheckPayments()}
                 disabled={reqBusy}
                 style={{ padding: "8px 18px", fontSize: 13 }}
               >
@@ -454,8 +471,8 @@ export function WalletPanel() {
               </button>
             </div>
             <p style={{ fontSize: 11, color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
-              Scan with a NUT-18 compatible Cashu wallet. Once paid, the token is held for you
-              until you collect it here.
+              Scan with a NUT-18 compatible Cashu wallet. Payments are checked automatically
+              and collected into your wallet when they arrive.
             </p>
           </div>
         )}
