@@ -193,7 +193,7 @@ export function BidForm({
   }, [reqCreq, handleCheckPayments])
 
   // ── Faucet / mint state ─────────────────────────────
-  const [mintAmount, setMintAmount] = useState("100")
+  const [mintAmount, setMintAmount] = useState("")
   const [mintQuote, setMintQuote] = useState<{
     quote: string
     request: string

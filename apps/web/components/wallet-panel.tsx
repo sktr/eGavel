@@ -49,7 +49,7 @@ export function WalletPanel() {
   }, []);
 
   // ── Deposit (Lightning mint) ────────────────────────────────
-  const [depositAmount, setDepositAmount] = useState("100");
+  const [depositAmount, setDepositAmount] = useState("");
   const [quote, setQuote] = useState<{ quote: string; request: string; amount: number } | null>(
     null,
   );
@@ -136,7 +136,7 @@ export function WalletPanel() {
   // ── Request payment (NUT-18): show a creqA QR so another Cashu wallet can
   // pay you. The transport target is this server's /api/wallet/receive; the
   // receiver id is the trading pubkey. Collected via "Check for payments".
-  const [reqAmount, setReqAmount] = useState("100");
+  const [reqAmount, setReqAmount] = useState("");
   const [reqCreq, setReqCreq] = useState<string | null>(null);
   const [reqBusy, setReqBusy] = useState(false);
   const [reqMsg, setReqMsg] = useState<string | null>(null);
