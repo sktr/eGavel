@@ -639,5 +639,48 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     return c.json(link ? { ok: true, nostr_pubkey: link.nostr_pubkey } : { ok: false })
   })
 
+  // ── NUT-18 incoming payments: a payer POSTs proofs to this endpoint (the
+  // transport target of a creqA payment request). The receiver collects them
+  // via the signed GET below. The `id` in the payload is the receiver's
+  // trading pubkey (carried from the payment request's `i` field). ──
+  router.post("/wallet/receive", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      id?: string
+      mint?: string
+      unit?: string
+      proofs?: Array<{ id: string; amount: number; secret: string; C: string }>
+      memo?: string
+    }
+    const receiverPubkey = body.id ?? ""
+    const mintUrl = body.mint ?? ""
+    const proofs = body.proofs
+    if (!receiverPubkey || !mintUrl || !Array.isArray(proofs) || proofs.length === 0) {
+      return c.json({ error: "invalid payment payload" }, 400)
+    }
+    // Basic sanity: every proof must carry the fields a wallet needs.
+    for (const p of proofs) {
+      if (!p.secret || !p.C || typeof p.amount !== "number" || p.amount <= 0) {
+        return c.json({ error: "invalid proof" }, 400)
+      }
+    }
+    const amount = proofs.reduce((a, p) => a + p.amount, 0)
+    await db.savePendingReceive(receiverPubkey, mintUrl, JSON.stringify(proofs), amount)
+    return c.json({ ok: true, amount })
+  })
+
+  // ── NUT-18 collect: the receiver (signed) fetches their pending payments.
+  // Returns the stored proofs so the web can merge them into the wallet;
+  // receipts are cleared after this read (collected once). ──
+  router.get("/wallet/receive", async (c) => {
+    const receiverPubkey = c.req.query("receiver_pubkey") ?? ""
+    const sig = c.req.query("sig") ?? ""
+    if (!receiverPubkey || !sig) return c.json({ error: "missing params" }, 400)
+    if (!verifySecretSignature(sig, `wallet-receive:${receiverPubkey}`, canonicalPubkey(receiverPubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400)
+    }
+    const rows = await db.getPendingReceives(receiverPubkey)
+    return c.json({ ok: true, receipts: rows })
+  })
+
   return router;
 }

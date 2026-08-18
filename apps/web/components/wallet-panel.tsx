@@ -6,11 +6,16 @@ import {
   getEncodedToken,
   Amount,
   MintQuoteState,
+  PaymentRequest,
+  PaymentRequestTransportType,
 } from "@cashu/cashu-ts";
 import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
+import { apiUrl } from "../lib/api";
+import { bytesToHex } from "../lib/hex";
+import { signSecretHex } from "../lib/claim";
 import { QRCodeSVG } from "qrcode.react";
 
 /**
@@ -126,6 +131,93 @@ export function WalletPanel() {
       setRcvBusy(false);
     }
   }, [rcvToken, wallet, refresh]);
+
+  // ── Request payment (NUT-18): show a creqA QR so another Cashu wallet can
+  // pay you. The transport target is this server's /api/wallet/receive; the
+  // receiver id is the trading pubkey. Collected via "Check for payments".
+  const [reqAmount, setReqAmount] = useState("100");
+  const [reqCreq, setReqCreq] = useState<string | null>(null);
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqMsg, setReqMsg] = useState<string | null>(null);
+  const [reqErr, setReqErr] = useState<string | null>(null);
+
+  const handleCreateRequest = useCallback(() => {
+    setReqErr(null);
+    setReqMsg(null);
+    setReqCreq(null);
+    if (!identity) {
+      setReqErr("Identity not available");
+      return;
+    }
+    const amt = parseInt(reqAmount, 10);
+    if (isNaN(amt) || amt <= 0) {
+      setReqErr("Enter a valid amount");
+      return;
+    }
+    try {
+      const pr = new PaymentRequest(
+        [
+          {
+            type: PaymentRequestTransportType.POST,
+            target: apiUrl("/wallet/receive"),
+          },
+        ],
+        identity.pubkey, // payment id = receiver's trading pubkey
+        Amount.from(amt),
+        "sat",
+        [DEFAULT_MINT],
+        "eGavel deposit",
+        true, // single use
+      );
+      setReqCreq(pr.toEncodedRequest());
+    } catch (err) {
+      setReqErr(err instanceof Error ? err.message : String(err));
+    }
+  }, [identity, reqAmount]);
+
+  // Collect pending NUT-18 payments into the wallet (signed GET).
+  const handleCheckPayments = useCallback(async () => {
+    setReqErr(null);
+    setReqMsg(null);
+    if (!identity) {
+      setReqErr("Identity not available");
+      return;
+    }
+    setReqBusy(true);
+    try {
+      const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey));
+      const res = await fetch(
+        apiUrl(`/wallet/receive?receiver_pubkey=${identity.pubkey}&sig=${sig}`),
+        { cache: "no-store" },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "collect failed");
+      }
+      const data = (await res.json()) as {
+        receipts: Array<{ mint_url: string; proofs: string; amount: number }>;
+      };
+      if (data.receipts.length === 0) {
+        setReqMsg("No incoming payments.");
+        return;
+      }
+      let total = 0;
+      for (const r of data.receipts) {
+        const proofs = deserializeProofs(r.proofs);
+        await wallet.receive(
+          getEncodedToken({ mint: r.mint_url, proofs }),
+        ).catch(() => {});
+        total += r.amount;
+      }
+      setReqMsg(`Collected ${total.toLocaleString()} sats.`);
+      setReqCreq(null);
+      refresh();
+    } catch (err) {
+      setReqErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReqBusy(false);
+    }
+  }, [identity, wallet, refresh]);
 
   // ── Withdraw (Cashu token) ──────────────────────────────────
   const [wdAmount, setWdAmount] = useState("");
@@ -304,6 +396,71 @@ export function WalletPanel() {
         </div>
         {rcvMsg && <p style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>{rcvMsg}</p>}
         {rcvErr && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{rcvErr}</p>}
+      </div>
+
+      {/* ── Request payment (NUT-18 QR) ── */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
+        <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
+          Request payment (QR)
+        </label>
+        <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
+          Show a QR another Cashu wallet (e.g. cashu.me) can scan to pay you. Payments arrive
+          on this app&apos;s mint ({DEFAULT_MINT}) and are collected below.
+        </p>
+        {!reqCreq ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              type="number"
+              min={1}
+              value={reqAmount}
+              onChange={(e) => setReqAmount(e.target.value)}
+              placeholder="Amount (sats)"
+              style={{ width: 140 }}
+            />
+            <button
+              type="button"
+              onClick={handleCreateRequest}
+              disabled={!identity}
+              style={{ padding: "8px 18px", fontSize: 13 }}
+            >
+              Show QR
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+              <QRCodeSVG
+                value={reqCreq}
+                size={168}
+                bgColor="transparent"
+                fgColor="var(--fg)"
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handleCheckPayments}
+                disabled={reqBusy}
+                style={{ padding: "8px 18px", fontSize: 13 }}
+              >
+                {reqBusy ? "Checking…" : "Check for payments"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setReqCreq(null)}
+                style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--fg)", padding: "8px 18px", fontSize: 13 }}
+              >
+                Cancel
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
+              Scan with a NUT-18 compatible Cashu wallet. Once paid, the token is held for you
+              until you collect it here.
+            </p>
+          </div>
+        )}
+        {reqMsg && <p style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>{reqMsg}</p>}
+        {reqErr && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{reqErr}</p>}
       </div>
 
       {/* ── Deposit ── */}

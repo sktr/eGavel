@@ -274,6 +274,35 @@ export function createD1Db(d1: D1Database): Db {
       await d1.prepare("DELETE FROM nostr_links WHERE trading_pubkey = ?").bind(tradingPubkey).run()
     },
 
+    async savePendingReceive(receiverPubkey, mintUrl, proofs, amount) {
+      const incoming = JSON.parse(proofs) as Array<{ secret: string }>
+      const { results } = await d1
+        .prepare("SELECT proofs FROM pending_receives WHERE receiver_pubkey = ? AND mint_url = ?")
+        .bind(receiverPubkey, mintUrl)
+        .all<{ proofs: string }>()
+      const seen = new Set<string>()
+      for (const row of results) {
+        for (const p of JSON.parse(row.proofs) as Array<{ secret: string }>) seen.add(p.secret)
+      }
+      const fresh = incoming.filter((p) => !seen.has(p.secret))
+      if (fresh.length === 0) return
+      await d1
+        .prepare(
+          "INSERT INTO pending_receives (receiver_pubkey, mint_url, proofs, amount, created_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(receiverPubkey, mintUrl, JSON.stringify(fresh), amount, Date.now())
+        .run()
+    },
+
+    async getPendingReceives(receiverPubkey) {
+      const { results } = await d1
+        .prepare("SELECT mint_url, proofs, amount FROM pending_receives WHERE receiver_pubkey = ? ORDER BY created_at")
+        .bind(receiverPubkey)
+        .all<{ mint_url: string; proofs: string; amount: number }>()
+      await d1.prepare("DELETE FROM pending_receives WHERE receiver_pubkey = ?").bind(receiverPubkey).run()
+      return results
+    },
+
     async exec(sql: string) {
       await d1.exec(sql)
     },

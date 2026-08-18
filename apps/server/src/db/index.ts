@@ -36,6 +36,10 @@ export interface Db {
   getAllNostrLinks: () => Promise<Array<{ trading_pubkey: string; nostr_pubkey: string }>>
   /** Unlink a trading pubkey from its nostr pubkey. */
   deleteNostrLink: (tradingPubkey: string) => Promise<void>
+  /** NUT-18 incoming payments: append proofs for a receiver (deduped by secret). */
+  savePendingReceive: (receiverPubkey: string, mintUrl: string, proofs: string, amount: number) => Promise<void>
+  /** All pending receipts for a receiver; clears them (single collection). */
+  getPendingReceives: (receiverPubkey: string) => Promise<Array<{ mint_url: string; proofs: string; amount: number }>>
   exec: (sql: string) => Promise<void>
 }
 
@@ -115,10 +119,22 @@ export function initDb(): Db {
       created_at INTEGER NOT NULL
     );
 
+    -- NUT-18 incoming payments: a payer POSTs proofs here; the receiver later
+    -- collects them into their wallet. Multiple payments to the same receiver
+    -- are appended (proofs are deduped by secret on insert).
+    CREATE TABLE IF NOT EXISTS pending_receives (
+      receiver_pubkey TEXT NOT NULL,
+      mint_url TEXT NOT NULL,
+      proofs TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_bids_auction_id ON bids(auction_id);
     CREATE INDEX IF NOT EXISTS idx_bids_auction_amount ON bids(auction_id, max_amount DESC);
     CREATE INDEX IF NOT EXISTS idx_bids_bidder_npub ON bids(bidder_npub);
     CREATE INDEX IF NOT EXISTS idx_auctions_seller_pubkey ON auctions(seller_pubkey);
+    CREATE INDEX IF NOT EXISTS idx_pending_receives_receiver ON pending_receives(receiver_pubkey);
   `)
 
   // Add proof_data column if it doesn't exist (migration for existing DBs)
@@ -374,6 +390,32 @@ export function initDb(): Db {
 
     async deleteNostrLink(tradingPubkey) {
       db.prepare("DELETE FROM nostr_links WHERE trading_pubkey = ?").run(tradingPubkey)
+    },
+
+    async savePendingReceive(receiverPubkey, mintUrl, proofs, amount) {
+      // Dedupe by proof secret against this receiver's existing rows.
+      const incoming = JSON.parse(proofs) as Array<{ secret: string }>
+      const existingRows = db
+        .prepare("SELECT proofs FROM pending_receives WHERE receiver_pubkey = ? AND mint_url = ?")
+        .all(receiverPubkey, mintUrl) as Array<{ proofs: string }>
+      const seen = new Set<string>()
+      for (const row of existingRows) {
+        for (const p of JSON.parse(row.proofs) as Array<{ secret: string }>) seen.add(p.secret)
+      }
+      const fresh = incoming.filter((p) => !seen.has(p.secret))
+      if (fresh.length === 0) return
+      db.prepare(
+        "INSERT INTO pending_receives (receiver_pubkey, mint_url, proofs, amount, created_at) VALUES (?, ?, ?, ?, ?)",
+      ).run(receiverPubkey, mintUrl, JSON.stringify(fresh), amount, Date.now())
+    },
+
+    async getPendingReceives(receiverPubkey) {
+      const rows = db
+        .prepare("SELECT mint_url, proofs, amount FROM pending_receives WHERE receiver_pubkey = ? ORDER BY created_at")
+        .all(receiverPubkey) as Array<{ mint_url: string; proofs: string; amount: number }>
+      // Clear them: a receipt is collected once.
+      db.prepare("DELETE FROM pending_receives WHERE receiver_pubkey = ?").run(receiverPubkey)
+      return rows
     },
 
     async exec(sql: string) {
