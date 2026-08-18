@@ -10,7 +10,7 @@ import {
   PaymentRequestTransportType,
   type Proof,
 } from "@cashu/cashu-ts";
-import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret, savePendingWithdrawal, loadPendingWithdrawals, removePendingWithdrawal, type PendingWithdrawal } from "../lib/wallet";
+import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret, savePendingWithdrawal, loadPendingWithdrawals, removePendingWithdrawal, splitPendingBySpent, type PendingWithdrawal } from "../lib/wallet";
 import { buildWallet } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
@@ -254,6 +254,46 @@ export function WalletPanel() {
     setPendingWithdrawals(loadPendingWithdrawals());
   }, []);
 
+  // Prune pending withdrawals whose proofs are spent at the mint: a token that
+  // was copied and redeemed in another wallet is SPENT, so holding it here
+  // forever is wrong. Ask each mint via NUT-07; skip anything we cannot check.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const all = loadPendingWithdrawals();
+      if (all.length === 0) return;
+      const withProofs = all.filter((w) => w.proofKeys && w.proofKeys.length > 0);
+      if (withProofs.length === 0) return;
+      const spentSecrets: string[] = [];
+      for (const w of withProofs) {
+        if (cancelled) return;
+        try {
+          const keys = w.proofKeys!;
+          const mintWallet = buildWallet(w.mint);
+          await mintWallet.loadMint();
+          // checkProofsStates returns states in the same order as the proofs;
+          // map the SPENT states back to their proof secrets.
+          const states = await mintWallet.checkProofsStates(keys);
+          for (let i = 0; i < states.length; i++) {
+            if (states[i]!.state === "SPENT") spentSecrets.push(keys[i]!.secret)
+          }
+        } catch {
+          // mint unreachable — skip this entry (it stays pending)
+        }
+      }
+      if (cancelled) return;
+      const { spent } = splitPendingBySpent(all, spentSecrets);
+      if (spent.length > 0) {
+        for (const w of spent) removePendingWithdrawal(w.token);
+        setPendingWithdrawals(loadPendingWithdrawals());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet.ready]);
+
   // Return a pending withdraw token into this wallet (it was never exported,
   // so the sats are still redeemable by this key). Removes the entry on
   // success.
@@ -313,6 +353,7 @@ export function WalletPanel() {
         mint: mintUrl,
         amount: amt,
         createdAt: Date.now(),
+        proofKeys: result.send.map((p) => ({ id: p.id, secret: p.secret })),
       };
       savePendingWithdrawal(entry);
       setPendingWithdrawals(loadPendingWithdrawals());
@@ -371,6 +412,7 @@ export function WalletPanel() {
         mint: mintUrl,
         amount: Number(quoteRes.amount),
         createdAt: Date.now(),
+        proofKeys: result.send.map((p) => ({ id: p.id, secret: p.secret })),
       };
       savePendingWithdrawal(meltEntry);
       const melt = await w.ops.meltBolt11(quoteRes, result.send).run();

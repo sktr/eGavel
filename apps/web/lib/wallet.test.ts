@@ -13,6 +13,8 @@ import {
   savePendingWithdrawal,
   loadPendingWithdrawals,
   removePendingWithdrawal,
+  splitPendingBySpent,
+  type PendingWithdrawal,
 } from "./wallet";
 import { deserializeProofs } from "@cashu/cashu-ts";
 import type { Proof } from "@cashu/cashu-ts";
@@ -414,5 +416,37 @@ describe("pending withdrawals (token persistence across reloads)", () => {
     const loaded = loadPendingWithdrawals();
     expect(loaded).toHaveLength(1);
     expect(loaded[0]!.token).toBe(tokenB);
+  });
+});
+
+describe("splitPendingBySpent (prune withdrawals moved to another wallet)", () => {
+  it("returns pending grouped by whether their proofs were spent", () => {
+    const pending = [
+      { token: "A", mint: "m", amount: 10, createdAt: 1, proofKeys: [{ id: "ks1", secret: "s1" }] },
+      { token: "B", mint: "m", amount: 20, createdAt: 2, proofKeys: [{ id: "ks1", secret: "s2" }] },
+    ];
+    const { spent, unspent } = splitPendingBySpent(pending, ["s1"]);
+    expect(spent.map((w) => w.token)).toEqual(["A"]);
+    expect(unspent.map((w) => w.token)).toEqual(["B"]);
+  });
+
+  it("keeps pending without proofKeys (legacy) as unspent", () => {
+    const pending = [
+      { token: "A", mint: "m", amount: 10, createdAt: 1 },
+      { token: "B", mint: "m", amount: 20, createdAt: 2, proofKeys: [{ id: "ks1", secret: "s2" }] },
+    ];
+    const { spent, unspent } = splitPendingBySpent(pending, ["s2"]);
+    expect(spent.map((w) => w.token)).toEqual(["B"]);
+    expect(unspent.map((w) => w.token)).toEqual(["A"]);
+  });
+
+  it("treats a pending as spent only when EVERY proof is spent", () => {
+    const pending = [
+      { token: "A", mint: "m", amount: 10, createdAt: 1, proofKeys: [{ id: "ks1", secret: "s1" }, { id: "ks1", secret: "s2" }] },
+    ];
+    // Only one of two proofs spent → not fully moved, keep it.
+    const { spent, unspent } = splitPendingBySpent(pending, ["s1"]);
+    expect(spent).toHaveLength(0);
+    expect(unspent).toHaveLength(1);
   });
 });

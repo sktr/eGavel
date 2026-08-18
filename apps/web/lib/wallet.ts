@@ -469,6 +469,37 @@ export interface PendingWithdrawal {
   mint: string
   amount: number
   createdAt: number
+  /**
+   * The proofs (id + secret) that make up this withdrawal, used to detect via
+   * NUT-07 checkstate whether it has been moved to another wallet (SPENT) and
+   * can be pruned. Absent for legacy entries saved before this field.
+   */
+  proofKeys?: Array<{ id: string; secret: string }>
+}
+
+/**
+ * Split pending withdrawals into those whose proofs are all spent (the token
+ * was redeemed elsewhere — safe to prune) and the rest. A withdrawal with no
+ * proofKeys (legacy) is kept. A withdrawal is only 'spent' when EVERY one of
+ * its proofs is spent; a partial move keeps it.
+ */
+export function splitPendingBySpent(
+  pending: PendingWithdrawal[],
+  spentSecrets: Set<string> | string[],
+): { spent: PendingWithdrawal[]; unspent: PendingWithdrawal[] } {
+  const spentSet = spentSecrets instanceof Set ? spentSecrets : new Set(spentSecrets)
+  const spent: PendingWithdrawal[] = []
+  const unspent: PendingWithdrawal[] = []
+  for (const w of pending) {
+    if (!w.proofKeys || w.proofKeys.length === 0) {
+      unspent.push(w)
+      continue
+    }
+    const allSpent = w.proofKeys.every((p) => spentSet.has(p.secret))
+    if (allSpent) spent.push(w)
+    else unspent.push(w)
+  }
+  return { spent, unspent }
 }
 
 const PENDING_WD_KEY = "egavel-pending-withdrawals"
