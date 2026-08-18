@@ -6,7 +6,7 @@ import { bytesToHex } from "../../../lib/hex"
 import { rootUrl } from "../../../lib/api"
 import { DEV_TOOLS } from "../../../lib/dev-tools"
 import { DEFAULT_MINT, TEST_MINT_URL } from "../../../lib/config"
-import { MintQuoteState, createP2PKsecret, Amount } from "@cashu/cashu-ts"
+import { MintQuoteState, createP2PKsecret, Amount, PaymentRequest, PaymentRequestTransportType, deserializeProofs, getEncodedToken } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
@@ -16,6 +16,8 @@ import { IdentityNostrSection } from "../../identity-nostr-section"
 import { buildPendingEntry, savePendingBid, placeBid } from "../../../lib/pending-bids"
 import { useIdentity } from "../../../lib/identity"
 import { shortHex } from "../../../lib/ident"
+import { apiUrl } from "../../../lib/api"
+import { signSecretHex } from "../../../lib/claim"
 import { QRCodeSVG } from "qrcode.react"
 
 export function BidForm({
@@ -90,6 +92,103 @@ export function BidForm({
   const [receiveToken, setReceiveToken] = useState("")
   const [receiveStatus, setReceiveStatus] = useState<string | null>(null)
   const [receiveError, setReceiveError] = useState<string | null>(null)
+
+  // ── Request payment (NUT-18): show a creqA QR so another Cashu wallet can
+  // pay into this wallet. Same as the dashboard wallet panel.
+  const [reqAmount, setReqAmount] = useState("")
+  const [reqCreq, setReqCreq] = useState<string | null>(null)
+  const [reqBusy, setReqBusy] = useState(false)
+  const [reqMsg, setReqMsg] = useState<string | null>(null)
+  const [reqErr, setReqErr] = useState<string | null>(null)
+
+  const handleCreateRequest = useCallback(() => {
+    setReqErr(null)
+    setReqMsg(null)
+    setReqCreq(null)
+    if (!identity) {
+      setReqErr("Identity not available")
+      return
+    }
+    const amt = reqAmount.trim() === "" ? 0 : parseInt(reqAmount, 10)
+    if (reqAmount.trim() !== "" && (isNaN(amt) || amt <= 0)) {
+      setReqErr("Enter a valid amount, or leave it empty for the payer to choose")
+      return
+    }
+    try {
+      const pr = new PaymentRequest(
+        [
+          {
+            type: PaymentRequestTransportType.POST,
+            target: apiUrl("/wallet/receive"),
+          },
+        ],
+        identity.pubkey,
+        amt > 0 ? Amount.from(amt) : undefined,
+        "sat",
+        [mintUrl],
+        "eGavel deposit",
+        true,
+      )
+      setReqCreq(pr.toEncodedRequest())
+    } catch (err) {
+      setReqErr(err instanceof Error ? err.message : String(err))
+    }
+  }, [identity, reqAmount, mintUrl])
+
+  const handleCheckPayments = useCallback(async (silent = false) => {
+    setReqErr(null)
+    if (!silent) setReqMsg(null)
+    if (!identity) {
+      setReqErr("Identity not available")
+      return
+    }
+    setReqBusy(true)
+    try {
+      const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey))
+      const res = await fetch(
+        apiUrl(`/wallet/receive?receiver_pubkey=${identity.pubkey}&sig=${sig}`),
+        { cache: "no-store" },
+      )
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? "collect failed")
+      }
+      const data = (await res.json()) as {
+        receipts: Array<{ mint_url: string; proofs: string; amount: number }>
+      }
+      if (data.receipts.length === 0) {
+        if (!silent) setReqMsg("No incoming payments.")
+        return
+      }
+      let total = 0
+      for (const r of data.receipts) {
+        const proofs = deserializeProofs(r.proofs)
+        await wallet.receive(getEncodedToken({ mint: r.mint_url, proofs })).catch(() => {})
+        total += r.amount
+      }
+      setReqMsg(`Collected ${total.toLocaleString()} sats.`)
+      setReqCreq(null)
+      wallet.refresh()
+    } catch (err) {
+      setReqErr(err instanceof Error ? err.message : String(err))
+    } finally {
+      setReqBusy(false)
+    }
+  }, [identity, wallet])
+
+  // Auto-poll while the payment-request QR is showing.
+  useEffect(() => {
+    if (!reqCreq) return
+    let cancelled = false
+    const timer = setInterval(async () => {
+      if (cancelled) return
+      await handleCheckPayments(true)
+    }, 4000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [reqCreq, handleCheckPayments])
 
   // ── Faucet / mint state ─────────────────────────────
   const [mintAmount, setMintAmount] = useState("100")
@@ -391,17 +490,6 @@ export function BidForm({
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* Identity info */}
-      {!isLoaded ? (
-        <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
-          Loading…
-        </p>
-      ) : identity?.pubkey ? (
-        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, wordBreak: "break-all" }}>
-          Key: <code style={{ fontSize: 11 }}>{shortHex(identity.pubkey)}</code>
-        </p>
-      ) : null}
-
       {/* Inline bid row: input + submit */}
       <div
         style={{
@@ -581,6 +669,20 @@ export function BidForm({
               <button type="button" onClick={handleReceive} style={{ padding: "8px 16px", fontSize: 13, whiteSpace: "nowrap" }}>
                 Receive
               </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const text = await navigator.clipboard.readText()
+                    if (text) setReceiveToken(text)
+                  } catch {
+                    // clipboard unavailable
+                  }
+                }}
+                style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--fg)", padding: "8px 14px", fontSize: 13 }}
+              >
+                Paste
+              </button>
             </div>
             <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
               Tokens from any mint are accepted here, but only tokens from this
@@ -590,6 +692,70 @@ export function BidForm({
             </p>
             {receiveStatus && <p style={{ fontSize: 12, color: "var(--accent2)", marginTop: 4 }}>{receiveStatus}</p>}
             {receiveError && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{receiveError}</p>}
+          </div>
+
+          {/* Request payment (NUT-18 QR) — same as the dashboard wallet panel */}
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>
+              Request payment (QR)
+            </label>
+            <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
+              Show a QR another Cashu wallet (e.g. cashu.me) can scan to pay into this wallet.
+              Set an amount, or leave it empty so the payer chooses.
+            </p>
+            {!reqCreq ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  type="number"
+                  min={1}
+                  value={reqAmount}
+                  onChange={(e) => setReqAmount(e.target.value)}
+                  placeholder="Amount (sats) — optional"
+                  style={{ width: 170 }}
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateRequest}
+                  disabled={!identity}
+                  style={{ padding: "8px 16px", fontSize: 13, whiteSpace: "nowrap" }}
+                >
+                  Show QR
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+                  <QRCodeSVG
+                    value={reqCreq}
+                    size={168}
+                    bgColor="transparent"
+                    fgColor="var(--fg)"
+                  />
+                </div>
+                <p style={{ fontSize: 13, color: "var(--accent)", margin: 0, textAlign: "center" }}>
+                  Waiting for payment…
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleCheckPayments()}
+                    disabled={reqBusy}
+                    style={{ padding: "8px 14px", fontSize: 12 }}
+                  >
+                    {reqBusy ? "Checking…" : "Check for payments"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReqCreq(null)}
+                    style={{ border: "1px solid var(--border)", background: "var(--surface)", color: "var(--fg)", padding: "8px 14px", fontSize: 12 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            {reqMsg && <p style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>{reqMsg}</p>}
+            {reqErr && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{reqErr}</p>}
           </div>
 
           {/* Mint sats (Lightning) — always expanded once the section is open */}
