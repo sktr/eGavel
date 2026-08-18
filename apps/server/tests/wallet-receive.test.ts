@@ -67,6 +67,24 @@ describe("NUT-18 wallet receive (POST /wallet/receive + GET /wallet/receive)", (
     expect(get.status).toBe(400);
   });
 
+  it("accepts proofs whose amount is a string (wallet toJSON serialization)", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    const receiver = sellerKey();
+
+    // Some wallets serialize Proof.amount via its toJSON() as "10" (string).
+    const post = await app.request("http://localhost/api/wallet/receive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: receiver.pubkey,
+        mint: "https://mint.example",
+        proofs: [{ id: "ks1", amount: "10", secret: "s-str", C: "02".padEnd(64, "d") }],
+      }),
+    });
+    expect(post.status).toBe(200);
+    expect(await post.json()).toEqual({ ok: true, amount: 10 });
+  });
+
   it("rejects an empty/invalid payment payload", async () => {
     const app = createApp(db, { serverKey: SERVER });
     const bad = await app.request("http://localhost/api/wallet/receive", {

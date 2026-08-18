@@ -657,14 +657,22 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (!receiverPubkey || !mintUrl || !Array.isArray(proofs) || proofs.length === 0) {
       return c.json({ error: "invalid payment payload" }, 400)
     }
+    // The payer's wallet serializes Proof.amount via its toJSON() as a string
+    // ("100"), not a number — accept both and normalize to a number.
+    const normalized = proofs.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      secret: p.secret,
+      C: p.C,
+    }))
     // Basic sanity: every proof must carry the fields a wallet needs.
-    for (const p of proofs) {
-      if (!p.secret || !p.C || typeof p.amount !== "number" || p.amount <= 0) {
+    for (const p of normalized) {
+      if (!p.secret || !p.C || !Number.isFinite(p.amount) || p.amount <= 0) {
         return c.json({ error: "invalid proof" }, 400)
       }
     }
-    const amount = proofs.reduce((a, p) => a + p.amount, 0)
-    await db.savePendingReceive(receiverPubkey, mintUrl, JSON.stringify(proofs), amount)
+    const amount = normalized.reduce((a, p) => a + p.amount, 0)
+    await db.savePendingReceive(receiverPubkey, mintUrl, JSON.stringify(normalized), amount)
     return c.json({ ok: true, amount })
   })
 
