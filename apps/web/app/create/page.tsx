@@ -251,24 +251,23 @@ export default function CreateAuctionPage() {
                 };
               }
             ).nostr;
-            if (!nostr?.signEvent) return;
+            if (!nostr?.signEvent || !nostr?.getPublicKey) {
+              showToast("Nostr publish skipped: connect NIP-07 extension", "cloud_off");
+              return;
+            }
             let sellerNostrPubkey: string | null = null;
             try {
-              const st = await fetchNostrLinkStatus(identity.pubkey, bytesToHex(identity.secretKey));
-              if (st.ok && st.nostrPubkey) sellerNostrPubkey = st.nostrPubkey;
+              sellerNostrPubkey = await nostr.getPublicKey();
             } catch {
-              // transient — fall through to window.nostr pubkey
+              showToast("Nostr publish failed: cannot get pubkey", "cloud_off");
+              return;
             }
             if (!sellerNostrPubkey) {
-              try {
-                sellerNostrPubkey = await nostr.getPublicKey();
-              } catch {
-                return;
-              }
+              showToast("Nostr publish failed: empty pubkey", "cloud_off");
+              return;
             }
-            if (!sellerNostrPubkey) return;
             const event = buildListingEvent({
-              auctionId: auctionId,
+              auctionId,
               item: capturedItem,
               description: capturedDescription,
               startPrice: capturedStartPrice,
@@ -279,11 +278,15 @@ export default function CreateAuctionPage() {
               imageUrls: capturedImageUrls,
               sellerNostrPubkey,
             });
-            publishListing(event, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> }).catch(() => {
+            try {
+              await publishListing(event, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> });
+              console.log("[Nostr] 30402 published", event);
+            } catch (e) {
+              console.error("[Nostr] publish failed", e);
               showToast("Nostr announcement failed (retry)", "cloud_off");
-            });
-          } catch {
-            // mirror is best-effort; ignore
+            }
+          } catch (e) {
+            console.error("[Nostr] mirror error", e);
           }
         })();
       }
