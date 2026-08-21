@@ -9,6 +9,8 @@ import { DeleteListingButton } from "./delete-listing-button"
 import { apiUrl } from "../../../lib/api"
 import { hexToNpub, nostrAtProfileUrl } from "../../../lib/npub"
 import { shortHex } from "../../../lib/ident"
+import { listingNaddr } from "../../../lib/nostr-listing"
+import { ViewOnNostrBadge } from "./view-on-nostr-badge"
 
 function fullNpub(pubkeyHex: string): string {
   return /^[0-9a-fA-F]{64}$/.test(pubkeyHex) ? hexToNpub(pubkeyHex) : pubkeyHex
@@ -455,6 +457,19 @@ export default async function AuctionPage({
             </div>
           </div>
         </div>
+
+        {/* NIP-99 View on Nostr badge */}
+        {auction.seller_nostr_pubkey && (
+          <div style={{ gridColumn: "1 / -1", marginBottom: 16 }}>
+            <ViewOnNostrBadge
+              naddr={listingNaddr(auction.seller_nostr_pubkey, `egavel-${auction.id}`, [
+                "wss://relay.damus.io",
+                "wss://nos.lol",
+                "wss://relay.nostr.band",
+              ])}
+            />
+          </div>
+        )}
 
         {/* ===== BELOW THE GRID: Settlement (for SETTLED auctions) ===== */}
         {auction.state === "SETTLED" && <SettlementInfo auction={auction} serverNpub="" />}
