@@ -57,3 +57,53 @@ export async function publishListing(
 export function listingNaddr(pubkey: string, d: string, relays: string[]): string {
   return nip19.naddrEncode({ pubkey, kind: 30402, identifier: d, relays })
 }
+
+/** NIP-09 deletion event (kind 5) for a listing mirror. Tags reference the
+ * addressable `a` tag so clients can hide the listing even without its event id. */
+export function buildListingDeletionEvent(input: {
+  sellerNostrPubkey: string
+  auctionId: string
+}): EventTemplate {
+  return {
+    kind: 5,
+    content: "deleted listing",
+    tags: [["a", `30402:${input.sellerNostrPubkey}:egavel-${input.auctionId}`]],
+    created_at: Math.floor(Date.now() / 1000),
+  }
+}
+
+const BLOSSOM_HOSTS = ["blossom.primal.net", "cdn.nostrcheck.me", "blossom.band"]
+
+/** Best-effort Blossom blob deletion (BUD-02): only for URLs on known Blossom
+ * hosts; signs a kind 24242 auth with t:delete + x:<sha256> and DELETEs. */
+export async function deleteBlossomImages(
+  imageUrls: string[],
+  signer: { signEvent: (t: unknown) => Promise<unknown> },
+): Promise<void> {
+  for (const raw of imageUrls) {
+    try {
+      const url = new URL(raw)
+      if (!BLOSSOM_HOSTS.includes(url.hostname)) continue
+      // Blob path is <sha256>[.<ext>] — take the hex portion.
+      const hash = url.pathname.split("/").pop()?.split(".")[0] ?? ""
+      if (!/^[a-f0-9]{64}$/i.test(hash)) continue
+      const now = Math.floor(Date.now() / 1000)
+      const auth = await signer.signEvent({
+        kind: 24242,
+        content: "delete",
+        tags: [
+          ["t", "delete"],
+          ["x", hash],
+          ["expiration", String(now + 60)],
+        ],
+        created_at: now,
+      })
+      await fetch(`${url.origin}/${hash}`, {
+        method: "DELETE",
+        headers: { Authorization: `Nostr ${btoa(JSON.stringify(auth))}` },
+      })
+    } catch {
+      // best-effort per-image; continue with the rest
+    }
+  }
+}

@@ -188,6 +188,7 @@ export default async function AuctionPage({
                 sellerPubkey={auction.seller_pubkey}
                 state={auction.state}
                 bidsCount={bids.length}
+                images={auction.images ?? null}
               />
             </div>
           </div>

@@ -6,6 +6,11 @@ import { useIdentity } from "../../../lib/identity"
 import { signSecretHex } from "../../../lib/claim"
 import { bytesToHex } from "../../../lib/hex"
 import { apiUrl } from "../../../lib/api"
+import {
+  buildListingDeletionEvent,
+  deleteBlossomImages,
+  publishListing,
+} from "../../../lib/nostr-listing"
 
 /**
  * Seller-only "Delete listing" button for bid-less auctions. Shown next to
@@ -17,11 +22,13 @@ export function DeleteListingButton({
   sellerPubkey,
   state,
   bidsCount,
+  images,
 }: {
   auctionId: string
   sellerPubkey: string
   state: string
   bidsCount: number
+  images?: string[] | null
 }) {
   const { identity } = useIdentity()
   const router = useRouter()
@@ -50,9 +57,39 @@ export function DeleteListingButton({
         { method: "DELETE" },
       )
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        const body = (await res.json().catch(() => ({})) as { error?: string })
         throw new Error(body.error ?? "delete failed")
       }
+      // DB deletion succeeded — now clean up the Nostr mirror + Blossom blobs.
+      // Both are fire-and-forget: failures must not block navigation.
+      void (async () => {
+        try {
+          const nostr = (
+            window as unknown as {
+              nostr?: { signEvent: (e: unknown) => Promise<unknown> }
+            }
+          ).nostr
+          if (!nostr?.signEvent) return
+          try {
+            const del = buildListingDeletionEvent({ sellerNostrPubkey: identity.pubkey, auctionId })
+            // The deletion event is signed by the trading key's linked Nostr
+            // key via NIP-07; identity.pubkey here is the trading pubkey, so
+            // ask the extension to sign directly (author = Nostr key).
+            await publishListing(del, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> })
+          } catch (e) {
+            console.error("[Nostr] deletion publish failed", e)
+          }
+          if (images && images.length > 0) {
+            try {
+              await deleteBlossomImages(images, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> })
+            } catch (e) {
+              console.error("[Nostr] blossom delete failed", e)
+            }
+          }
+        } catch {
+          // cleanup is best-effort
+        }
+      })()
       router.push("/")
       router.refresh()
     } catch (err) {
