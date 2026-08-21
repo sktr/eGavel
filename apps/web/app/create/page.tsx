@@ -8,6 +8,8 @@ import { bytesToHex } from "../../lib/hex";
 import { fetchNostrLinkStatus } from "../../lib/nostr-link";
 import { DEFAULT_MINT } from "../../lib/config";
 import { compressImage } from "../../lib/image";
+import { uploadToBlossom } from "../../lib/blossom";
+import { buildListingEvent, publishListing } from "../../lib/nostr-listing";
 import { ItemPlaceholder } from "../../components/item-placeholder";
 import { IdentityNostrSection } from "../identity-nostr-section";
 
@@ -214,7 +216,78 @@ export default function CreateAuctionPage() {
         throw new Error(errCode ?? "listing creation failed");
       }
 
+      const created = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        auction?: { id?: string };
+      };
+      const auctionId = (created as { id?: string }).id ?? created.auction?.id;
+
       showToast("Auction created!");
+
+      // Fire-and-forget NIP-99 mirror: do not block listing success, do not fail on error.
+      if (auctionId) {
+        const capturedItem = item.trim();
+        const capturedDescription = description.trim();
+        const capturedStartPrice = price;
+        const capturedReserve =
+          reservePrice && !isNaN(parseInt(reservePrice, 10)) && parseInt(reservePrice, 10) > 0
+            ? parseInt(reservePrice, 10)
+            : undefined;
+        const capturedBuyNow =
+          buyNowPrice && !isNaN(parseInt(buyNowPrice, 10)) && parseInt(buyNowPrice, 10) > 0
+            ? parseInt(buyNowPrice, 10)
+            : undefined;
+        const capturedCategory = category || undefined;
+        const capturedImageUrls = [...images];
+        const capturedEndTime = endTime;
+
+        void (async () => {
+          try {
+            const nostr = (
+              window as unknown as {
+                nostr?: {
+                  getPublicKey: () => Promise<string>;
+                  signEvent: (e: unknown) => Promise<unknown>;
+                };
+              }
+            ).nostr;
+            if (!nostr?.signEvent) return;
+            let sellerNostrPubkey: string | null = null;
+            try {
+              const st = await fetchNostrLinkStatus(identity.pubkey, bytesToHex(identity.secretKey));
+              if (st.ok && st.nostrPubkey) sellerNostrPubkey = st.nostrPubkey;
+            } catch {
+              // transient — fall through to window.nostr pubkey
+            }
+            if (!sellerNostrPubkey) {
+              try {
+                sellerNostrPubkey = await nostr.getPublicKey();
+              } catch {
+                return;
+              }
+            }
+            if (!sellerNostrPubkey) return;
+            const event = buildListingEvent({
+              auctionId: auctionId,
+              item: capturedItem,
+              description: capturedDescription,
+              startPrice: capturedStartPrice,
+              reservePrice: capturedReserve,
+              buyNowPrice: capturedBuyNow,
+              endTime: capturedEndTime,
+              category: capturedCategory,
+              imageUrls: capturedImageUrls,
+              sellerNostrPubkey,
+            });
+            publishListing(event, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> }).catch(() => {
+              showToast("Nostr announcement failed (retry)", "cloud_off");
+            });
+          } catch {
+            // mirror is best-effort; ignore
+          }
+        })();
+      }
+
       // Reset form
       setItem("");
       setDescription("");
@@ -239,9 +312,60 @@ export default function CreateAuctionPage() {
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (files) {
-      const results = await Promise.all(Array.from(files).map((f) => compressImage(f)));
-      const ok = results.filter((r): r is string => r !== null);
-      setImages((prev) => [...prev, ...ok].slice(0, 4));
+      const selected = Array.from(files);
+      const maybeNostr = (
+        window as unknown as {
+          nostr?: {
+            getPublicKey: () => Promise<string>;
+            signEvent: (t: unknown) => Promise<unknown>;
+          };
+        }
+      ).nostr;
+      const canBlossom = !!maybeNostr?.signEvent && !!maybeNostr?.getPublicKey;
+      if (canBlossom) {
+        const blossomUrls: string[] = [];
+        const fallbackUrls: string[] = [];
+        for (const f of selected) {
+          if (blossomUrls.length + fallbackUrls.length >= 4 - images.length) break;
+          const dataUrl = await compressImage(f);
+          // Try Blossom upload (with compressed blob when available)
+          try {
+            let fileToUpload: File = f;
+            if (dataUrl) {
+              try {
+                const res = await fetch(dataUrl);
+                const blob = await res.blob();
+                const ext = blob.type === "image/webp" ? "webp" : blob.type.split("/")[1] || "jpg";
+                fileToUpload = new File(
+                  [blob],
+                  f.name.replace(/\.[^.]+$/, `.${ext}`) || `image.${ext}`,
+                  { type: blob.type || f.type || "image/webp" },
+                );
+              } catch {
+                // conversion failed — use original file
+              }
+            }
+            const desc = await uploadToBlossom(fileToUpload, maybeNostr as unknown as never);
+            blossomUrls.push(desc.url);
+          } catch {
+            // Blossom failed — keep compressed base64 so the lot still has an image
+            if (dataUrl) fallbackUrls.push(dataUrl);
+          }
+        }
+        const combined = [...blossomUrls, ...fallbackUrls];
+        if (combined.length > 0) {
+          setImages((prev) => [...prev, ...combined].slice(0, 4));
+        } else {
+          // All Blossom attempts failed before any dataUrl fallback — fall back to plain compressImage batch
+          const results = await Promise.all(selected.map((f) => compressImage(f)));
+          const ok = results.filter((r): r is string => r !== null);
+          setImages((prev) => [...prev, ...ok].slice(0, 4));
+        }
+      } else {
+        const results = await Promise.all(selected.map((f) => compressImage(f)));
+        const ok = results.filter((r): r is string => r !== null);
+        setImages((prev) => [...prev, ...ok].slice(0, 4));
+      }
     }
     if (fileRef.current) fileRef.current.value = "";
   }
