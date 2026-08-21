@@ -19,6 +19,8 @@ import { toPublicBid } from "../lib/public-bid.js";
 import { auctionFeeBps } from "../lib/auction-fee.js";
 import { settleIfDue } from "../lib/settle.js";
 import { isValidMintUrl } from "../lib/mint-url.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { publishAuditLog } from "../lib/audit-publish.js";
 
 export interface AuctionRoutesConfig {
   serverKey?: string;
@@ -271,6 +273,37 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (!result.ok) {
       return c.json({ error: result.error }, 400);
     }
+    // Fire-and-forget audit mirror (kind 1021): hash + standing only, never leaks max/secret.
+    void (async () => {
+      try {
+        const raw = JSON.stringify((body as unknown as { proofs?: unknown }).proofs ?? [])
+        const bundleHash = bytesToHex(sha256(new TextEncoder().encode(raw)))
+        const link = await db.getNostrLink(body.bidder_pubkey)
+        const bidderNostrPubkey = link?.nostr_pubkey ?? ""
+        const pubkey = serverPubkey()
+        if (!pubkey || !serverKey) return
+        const standing = result.current_amount ?? (body as unknown as { amount?: number }).amount ?? 0
+        const template = {
+          kind: 1021,
+          content: String(standing),
+          tags: [
+            ["e", body.auction_id],
+            ["p", bidderNostrPubkey],
+            ["hash", bundleHash],
+            ["t", "egavel-bid"],
+          ] as string[][],
+          created_at: Math.floor(Date.now() / 1000),
+          pubkey,
+        }
+        const serialized = JSON.stringify([0, template.pubkey, template.created_at, template.kind, template.tags, template.content])
+        const id = bytesToHex(sha256(new TextEncoder().encode(serialized)))
+        const sig = bytesToHex(schnorr.sign(hexToBytes(id), hexToBytes(serverKey)))
+        const signed = { ...template, id, sig }
+        await publishAuditLog(signed).catch(() => {})
+      } catch {
+        // never throw to caller
+      }
+    })()
     return c.json({
       ok: true,
       ...(result.buyNow && { buyNow: true }),

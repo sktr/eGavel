@@ -22,7 +22,8 @@
     "@noble/hashes": "^2.3.0",
     "better-sqlite3": "^11.8.0",
     "dotenv": "^17.4.2",
-    "hono": "^4.12.34"
+    "hono": "^4.12.34",
+    "nostr-tools": "^2.24.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260811.1",
