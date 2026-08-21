@@ -28,7 +28,8 @@ const csp = [
   "img-src 'self' data: https: http:",
   "font-src 'self'",
   // API (NEXT_PUBLIC_API_URL) + Cashu mints are cross-origin https.
-  "connect-src 'self' https: http://localhost:3001",
+  // Nostr relays (NIP-99 listing mirror + audit log) need wss:.
+  "connect-src 'self' https: wss: http://localhost:3001",
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
