@@ -119,8 +119,7 @@ export function CreateAuctionGuard({ children, className, style }: Props) {
             </div>
             <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
               Listing requires a linked Nostr identity — it&apos;s how buyers reach you and how your
-              listing is mirrored to Nostr (kind 30402). Link it here, then you&apos;ll go to the create
-              form. Your draft won&apos;t be lost because you haven&apos;t entered it yet.
+              listing is mirrored to Nostr (kind 30402). Link it here to continue to the create form.
             </p>
             <IdentityNostrSection compact onLinked={handleLinked} />
           </div>
