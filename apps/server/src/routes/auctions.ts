@@ -1041,6 +1041,161 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
   });
 
+  // ── Escrow split: voluntary resolution by both parties ──
+  router.post("/auctions/:id/escrow/split", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
+    if (escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
+
+    const body = (await c.req.json().catch(() => null)) as {
+      splits?: Array<{ pubkey: string; amount: number }>;
+      seller_pubkey?: string;
+      seller_sig?: string;
+      winner_pubkey?: string;
+      winner_sig?: string;
+      seller_secret_sigs?: string[];
+      winner_secret_sigs?: string[];
+    } | null;
+    if (
+      !body?.splits ||
+      !Array.isArray(body.splits) ||
+      body.splits.length === 0 ||
+      !body.seller_pubkey ||
+      !body.seller_sig ||
+      !body.winner_pubkey ||
+      !body.winner_sig ||
+      !Array.isArray(body.seller_secret_sigs) ||
+      !Array.isArray(body.winner_secret_sigs)
+    ) {
+      return c.json({ error: "missing fields" }, 400);
+    }
+
+    const sellerXOnly = canonicalPubkey(body.seller_pubkey);
+    const winnerXOnly = canonicalPubkey(body.winner_pubkey);
+    const auctionSellerXOnly = canonicalPubkey(auction.seller_pubkey);
+    const auctionWinnerXOnly = auction.winner_npub ? canonicalPubkey(auction.winner_npub) : "";
+    if (sellerXOnly !== auctionSellerXOnly) return c.json({ error: "NOT_SELLER" }, 403);
+    if (winnerXOnly !== auctionWinnerXOnly) return c.json({ error: "NOT_WINNER" }, 403);
+
+    const hash = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify(body.splits))));
+    const splitMsg = `split:${id}:${hash}`;
+    if (!verifySecretSignature(body.seller_sig, splitMsg, sellerXOnly)) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    }
+    if (!verifySecretSignature(body.winner_sig, splitMsg, winnerXOnly)) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    }
+
+    let bundle: StoredProofBundle;
+    try {
+      bundle = parseProofData(escrow.proofs_data);
+    } catch {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    if (!Array.isArray(bundle.proofs) || bundle.proofs.length === 0) {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    if (
+      body.seller_secret_sigs.length !== bundle.proofs.length ||
+      body.winner_secret_sigs.length !== bundle.proofs.length
+    ) {
+      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
+    }
+    for (let i = 0; i < bundle.proofs.length; i++) {
+      const secret = bundle.proofs[i]!.secret;
+      if (!verifySecretSignature(body.seller_secret_sigs[i]!, secret, sellerXOnly)) {
+        return c.json({ error: "INVALID_SIGNATURE" }, 400);
+      }
+      if (!verifySecretSignature(body.winner_secret_sigs[i]!, secret, winnerXOnly)) {
+        return c.json({ error: "INVALID_SIGNATURE" }, 400);
+      }
+    }
+
+    const escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
+
+    const inputs = bundle.proofs.map((p, i) => ({
+      id: p.keyset_id,
+      amount: p.amount,
+      secret: p.secret,
+      C: p.C,
+      witness: JSON.stringify({ signatures: [body.seller_secret_sigs![i]!, body.winner_secret_sigs![i]!] }),
+    }));
+
+    try {
+      const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
+        loadMint: () => Promise<void>;
+        keyChain: { getKeyset: (id: string) => unknown };
+        getFeesForProofs: (proofs: unknown) => unknown;
+        mint: { swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }> };
+      };
+      await wallet.loadMint();
+      const keysetId = bundle.proofs[0]!.keyset_id;
+      const keyset = wallet.keyChain.getKeyset(keysetId);
+
+      const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
+      let feeNum = 0;
+      if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
+      else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
+      else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
+        try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
+      } else feeNum = Number(String(mintFeeRaw ?? 0));
+      if (!Number.isFinite(feeNum)) feeNum = 0;
+
+      const sumSplits = body.splits.reduce((a, s) => a + Number(s.amount), 0);
+      if (sumSplits + feeNum !== escrowAmount) {
+        return c.json({ error: "UNBALANCED" }, 400);
+      }
+
+      const splitOutputs = (body.splits as Array<{ pubkey: string; amount: number }>).flatMap((s) =>
+        (OutputData as unknown as {
+          createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
+            blindedMessage: unknown;
+            toProof: (sig: unknown, ks: unknown) => unknown;
+          }>;
+        }).createP2PKData({ pubkey: canonicalPubkey(s.pubkey) }, s.amount, keyset),
+      );
+
+      const swapRes = await wallet.mint.swap({
+        inputs: inputs as never,
+        outputs: splitOutputs.map((o) => o.blindedMessage),
+      });
+
+      const splitProofs = splitOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+
+      await db.setEscrowStatus(id, "split_resolved");
+
+      void (async () => {
+        try {
+          const pubkey = canonicalPubkey(getServerPubkeyHex());
+          if (!pubkey || !serverKey) return;
+          const template = {
+            kind: 1021,
+            content: `split:${id}`,
+            tags: [
+              ["e", id],
+              ["t", "egavel-escrow"],
+              ["status", "split_resolved"],
+            ] as string[][],
+            created_at: Math.floor(Date.now() / 1000),
+            pubkey,
+          };
+          const serialized = JSON.stringify([0, template.pubkey, template.created_at, template.kind, template.tags, template.content]);
+          const eid = bytesToHex(sha256(new TextEncoder().encode(serialized)));
+          const sig = bytesToHex(schnorr.sign(hexToBytes(eid), hexToBytes(skHexForServer())));
+          await publishAuditLog({ ...template, id: eid, sig } as never).catch(() => {});
+        } catch {}
+      })();
+
+      return c.json({ ok: true, proofs: splitProofs });
+    } catch (err) {
+      console.error(`split failed (auction ${id}):`, err);
+      return c.json({ error: "split failed" }, 500);
+    }
+  });
+
   // ── Change: the winner collects the excess (locked max − standing price)
   // returned during the seller's claim swap (proxy bidding) ──
   router.get("/auctions/:id/change", async (c) => {
