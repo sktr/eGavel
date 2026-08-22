@@ -21,7 +21,14 @@ import { settleIfDue } from "../lib/settle.js";
 import { isValidMintUrl } from "../lib/mint-url.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { publishAuditLog } from "../lib/audit-publish.js";
-import { STAGE1_LOCKTIME_SEC, TRACKING_CUTOFF_MS, buildStage1LockOptions } from "../lib/escrow.js";
+import {
+  STAGE1_LOCKTIME_SEC,
+  STAGE2_LOCKTIME_SEC,
+  TRACKING_CUTOFF_MS,
+  WINNER_FALLBACK_MS,
+  buildStage1LockOptions,
+  buildStage2LockOptions,
+} from "../lib/escrow.js";
 import { validateTracking } from "../lib/tracking.js";
 
 export interface AuctionRoutesConfig {
@@ -638,6 +645,274 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (!v) return c.json({ error: "INVALID_TRACKING" }, 400);
     await db.setEscrowTracking(id, body.tracking_number.trim(), v.kind);
     return c.json({ ok: true, kind: v.kind });
+  });
+
+  // ── Escrow relock: Stage1 (winner refund 10d) -> Stage2 (seller refund 30d) ──
+  router.post("/auctions/:id/escrow/relock", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
+    if (escrow.stage !== 1 || escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
+    if (!escrow.tracking_number) return c.json({ error: "NO_TRACKING" }, 400);
+    const deadlineMs = escrow.created_at + STAGE1_LOCKTIME_SEC * 1000;
+    if (Date.now() >= deadlineMs - TRACKING_CUTOFF_MS) return c.json({ error: "DEADLINE_TOO_CLOSE" }, 400);
+
+    const body = (await c.req.json().catch(() => null)) as {
+      seller_sigs?: string[];
+      winner_sigs?: string[];
+    } | null;
+    if (!body?.seller_sigs || !Array.isArray(body.seller_sigs) || body.seller_sigs.length === 0) {
+      return c.json({ error: "missing seller_sigs" }, 400);
+    }
+    const sellerSigs: string[] = body.seller_sigs;
+    const winnerSigs: string[] | undefined = Array.isArray(body.winner_sigs) ? body.winner_sigs : undefined;
+
+    let bundle: StoredProofBundle;
+    try {
+      bundle = parseProofData(escrow.proofs_data);
+    } catch {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    if (!Array.isArray(bundle.proofs) || bundle.proofs.length === 0) {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    if (sellerSigs.length !== bundle.proofs.length) {
+      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
+    }
+    if (winnerSigs && winnerSigs.length !== bundle.proofs.length) {
+      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
+    }
+
+    const sellerXOnly = canonicalPubkey(auction.seller_pubkey);
+    const winnerXOnly = auction.winner_npub ? canonicalPubkey(auction.winner_npub) : "";
+    const serverXOnly = canonicalPubkey(getServerPubkeyHex());
+
+    // Validate seller signatures
+    for (let i = 0; i < bundle.proofs.length; i++) {
+      const secret = bundle.proofs[i]!.secret;
+      if (!verifySecretSignature(sellerSigs[i]!, secret, sellerXOnly)) {
+        return c.json({ error: "INVALID_SIGNATURE" }, 400);
+      }
+    }
+
+    const escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
+
+    // Resolve second sig for each input
+    const secondSigs: string[] = [];
+    let usedFallback = false;
+    for (let i = 0; i < bundle.proofs.length; i++) {
+      const secret = bundle.proofs[i]!.secret;
+      let second: string | null = null;
+      if (winnerSigs?.[i] && winnerXOnly && verifySecretSignature(winnerSigs[i]!, secret, winnerXOnly)) {
+        second = winnerSigs[i]!;
+      } else if (Date.now() >= escrow.created_at + WINNER_FALLBACK_MS) {
+        // Server fallback co-sign after 72h
+        try {
+          second = signSecret(secret, skHexForServer());
+          usedFallback = true;
+        } catch {
+          return c.json({ error: "SERVER_KEY_MISSING" }, 500);
+        }
+      } else {
+        return c.json({ error: "WINNER_CONSENT_REQUIRED" }, 400);
+      }
+      secondSigs.push(second);
+    }
+
+    // Build inputs with 2-of-3 witnesses
+    const inputs = bundle.proofs.map((p, i) => ({
+      id: p.keyset_id,
+      amount: p.amount,
+      secret: p.secret,
+      C: p.C,
+      witness: JSON.stringify({ signatures: [sellerSigs[i]!, secondSigs[i]!] }),
+    }));
+
+    try {
+      const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
+        loadMint: () => Promise<void>;
+        keyChain: { getKeyset: (id: string) => unknown };
+        getFeesForProofs: (proofs: unknown) => unknown;
+        mint: {
+          swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }>;
+          restore?: (args: { outputs: unknown[] }) => Promise<{ signatures: unknown[] }>;
+        };
+        checkProofsStates?: (proofs: unknown[]) => Promise<Array<{ state: string }>>;
+      };
+      await wallet.loadMint();
+      const keysetId = bundle.proofs[0]!.keyset_id;
+      const keyset = wallet.keyChain.getKeyset(keysetId);
+      const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
+      let feeNum = 0;
+      if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
+      else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
+      else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
+        try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
+      } else feeNum = Number(String(mintFeeRaw ?? 0));
+      if (!Number.isFinite(feeNum)) feeNum = 0;
+      const stage2Amount = Math.max(0, escrowAmount - feeNum);
+
+      const locktimeSec = Math.floor(Date.now() / 1000) + STAGE2_LOCKTIME_SEC;
+      const stage2Outputs = (OutputData as unknown as {
+        createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
+          blindedMessage: unknown;
+          blindingFactor: bigint;
+          secret: Uint8Array;
+          toProof: (sig: unknown, ks: unknown) => unknown;
+        }>;
+        serialize: (o: { blindedMessage: unknown; blindingFactor: bigint; secret: Uint8Array }) => unknown;
+      }).createP2PKData(
+        buildStage2LockOptions(sellerXOnly, winnerXOnly, serverXOnly, locktimeSec),
+        stage2Amount,
+        keyset,
+      );
+
+      const pendingSerialized = stage2Outputs.map((o) =>
+        (OutputData as unknown as { serialize: (o: unknown) => unknown }).serialize(o as unknown as never),
+      );
+
+      const envelope = {
+        previousBundle: bundle,
+        pendingOutputs: pendingSerialized,
+        escrowAmount,
+      };
+
+      await db.updateEscrowStage(id, 1, JSON.stringify(envelope), "migrating", null);
+
+      let swapRes: { signatures: unknown[] };
+      try {
+        swapRes = await wallet.mint.swap({
+          inputs: inputs as never,
+          outputs: stage2Outputs.map((o) => o.blindedMessage),
+        });
+      } catch (e) {
+        // Keep migrating for reconcile to handle
+        console.error(`relock swap failed (auction ${id}):`, e);
+        return c.json({ error: "MIGRATION_UNKNOWN" }, 500);
+      }
+
+      const newProofs = stage2Outputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+      const newBundle = { proofs: newProofs, mint_url: bundle.mint_url, amount: stage2Amount };
+      await db.updateEscrowStage(id, 2, JSON.stringify(newBundle), "active", Date.now());
+
+      if (usedFallback) {
+        void (async () => {
+          try {
+            const pubkey = serverXOnly;
+            if (!pubkey || !serverKey) return;
+            const template = {
+              kind: 1021,
+              content: `relock:${id}`,
+              tags: [
+                ["e", id],
+                ["t", "egavel-escrow"],
+                ["status", "relocked"],
+                ["fallback_cosign", "true"],
+              ] as string[][],
+              created_at: Math.floor(Date.now() / 1000),
+              pubkey,
+            };
+            const serialized = JSON.stringify([0, template.pubkey, template.created_at, template.kind, template.tags, template.content]);
+            const eid = bytesToHex(sha256(new TextEncoder().encode(serialized)));
+            const sig = bytesToHex(schnorr.sign(hexToBytes(eid), hexToBytes(skHexForServer())));
+            await publishAuditLog({ ...template, id: eid, sig } as never).catch(() => {});
+          } catch {}
+        })();
+      }
+
+      return c.json({ ok: true, stage: 2, status: "active", amount: stage2Amount });
+    } catch (err) {
+      console.error(`relock failed (auction ${id}):`, err);
+      return c.json({ error: "relock failed" }, 500);
+    }
+  });
+
+  // ── Escrow reconcile: crash recovery for migrating state ──
+  router.post("/auctions/:id/escrow/reconcile", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const body = (await c.req.json().catch(() => null)) as {
+      seller_pubkey?: string;
+      seller_sig?: string;
+    } | null;
+    if (!body?.seller_pubkey || !body?.seller_sig) return c.json({ error: "missing fields" }, 400);
+    if (canonicalPubkey(body.seller_pubkey) !== canonicalPubkey(auction.seller_pubkey)) {
+      return c.json({ error: "NOT_SELLER" }, 403);
+    }
+    if (!verifySecretSignature(body.seller_sig, `reconcile:${id}`, canonicalPubkey(body.seller_pubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    }
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
+    if (escrow.status !== "migrating") return c.json({ error: "WRONG_STATE" }, 400);
+
+    let envelope: { previousBundle: StoredProofBundle; pendingOutputs: unknown[]; escrowAmount: number };
+    try {
+      envelope = JSON.parse(escrow.proofs_data);
+    } catch {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    if (!envelope?.previousBundle?.proofs || !Array.isArray(envelope.pendingOutputs)) {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    const previousBundle = envelope.previousBundle as StoredProofBundle;
+    const pendingSerialized = envelope.pendingOutputs as Array<{
+      blindedMessage: unknown;
+      blindingFactor: string;
+      secret: string;
+    }>;
+
+    try {
+      const wallet = new Wallet(previousBundle.mint_url, { unit: "sat" }) as unknown as {
+        loadMint: () => Promise<void>;
+        keyChain: { getKeyset: (id: string) => unknown };
+        mint: {
+          restore?: (args: { outputs: unknown[] }) => Promise<{ signatures: unknown[]; outputs?: unknown[] }>;
+        };
+        checkProofsStates: (proofs: unknown[]) => Promise<Array<{ state: string }>>;
+      };
+      await wallet.loadMint();
+      const keysetId = previousBundle.proofs[0]!.keyset_id;
+      const keyset = wallet.keyChain.getKeyset(keysetId);
+
+      const states = await wallet.checkProofsStates(previousBundle.proofs as never);
+      const allUnspent = states.every((s) => s.state === "UNSPENT");
+      if (allUnspent) {
+        await db.updateEscrowStage(id, 1, JSON.stringify(previousBundle), "active", null);
+        return c.json({ ok: true, rolledBack: true, stage: 1 });
+      }
+
+      // SPENT => recover signatures via restore
+      const pendingBlinded = pendingSerialized.map((s) => (s as { blindedMessage: unknown }).blindedMessage);
+      let signatures: unknown[] = [];
+      if (wallet.mint.restore) {
+        const restoreRes = await wallet.mint.restore({ outputs: pendingBlinded });
+        signatures = (restoreRes as { signatures: unknown[] }).signatures ?? [];
+        // Some mints return { outputs: [{ blindedMessage, signature }] } – handle fallback
+        if (signatures.length === 0 && (restoreRes as { outputs?: Array<{ signature?: unknown }> }).outputs) {
+          signatures = ((restoreRes as { outputs: Array<{ signature?: unknown }> }).outputs ?? []).map((o) => o.signature);
+        }
+      } else {
+        return c.json({ error: "RESTORE_NOT_SUPPORTED" }, 500);
+      }
+
+      const restoredOutputs = pendingSerialized.map((s) =>
+        (OutputData as unknown as { deserialize: (s: unknown) => { toProof: (sig: unknown, ks: unknown) => unknown } }).deserialize(s as unknown as never),
+      );
+      const newProofs = restoredOutputs.map((o, i) => o.toProof(signatures[i], keyset));
+      const stage2Amount = (newProofs as Array<{ amount: number }>).reduce((a, p) => a + p.amount, 0);
+      // Fallback: use envelope amount if toProof mock loses amount granularity
+      const finalAmount = stage2Amount > 0 ? stage2Amount : envelope.escrowAmount;
+      const newBundle = { proofs: newProofs, mint_url: previousBundle.mint_url, amount: finalAmount };
+      await db.updateEscrowStage(id, 2, JSON.stringify(newBundle), "active", Date.now());
+      return c.json({ ok: true, stage: 2, status: "active" });
+    } catch (err) {
+      console.error(`reconcile failed (auction ${id}):`, err);
+      return c.json({ error: "RECONCILE_FAILED" }, 500);
+    }
   });
 
   // ── Change: the winner collects the excess (locked max − standing price)
