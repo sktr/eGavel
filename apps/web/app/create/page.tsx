@@ -175,13 +175,60 @@ export default function CreateAuctionPage() {
     setError(null);
 
     try {
+      // NIP-99 is server-required: generate id and sign 30402 before POST so the
+      // server can verify d=egavel-<id> and signature in one round-trip.
+      const auctionId = `${identity.pubkey}-${Date.now()}`;
+      const nostr = (
+        window as unknown as {
+          nostr?: {
+            getPublicKey: () => Promise<string>;
+            signEvent: (e: unknown) => Promise<unknown>;
+          };
+        }
+      ).nostr;
+      if (!nostr?.signEvent || !nostr?.getPublicKey) {
+        throw new Error("Connect NIP-07 extension to publish to Nostr — listing requires NIP-99 mirror");
+      }
+      let sellerNostrPubkey: string | null = null;
+      try {
+        sellerNostrPubkey = await nostr.getPublicKey();
+      } catch {
+        throw new Error("Cannot get Nostr pubkey");
+      }
+      if (!sellerNostrPubkey) throw new Error("Empty Nostr pubkey");
+
+      const nostrEvent = await (async () => {
+        const event = buildListingEvent({
+          auctionId,
+          item: item.trim(),
+          description: description.trim(),
+          startPrice: price,
+          reservePrice:
+            reservePrice && !isNaN(parseInt(reservePrice, 10)) && parseInt(reservePrice, 10) > 0
+              ? parseInt(reservePrice, 10)
+              : undefined,
+          buyNowPrice:
+            buyNowPrice && !isNaN(parseInt(buyNowPrice, 10)) && parseInt(buyNowPrice, 10) > 0
+              ? parseInt(buyNowPrice, 10)
+              : undefined,
+          endTime,
+          category: category || undefined,
+          imageUrls: [...images],
+          sellerNostrPubkey,
+        });
+        const signed = await nostr.signEvent(event);
+        return signed;
+      })();
+
       const body: Record<string, unknown> = {
+        id: auctionId,
         item: item.trim(),
         description: description.trim(),
         start_price: price,
         end_time: endTime,
         seller_pubkey: identity.pubkey,
         mint_url: DEFAULT_MINT,
+        nostr_event: nostrEvent,
       };
       if (reservePrice) {
         const rp = parseInt(reservePrice, 10);
@@ -214,92 +261,14 @@ export default function CreateAuctionPage() {
           setSubmitting(false);
           return;
         }
-        throw new Error(errCode ?? "listing creation failed");
-      }
-
-      const created = (await res.json().catch(() => ({}))) as {
-        id?: string;
-        auction?: { id?: string };
-      };
-      const auctionId = (created as { id?: string }).id ?? created.auction?.id;
-
-      // NIP-99 mirror is required: listing is not considered created until 30402 is published.
-      // Block here — do not show success or navigate if publish fails.
-      if (auctionId) {
-        const capturedItem = item.trim();
-        const capturedDescription = description.trim();
-        const capturedStartPrice = price;
-        const capturedReserve =
-          reservePrice && !isNaN(parseInt(reservePrice, 10)) && parseInt(reservePrice, 10) > 0
-            ? parseInt(reservePrice, 10)
-            : undefined;
-        const capturedBuyNow =
-          buyNowPrice && !isNaN(parseInt(buyNowPrice, 10)) && parseInt(buyNowPrice, 10) > 0
-            ? parseInt(buyNowPrice, 10)
-            : undefined;
-        const capturedCategory = category || undefined;
-        const capturedImageUrls = [...images];
-        const capturedEndTime = endTime;
-
-        try {
-          const nostr = (
-            window as unknown as {
-              nostr?: {
-                getPublicKey: () => Promise<string>;
-                signEvent: (e: unknown) => Promise<unknown>;
-              };
-            }
-          ).nostr;
-          if (!nostr?.signEvent || !nostr?.getPublicKey) {
-            throw new Error("Connect NIP-07 extension to publish to Nostr");
-          }
-          let sellerNostrPubkey: string | null = null;
-          try {
-            sellerNostrPubkey = await nostr.getPublicKey();
-          } catch {
-            throw new Error("Cannot get Nostr pubkey");
-          }
-          if (!sellerNostrPubkey) throw new Error("Empty Nostr pubkey");
-          const event = buildListingEvent({
-            auctionId,
-            item: capturedItem,
-            description: capturedDescription,
-            startPrice: capturedStartPrice,
-            reservePrice: capturedReserve,
-            buyNowPrice: capturedBuyNow,
-            endTime: capturedEndTime,
-            category: capturedCategory,
-            imageUrls: capturedImageUrls,
-            sellerNostrPubkey,
-          });
-          await publishListing(event, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> });
-          console.log("[Nostr] 30402 published", event);
-        } catch (e) {
-          console.error("[Nostr] publish failed", e);
-          const msg = e instanceof Error ? e.message : String(e);
-          // Roll back the HTTP listing so we don't leave an orphan without a Nostr mirror.
-          try {
-            const sellerSig = signSecretHex(`delete:${auctionId}`, bytesToHex(identity.secretKey));
-            await fetch(
-              apiUrl(
-                `/auctions/${auctionId}?seller_pubkey=${identity.pubkey}&seller_sig=${sellerSig}`,
-              ),
-              { method: "DELETE" },
-            );
-          } catch {
-            // best-effort rollback
-          }
-          const errMsg = `Nostr publish failed: ${msg} — listing was not created. Please connect NIP-07 and retry.`;
-          setError(errMsg);
-          showToast(errMsg, "cloud_off");
+        if (errCode === "MISSING_NOSTR_EVENT" || errCode === "MISSING_ID" || errCode === "NOT_NIP99" || errCode === "PUBKEY_MISMATCH" || errCode === "D_TAG_MISMATCH" || errCode === "BAD_SIGNATURE") {
+          const msg = `Nostr mirror required: ${errCode}. Please connect NIP-07 with the linked key and retry.`;
+          setError(msg);
+          showToast(msg, "cloud_off");
           setSubmitting(false);
           return;
         }
-      } else {
-        // No auctionId returned — cannot publish, treat as failure.
-        setError("Listing created but no ID returned — cannot publish to Nostr.");
-        setSubmitting(false);
-        return;
+        throw new Error(errCode ?? "listing creation failed");
       }
 
       showToast("Auction created!");

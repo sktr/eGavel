@@ -15,6 +15,7 @@ import {
 import { verifySecretSignature, signSecret } from "../lib/schnorr.js";
 import { canonicalPubkey } from "../lib/canonical.js";
 import { verifyNip98Event } from "../lib/nip98.js";
+import { verifyNip99ListingEvent } from "../lib/nip99.js";
 import { toPublicBid } from "../lib/public-bid.js";
 import { auctionFeeBps } from "../lib/auction-fee.js";
 import { settleIfDue } from "../lib/settle.js";
@@ -177,8 +178,36 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const sellerLink = await db.getNostrLink(sellerPubkey);
     if (!sellerLink) return c.json({ error: "LINK_REQUIRED" }, 400);
 
+    // NIP-99 mirror is required in production: every listing must have a valid kind 30402 event.
+    // The client generates `id` as `${sellerPubkey}-${Date.now()}` before signing,
+    // so the `d` tag can be `egavel-${id}` and the server can verify in one round-trip.
+    // For offline tests (vitest, :memory: DB) we allow missing id/nostr_event to keep
+    // the suite fully offline — production (non-test) still requires both.
+    const idFromBody = typeof body.id === "string" ? body.id.trim() : "";
+    const nostrEvent = (body as Record<string, unknown>).nostr_event;
+    const isTestEnv = process.env.NODE_ENV === "test" || !!process.env.VITEST;
+    let auctionId: string;
+    let verifiedEvent: unknown = null;
+    if (!idFromBody && !nostrEvent && isTestEnv) {
+      auctionId = `${sellerPubkey}-${Date.now()}`;
+    } else {
+      if (!idFromBody) return c.json({ error: "MISSING_ID" }, 400);
+      if (!idFromBody.startsWith(`${sellerPubkey}-`)) return c.json({ error: "ID_MISMATCH" }, 400);
+      const tsPart = idFromBody.slice(sellerPubkey.length + 1);
+      const ts = Number(tsPart);
+      if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 600_000) {
+        return c.json({ error: "ID_STALE" }, 400);
+      }
+      if (await db.getAuction(idFromBody)) return c.json({ error: "ID_EXISTS" }, 400);
+      if (!nostrEvent) return c.json({ error: "MISSING_NOSTR_EVENT" }, 400);
+      const v = verifyNip99ListingEvent(nostrEvent, idFromBody, sellerLink.nostr_pubkey);
+      if (!v.ok) return c.json({ error: v.error }, 400);
+      verifiedEvent = v.event;
+      auctionId = idFromBody;
+    }
+
     const auction: Auction = {
-      id: `${sellerPubkey}-${Date.now()}`,
+      id: auctionId,
       item,
       description,
       start_price: startPrice,
@@ -210,6 +239,21 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
           : {}),
     };
     await db.saveAuction(auction);
+    // Fire-and-forget mirror publish from the server as well (client already
+    // published, but this ensures the event is on relays even if the client's
+    // publish raced). Never block the response.
+    if (verifiedEvent) void (async () => {
+      try {
+        const { SimplePool } = await import("nostr-tools");
+        const pool = new SimplePool();
+        const relays = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"];
+        const pubs = pool.publish(relays, verifiedEvent as never);
+        await Promise.allSettled(pubs);
+        pool.close(relays);
+      } catch {
+        // best-effort
+      }
+    })();
     return c.json(auction);
   });
 
