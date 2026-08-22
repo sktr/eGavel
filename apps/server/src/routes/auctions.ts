@@ -915,6 +915,132 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
   });
 
+  // ── Confirm receipt: winner co-signs Stage2 escrow proofs to release to seller ──
+  router.post("/auctions/:id/confirm-receipt", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
+    if (escrow.stage !== 2 || escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
+
+    const body = (await c.req.json().catch(() => null)) as {
+      winner_pubkey?: string;
+      winner_sig?: string;
+      secret_sigs?: string[];
+    } | null;
+    if (!body?.winner_pubkey || !body?.winner_sig || !Array.isArray(body.secret_sigs)) {
+      return c.json({ error: "missing fields" }, 400);
+    }
+
+    const winnerXOnly = canonicalPubkey(body.winner_pubkey);
+    const auctionWinnerXOnly = auction.winner_npub ? canonicalPubkey(auction.winner_npub) : "";
+    if (winnerXOnly !== auctionWinnerXOnly) {
+      return c.json({ error: "FORBIDDEN" }, 403);
+    }
+    if (!verifySecretSignature(body.winner_sig, `confirm:${id}`, winnerXOnly)) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    }
+
+    let bundle: StoredProofBundle;
+    try {
+      bundle = parseProofData(escrow.proofs_data);
+    } catch {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    if (!Array.isArray(bundle.proofs) || bundle.proofs.length === 0) {
+      return c.json({ error: "INVALID_PROOF" }, 400);
+    }
+    if (body.secret_sigs.length !== bundle.proofs.length) {
+      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
+    }
+    for (let i = 0; i < bundle.proofs.length; i++) {
+      const secret = bundle.proofs[i]!.secret;
+      if (!verifySecretSignature(body.secret_sigs[i]!, secret, winnerXOnly)) {
+        return c.json({ error: "INVALID_SIGNATURE" }, 400);
+      }
+    }
+
+    const serverSkHex = skHexForServer();
+    const inputs = bundle.proofs.map((p, i) => ({
+      id: p.keyset_id,
+      amount: p.amount,
+      secret: p.secret,
+      C: p.C,
+      witness: JSON.stringify({ signatures: [body.secret_sigs![i]!, signSecret(p.secret, serverSkHex)] }),
+    }));
+
+    const escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
+
+    try {
+      const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
+        loadMint: () => Promise<void>;
+        keyChain: { getKeyset: (id: string) => unknown };
+        getFeesForProofs: (proofs: unknown) => unknown;
+        mint: { swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }> };
+      };
+      await wallet.loadMint();
+      const keysetId = bundle.proofs[0]!.keyset_id;
+      const keyset = wallet.keyChain.getKeyset(keysetId);
+
+      const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
+      let feeNum = 0;
+      if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
+      else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
+      else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
+        try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
+      } else feeNum = Number(String(mintFeeRaw ?? 0));
+      if (!Number.isFinite(feeNum)) feeNum = 0;
+      const releaseAmount = Math.max(0, escrowAmount - feeNum);
+
+      const sellerXOnly = canonicalPubkey(auction.seller_pubkey);
+      const releaseOutputs = (OutputData as unknown as {
+        createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
+          blindedMessage: unknown;
+          toProof: (sig: unknown, ks: unknown) => unknown;
+        }>;
+      }).createP2PKData({ pubkey: sellerXOnly }, releaseAmount, keyset);
+
+      const swapRes = await wallet.mint.swap({
+        inputs: inputs as never,
+        outputs: releaseOutputs.map((o) => o.blindedMessage),
+      });
+
+      const releaseProofs = releaseOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+
+      await db.savePendingReceive(sellerXOnly, bundle.mint_url, JSON.stringify(releaseProofs), releaseAmount);
+      await db.setEscrowStatus(id, "confirmed");
+
+      // Audit log
+      void (async () => {
+        try {
+          const pubkey = canonicalPubkey(getServerPubkeyHex());
+          if (!pubkey || !serverKey) return;
+          const template = {
+            kind: 1021,
+            content: `confirm:${id}`,
+            tags: [
+              ["e", id],
+              ["t", "egavel-escrow"],
+              ["status", "confirmed"],
+            ] as string[][],
+            created_at: Math.floor(Date.now() / 1000),
+            pubkey,
+          };
+          const serialized = JSON.stringify([0, template.pubkey, template.created_at, template.kind, template.tags, template.content]);
+          const eid = bytesToHex(sha256(new TextEncoder().encode(serialized)));
+          const sig = bytesToHex(schnorr.sign(hexToBytes(eid), hexToBytes(skHexForServer())));
+          await publishAuditLog({ ...template, id: eid, sig } as never).catch(() => {});
+        } catch {}
+      })();
+
+      return c.json({ ok: true, status: "confirmed", amount: releaseAmount });
+    } catch (err) {
+      console.error(`confirm-receipt failed (auction ${id}):`, err);
+      return c.json({ error: "confirm failed" }, 500);
+    }
+  });
+
   // ── Change: the winner collects the excess (locked max − standing price)
   // returned during the seller's claim swap (proxy bidding) ──
   router.get("/auctions/:id/change", async (c) => {
