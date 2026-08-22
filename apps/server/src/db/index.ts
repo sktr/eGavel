@@ -1,6 +1,17 @@
 import Database from "better-sqlite3"
 import type { Auction, Bid } from "@egavel/shared"
 
+export interface EscrowRow {
+  auction_id: string
+  stage: number
+  status: string
+  proofs_data: string
+  tracking_number: string | null
+  tracking_kind: string | null
+  migrated_at: number | null
+  created_at: number
+}
+
 export interface Db {
   getActiveAuctions: () => Promise<Auction[]>
   getAllAuctions: () => Promise<Auction[]>
@@ -40,6 +51,11 @@ export interface Db {
   savePendingReceive: (receiverPubkey: string, mintUrl: string, proofs: string, amount: number) => Promise<void>
   /** All pending receipts for a receiver; clears them (single collection). */
   getPendingReceives: (receiverPubkey: string) => Promise<Array<{ mint_url: string; proofs: string; amount: number }>>
+  saveEscrow: (row: EscrowRow) => Promise<void>
+  getEscrow: (auctionId: string) => Promise<EscrowRow | null>
+  updateEscrowStage: (auctionId: string, stage: number, proofsData: string, status: string, migratedAt: number | null) => Promise<void>
+  setEscrowStatus: (auctionId: string, status: string) => Promise<void>
+  setEscrowTracking: (auctionId: string, trackingNumber: string, trackingKind: string) => Promise<void>
   exec: (sql: string) => Promise<void>
 }
 
@@ -135,6 +151,17 @@ export function initDb(): Db {
     CREATE INDEX IF NOT EXISTS idx_bids_bidder_npub ON bids(bidder_npub);
     CREATE INDEX IF NOT EXISTS idx_auctions_seller_pubkey ON auctions(seller_pubkey);
     CREATE INDEX IF NOT EXISTS idx_pending_receives_receiver ON pending_receives(receiver_pubkey);
+
+    CREATE TABLE IF NOT EXISTS fulfillment_escrows (
+      auction_id      TEXT PRIMARY KEY REFERENCES auctions(id),
+      stage           INTEGER NOT NULL DEFAULT 1,
+      status          TEXT NOT NULL DEFAULT 'active',
+      proofs_data     TEXT NOT NULL,
+      tracking_number TEXT,
+      tracking_kind   TEXT,
+      migrated_at     INTEGER,
+      created_at      INTEGER NOT NULL
+    );
   `)
 
   // Add proof_data column if it doesn't exist (migration for existing DBs)
@@ -416,6 +443,26 @@ export function initDb(): Db {
       // Clear them: a receipt is collected once.
       db.prepare("DELETE FROM pending_receives WHERE receiver_pubkey = ?").run(receiverPubkey)
       return rows
+    },
+
+    async saveEscrow(row: EscrowRow) {
+      db.prepare(`INSERT OR REPLACE INTO fulfillment_escrows
+        (auction_id, stage, status, proofs_data, tracking_number, tracking_kind, migrated_at, created_at)
+        VALUES (@auction_id, @stage, @status, @proofs_data, @tracking_number, @tracking_kind, @migrated_at, @created_at)`).run(row)
+    },
+    async getEscrow(auctionId: string) {
+      return (db.prepare("SELECT * FROM fulfillment_escrows WHERE auction_id = ?").get(auctionId) ?? null) as EscrowRow | null
+    },
+    async updateEscrowStage(auctionId, stage, proofsData, status, migratedAt) {
+      db.prepare("UPDATE fulfillment_escrows SET stage=?, proofs_data=?, status=?, migrated_at=? WHERE auction_id=?")
+        .run(stage, proofsData, status, migratedAt, auctionId)
+    },
+    async setEscrowStatus(auctionId, status) {
+      db.prepare("UPDATE fulfillment_escrows SET status=? WHERE auction_id=?").run(status, auctionId)
+    },
+    async setEscrowTracking(auctionId, trackingNumber, trackingKind) {
+      db.prepare("UPDATE fulfillment_escrows SET tracking_number=?, tracking_kind=? WHERE auction_id=?")
+        .run(trackingNumber, trackingKind, auctionId)
     },
 
     async exec(sql: string) {

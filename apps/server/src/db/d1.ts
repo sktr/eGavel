@@ -1,6 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { Auction, Bid } from "@egavel/shared"
-import type { Db } from "./index.js"
+import type { Db, EscrowRow } from "./index.js"
 
 /**
  * Db implementation over the Cloudflare D1 binding.
@@ -301,6 +301,47 @@ export function createD1Db(d1: D1Database): Db {
         .all<{ mint_url: string; proofs: string; amount: number }>()
       await d1.prepare("DELETE FROM pending_receives WHERE receiver_pubkey = ?").bind(receiverPubkey).run()
       return results
+    },
+
+    async saveEscrow(row: EscrowRow) {
+      await d1
+        .prepare(
+          `INSERT OR REPLACE INTO fulfillment_escrows
+            (auction_id, stage, status, proofs_data, tracking_number, tracking_kind, migrated_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          row.auction_id,
+          row.stage,
+          row.status,
+          row.proofs_data,
+          row.tracking_number,
+          row.tracking_kind,
+          row.migrated_at,
+          row.created_at,
+        )
+        .run()
+    },
+    async getEscrow(auctionId: string) {
+      return d1
+        .prepare("SELECT * FROM fulfillment_escrows WHERE auction_id = ?")
+        .bind(auctionId)
+        .first<EscrowRow>()
+    },
+    async updateEscrowStage(auctionId, stage, proofsData, status, migratedAt) {
+      await d1
+        .prepare("UPDATE fulfillment_escrows SET stage=?, proofs_data=?, status=?, migrated_at=? WHERE auction_id=?")
+        .bind(stage, proofsData, status, migratedAt, auctionId)
+        .run()
+    },
+    async setEscrowStatus(auctionId, status) {
+      await d1.prepare("UPDATE fulfillment_escrows SET status=? WHERE auction_id=?").bind(status, auctionId).run()
+    },
+    async setEscrowTracking(auctionId, trackingNumber, trackingKind) {
+      await d1
+        .prepare("UPDATE fulfillment_escrows SET tracking_number=?, tracking_kind=? WHERE auction_id=?")
+        .bind(trackingNumber, trackingKind, auctionId)
+        .run()
     },
 
     async exec(sql: string) {
