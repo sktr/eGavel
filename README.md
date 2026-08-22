@@ -90,7 +90,12 @@ pnpm --filter @egavel/web exec vitest run
 
 ## References
 
-- [NUT-11 (P2PK)](https://github.com/cashubtc/nuts/blob/main/11.md) — the locking mechanism used here
+- [NUT-11 — P2PK](https://github.com/cashubtc/nuts/blob/main/11.md) — the 2-of-3 lock for bids and two-stage escrow
+- [NUT-13 — Deterministic Secrets](https://github.com/cashubtc/nuts/blob/main/13.md) — 12-word phrase → ecash outputs (balance recovery)
+- [NIP-07 — `window.nostr` Capabilities](https://github.com/nostr-protocol/nips/blob/master/07.md) — browser extension signing
+- [NIP-98 — HTTP Auth](https://github.com/nostr-protocol/nips/blob/master/98.md) — trading ↔ Nostr link (`link:<pubkey>`)
+- [NIP-99 — Classified Listings](https://github.com/nostr-protocol/nips/blob/master/99.md) — kind `30402` marketplace mirror (`d=egavel-<id>`)
+- [Blossom — Content-Addressed Storage](https://github.com/hzrd149/blossom) — `kind 24242` auth + `PUT /upload` for images (NIP-B7)
 
 ## License
 
