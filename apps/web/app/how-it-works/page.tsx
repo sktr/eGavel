@@ -1,3 +1,5 @@
+import { CreateAuctionGuard } from "../../components/create-auction-guard";
+
 export default function HowItWorksPage() {
   return (
     <div style={{ maxWidth: 800, margin: "0 auto", padding: "2rem 1.5rem 4rem" }}>
@@ -98,7 +100,7 @@ export default function HowItWorksPage() {
 
       {/* Footer links */}
       <p style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, marginTop: 48 }}>
-        <a href="/create" style={{ color: "var(--accent)", textDecoration: "none" }}>Create your first auction</a>
+        <CreateAuctionGuard style={{ color: "var(--accent)", textDecoration: "none" }}>Create your first auction</CreateAuctionGuard>
         {" · "}
         <a href="/" style={{ color: "var(--accent)", textDecoration: "none" }}>Browse auctions</a>
       </p>

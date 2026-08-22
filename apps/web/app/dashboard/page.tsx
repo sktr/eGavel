@@ -29,6 +29,7 @@ import { IdentityNostrSection } from "../identity-nostr-section";
 import { WalletPanel } from "../../components/wallet-panel";
 import { hexToNpub } from "../../lib/npub";
 import { shortHex } from "../../lib/ident";
+import { CreateAuctionGuard } from "../../components/create-auction-guard";
 function shortId(s: string) {
   if (s.length <= 16) return s;
   return s.slice(0, 8) + "..." + s.slice(-6);
@@ -1172,10 +1173,10 @@ export default function DashboardPage() {
       >
         {activeListings.length === 0 && (
           <p style={{ color: "var(--muted)", fontSize: 14, padding: "16px 0" }}>
-            No active listings.
-            <a href="/create" style={{ color: "var(--accent)", marginLeft: 4 }}>
+            No active listings.{" "}
+            <CreateAuctionGuard style={{ color: "var(--accent)", marginLeft: 4 }}>
               Create Listing
-            </a>
+            </CreateAuctionGuard>
           </p>
         )}
 

@@ -1,6 +1,7 @@
 import type { Auction } from "@egavel/shared"
 import { AuctionList } from "./auction-list"
 import { ItemPlaceholder } from "../components/item-placeholder"
+import { CreateAuctionGuard } from "../components/create-auction-guard"
 import { apiUrl } from "../lib/api"
 
 const SSR_BASE = process.env.SSR_API_URL ?? process.env.NEXT_PUBLIC_API_URL
@@ -60,8 +61,7 @@ export default async function Home() {
           >
             Bid with sats, settle instantly. Your keys, your coins — no one else can touch them.
           </p>
-          <a
-            href="/create"
+          <CreateAuctionGuard
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -82,7 +82,7 @@ export default async function Home() {
             <span className="material-icons" style={{ fontSize: 16, verticalAlign: "text-bottom" }}>
               arrow_forward
             </span>
-          </a>
+          </CreateAuctionGuard>
         </div>
         {featured && (
           <a

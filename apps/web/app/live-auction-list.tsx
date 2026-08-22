@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import type { Auction } from "@egavel/shared"
 import { AuctionCard } from "./auction-card"
+import { CreateAuctionGuard } from "../components/create-auction-guard"
 import { apiUrl } from "../lib/api"
 
 /**
@@ -76,7 +77,7 @@ export function LiveAuctionList({ initial }: { initial: Auction[] }) {
   if (all.length === 0) {
     return (
       <div style={{ color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>
-        No auctions yet. <a href="/create">Create the first one</a>.
+        No auctions yet. <CreateAuctionGuard>Create the first one</CreateAuctionGuard>.
       </div>
     )
   }

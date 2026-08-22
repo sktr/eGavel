@@ -1,5 +1,6 @@
 import type { Auction } from "@egavel/shared"
 import { LiveAuctionList } from "./live-auction-list"
+import { CreateAuctionGuard } from "../components/create-auction-guard"
 import { apiUrl } from "../lib/api"
 
 // Server components resolve the base at request time: SSR_API_URL for
@@ -18,7 +19,7 @@ export async function AuctionList() {
   if (initial.length === 0) {
     return (
       <div style={{ color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>
-        Could not load auctions. <a href="/create">Create the first one</a>.
+        Could not load auctions. <CreateAuctionGuard>Create the first one</CreateAuctionGuard>.
       </div>
     )
   }
