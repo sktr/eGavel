@@ -64,6 +64,7 @@ export function createApp(db: Db, config: AppConfig = {}) {
   app.use("/api/auctions/*/co-sign", rateLimit({ windowMs: 60_000, max: 20 }));
   app.use("/api/auctions/*/claim-data", rateLimit({ windowMs: 60_000, max: 30 }));
   app.use("/api/bids/*/refund-data", rateLimit({ windowMs: 60_000, max: 30 }));
+  app.use("/api/auctions/:id/escrow", rateLimit({ windowMs: 60_000, max: 30 }));
 
   const serverKey = config.serverKey ?? process.env.SERVER_PRIVATE_KEY;
   const serverPubkey = getServerPubkey(serverKey);

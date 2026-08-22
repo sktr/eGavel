@@ -573,6 +573,39 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
   });
 
+  // ── Escrow read: seller or winner fetches stage/status + P2PK proofs ──
+  router.get("/auctions/:id/escrow", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "not found" }, 404);
+    const partyPubkey = c.req.query("party_pubkey") ?? "";
+    const partySig = c.req.query("party_sig") ?? "";
+    if (!verifySecretSignature(partySig, `escrow-view:${id}`, canonicalPubkey(partyPubkey))) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    }
+    const isSeller = canonicalPubkey(partyPubkey) === canonicalPubkey(auction.seller_pubkey);
+    const isWinner =
+      !!auction.winner_npub && canonicalPubkey(partyPubkey) === canonicalPubkey(auction.winner_npub);
+    if (!isSeller && !isWinner) {
+      return c.json({ error: "FORBIDDEN" }, 403);
+    }
+    const stage1_expired =
+      escrow.stage === 1 ? Date.now() >= escrow.created_at + STAGE1_LOCKTIME_SEC * 1000 : false;
+    return c.json({
+      auction_id: escrow.auction_id,
+      stage: escrow.stage,
+      status: escrow.status,
+      tracking_number: escrow.tracking_number,
+      tracking_kind: escrow.tracking_kind,
+      migrated_at: escrow.migrated_at,
+      created_at: escrow.created_at,
+      proofs_data: escrow.proofs_data,
+      stage1_expired,
+    });
+  });
+
   // ── Change: the winner collects the excess (locked max − standing price)
   // returned during the seller's claim swap (proxy bidding) ──
   router.get("/auctions/:id/change", async (c) => {
