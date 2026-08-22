@@ -21,7 +21,8 @@ import { settleIfDue } from "../lib/settle.js";
 import { isValidMintUrl } from "../lib/mint-url.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { publishAuditLog } from "../lib/audit-publish.js";
-import { STAGE1_LOCKTIME_SEC, buildStage1LockOptions } from "../lib/escrow.js";
+import { STAGE1_LOCKTIME_SEC, TRACKING_CUTOFF_MS, buildStage1LockOptions } from "../lib/escrow.js";
+import { validateTracking } from "../lib/tracking.js";
 
 export interface AuctionRoutesConfig {
   serverKey?: string;
@@ -604,6 +605,39 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       proofs_data: escrow.proofs_data,
       stage1_expired,
     });
+  });
+
+  // ── Tracking: seller reports shipment tracking number ──
+  router.post("/auctions/:id/tracking", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const body = (await c.req.json().catch(() => null)) as {
+      tracking_number?: string;
+      seller_pubkey?: string;
+      seller_sig?: string;
+    } | null;
+    if (!body?.tracking_number || !body?.seller_pubkey || !body?.seller_sig)
+      return c.json({ error: "missing fields" }, 400);
+    if (canonicalPubkey(body.seller_pubkey) !== canonicalPubkey(auction.seller_pubkey))
+      return c.json({ error: "NOT_SELLER" }, 403);
+    if (
+      !verifySecretSignature(
+        body.seller_sig,
+        `tracking:${id}:${body.tracking_number}`,
+        canonicalPubkey(body.seller_pubkey),
+      )
+    )
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
+    if (escrow.stage !== 1 || escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
+    const deadlineMs = escrow.created_at + STAGE1_LOCKTIME_SEC * 1000;
+    if (Date.now() >= deadlineMs - TRACKING_CUTOFF_MS) return c.json({ error: "DEADLINE_TOO_CLOSE" }, 400);
+    const v = validateTracking(body.tracking_number);
+    if (!v) return c.json({ error: "INVALID_TRACKING" }, 400);
+    await db.setEscrowTracking(id, body.tracking_number.trim(), v.kind);
+    return c.json({ ok: true, kind: v.kind });
   });
 
   // ── Change: the winner collects the excess (locked max − standing price)
