@@ -4,16 +4,19 @@
 
 A **non-custodial** auction platform built on Cashu e-cash.
 
-Bids are locked with a **2-of-3 P2PK** lock — the seller, the auction server, and the bidder each hold one key, and no one can move the funds without two signatures. The bid amount is a **maximum**; the engine bids automatically (second-price / proxy bidding) at the second-highest max plus the minimum increment. The winner pays only the standing price, and **outbid bids are refunded instantly**.
+Bids are locked with a **2-of-3 P2PK** lock — the seller, the auction server, and the bidder each hold one key, and no one can move the funds without two signatures. The bid amount is a **maximum**; the engine bids automatically (second-price / proxy bidding) at the second-highest max plus the minimum increment. The winner pays only the standing price, and **outbid bids are refunded instantly**. After settlement, funds are held in a **two-stage fulfillment escrow** — the seller ships first, gets paid on winner confirmation.
 
 ## Features
 
 - **Proxy bidding (second price)** — the entered amount is a maximum. The engine bids just enough to stay in the lead, and the winner pays only the standing price.
 - **2-of-3 non-custodial bids** — no single party (including the server) can move the funds alone.
 - **Instant outbid refunds** — the moment a higher bid arrives, the losing bid's funds return to the wallet automatically.
-- **Guaranteed payment** — winning bids are fully locked; the seller is guaranteed collection via the server's claim swap.
+- **Two-stage fulfillment escrow** — claim creates a Stage 1 lock (`seller+winner+server` 2-of-3, refund winner @ +10 days). Reporting a tracking number migrates to Stage 2 (`refund seller @ +30 days`); winner confirms receipt to release. Winner can sweep after 10 days if seller never ships; seller sweeps after 30 days if winner goes silent. Opt-out via `ESCROW_MODE=legacy`; degenerate `seller_net=0` skips escrow.
 - **Anti-sniping / Reserve / Buy Now / Watchlist** — standard auction features.
 - **Nostr-linked identity** — a Nostr key (NIP-07 extension or nsec) is linked to the trading key via a signed NIP-98 event; linking is required to list and to bid, and the link is permanent. The seller is public (their npub links to nostr.at); the winner stays anonymous publicly and is revealed only to the seller (and themselves) after settlement.
+- **NIP-99 marketplace mirror** — listings are published as kind `30402` addressable events (`d=egavel-<id>`) to Nostr relays for discovery. Tags carry `title`/`summary`/`price`/`image`/`r`/`expiration` plus custom `reserve`/`buy_now`/`auction:start|end`. Deletion publishes kind `5`. View on Nostr via `naddr` (`nostr.at`).
+- **Blossom image hosting (NIP-B7)** — images are uploaded via Blossom (`kind 24242` auth, `PUT /upload`) to `blossom.primal.net` (fallback `cdn.nostrcheck.me`). The DB stores only URLs; base64 inline is capped at 4 images / 2 MB.
+- **Public audit log** — bids publish hash + standing price as kind `1021`; escrow transitions (shipped/confirmed/split/fallback) extend `1021`/`1022` with `[status]` tags (tracking *kind* only, never the number). Fire-and-forget, never on the critical path.
 - **NUT-13 deterministic wallet** — every ecash output derives from your 12-word recovery phrase, so restoring the phrase on another device automatically recovers your balance (no mint URL needed).
 - **Multi-mint wallet** — receive Cashu tokens from any mint, view combined balances, and withdraw per mint (token or Lightning).
 - **Zero platform fee** — the operator takes no cut (`AUCTION_FEE_BPS` defaults to 0).
