@@ -89,12 +89,15 @@ which degrades to the unprotected baseline and is audit-visible.
   a Schnorr-signed read (`winner-view:<id>`); it is never included in public
   listings or anonymous reads. Contact happens in the user's own Nostr client.
   The platform collects no shipping address.
-- **NIP-99 / Blossom privacy**: listings mirror to relays as kind `30402`
+- **NIP-99 / Blossom privacy & enforcement**: listings mirror to relays as kind `30402`
   (`d=egavel-<id>`, `price=buy_now ?? start_price`, `r`/`expiration`/custom
-  `reserve`/`buy_now`/`auction` tags) — settlement fields (`max`, `standing`)
-  stay in DB. Images are content-addressed Blossom URLs (60 bytes each); the
-  DB holds pointers only. Audit log kind `1021` (bid hash + standing) and
-  `1022` (escrow `shipped/confirmed/split/fallback`) never carry `secret`,
+  `reserve`/`buy_now`/`auction` tags) — `POST /auctions` requires `id` +
+  signed `30402` (`d=egavel-<id>`, `pubkey == linked Nostr pubkey`, sig valid;
+  verified via `lib/nip99.ts:verifyNip99ListingEvent`); no listing can be created
+  without a valid mirror, even via direct API. Settlement fields (`max`,
+  `standing`) stay in DB. Images are content-addressed Blossom URLs (60 bytes
+  each); the DB holds pointers only. Audit log kind `1021` (bid hash + standing)
+  and `1022` (escrow `shipped/confirmed/split/fallback`) never carry `secret`,
   `proof`, `max`, or the tracking *number* (only *kind*).
 - **Rate limits** (`lib/rate-limit.ts`): bids 30/min, auction creation
   10/min, co-sign 20/min, claim-data/refund-data/escrow-read 30/min,

@@ -149,17 +149,18 @@ Listings are mirrored to Nostr for **discovery**, without touching settlement
   `BlossomClient` with `kind 24242` auth (`PUT /upload` to
   `blossom.primal.net`, fallback `cdn.nostrcheck.me`). The DB stores only
   URLs (60 bytes each); base64 inline is capped at 4 images / 2 MB.
-- **NIP-99 (kind 30402):** after `POST /auctions` succeeds, the client
-  publishes an addressable event `d=egavel-<id>` with tags
+- **NIP-99 (kind 30402):** the client generates `id = sellerPubkey-Date.now()`
+  before `POST`, signs an addressable event `d=egavel-<id>` with tags
   `title`/`summary`/`price` (`buy_now ?? start_price` SAT)/`t`/`image`/`r`
-  (egavel URL)/`published_at`/`expiration` (= `end_time`)/`reserve`/`buy_now`/`auction:start|end`.
-  Edits re-publish the same `d`; deletion publishes kind `5`. `price` lets
-  Shopstr-style clients render a fixed price, while custom tags let
-  eGavel-aware clients render auction semantics. Publishing is client-signed
-  (NIP-07 or pasted nsec) and **blocking** — if `30402` publish fails, the
-  listing is rolled back (`DELETE /auctions/:id`) and the user must retry
-  (no “Republish” button on the product page). The detail page shows `View
-  on Nostr` (`naddr` → `nostr.at`) + `Copy naddr` only.
+  (egavel URL)/`published_at`/`expiration` (= `end_time`)/`reserve`/`buy_now`/`auction:start|end`,
+  and sends `POST /auctions { id, ..., nostr_event }` in one round-trip. The
+  server verifies `kind 30402`, `pubkey == linked Nostr pubkey`, `d`,
+  signature and `created_at`, then saves and fire-and-forget publishes the
+  same event to relays. If `30402` is missing/invalid the `POST` is rejected
+  (`MISSING_NOSTR_EVENT` etc.) — no listing can exist without a valid NIP-99
+  mirror, even via direct API. Edits re-publish the same `d`; deletion
+  publishes kind `5`. The detail page shows `View on Nostr` (`naddr` →
+  `nostr.at`) + `Copy naddr` only (no Republish).
 - **Audit log (B):** the server fire-and-forgets kind `1021` (bid hash +
   standing price) and escrow transitions as `1021`/`1022` with `[status]`
   tags (`shipped` carries *kind* only, never the number). Third parties can

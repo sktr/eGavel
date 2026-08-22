@@ -8,7 +8,7 @@ apps/server     Hono API (listings, bids, settle, claim/escrow, NIP-99 audit) + 
 packages/shared shared types
 ```
 
-- **Listings**: `POST /api/auctions` (plain HTTP — no relay dependency) → client **blocking** mirrors to Nostr as kind `30402` (`d=egavel-<id>`) + Blossom image URLs (publish must succeed or the listing is rolled back; no Republish button on the product page)
+- **Listings**: `POST /api/auctions` (`{ id, ..., nostr_event }` — `id = sellerPubkey-Date.now()`, `nostr_event` is a signed kind `30402` with `d=egavel-<id>`) → server verifies `30402` (kind/pubkey/d/sig) against the seller's linked Nostr key and saves; then fire-and-forget publishes the same event to relays. No listing can be created without a valid NIP-99 mirror, even via direct API. Blossom image URLs are `string[]` (≤4)
 - **Images**: `BlossomClient` (`PUT /upload` with `kind 24242` auth) to `blossom.primal.net` (fallback `cdn.nostrcheck.me`); `auctions.images` is `string[]` of URLs (≤4, total ≤2 MB)
 - **Bid flow**: the client creates a 2-of-3 P2PK proof bundle (locking the full max) → `POST /api/bids` → the server validates (NUT-06/NUT-07) → computes the standing price from all bidders' maxes (second-highest max + minimum increment, `min-increment` table)
 - **Refunds**: outbid detection (polling) → bidder signature + server co-sign → mint swap
@@ -87,7 +87,7 @@ PENDING → ACTIVE → (EXTENDED)* → CLOSED/SETTLED
 ## NIP-99 + Blossom
 
 - **Blossom**: `apps/web/lib/blossom.ts` wraps `PUT /upload` with `Authorization: Nostr <base64(24242)>`; primary `https://blossom.primal.net` (env `NEXT_PUBLIC_BLOSSOM_URL`), fallback `https://cdn.nostrcheck.me`.
-- **NIP-99**: `apps/web/lib/nostr-listing.ts` builds kind `30402` (`d=egavel-<id>`, `title`/`summary`/`price`/`t`/`image`/`r`/`published_at`/`expiration`/`reserve`/`buy_now`/`auction:start|end` + `location` shipping text). Published via `SimplePool.publish` to `["wss://relay.damus.io","wss://nos.lol","wss://relay.nostr.band"]` (+ `wss://sendit.nosflare.com` withBlastr). `naddr` (`a:30402:pubkey:d`) is shareable via `nostr.at`. Mirror is client-signed and **blocking** — `create` awaits `publishListing` and rolls back (`DELETE`) on failure; the product page shows only `View on Nostr` + `Copy naddr` (no Republish).
+- **NIP-99**: `apps/web/lib/nostr-listing.ts` builds kind `30402` (`d=egavel-<id>`, `title`/`summary`/`price`/`t`/`image`/`r`/`published_at`/`expiration`/`reserve`/`buy_now`/`auction:start|end` + `location` shipping text), signed via NIP-07 (or pasted nsec) before `POST`. Server verifies with `lib/nip99.ts:verifyNip99ListingEvent` (kind/pubkey/d/sig/`created_at` ±10 min) and fire-and-forget publishes the same event via `SimplePool.publish` to `["wss://relay.damus.io","wss://nos.lol","wss://relay.nostr.band"]` (+ `wss://sendit.nosflare.com` withBlastr). `naddr` (`a:30402:pubkey:d`) is shareable via `nostr.at`. Mirror is **server-enforced**: `POST` without a valid `30402` is rejected.
 - **Audit**: server publishes kind `1021` (bid `hash` + `standing`) and `1022` (escrow `[status]` etc.) fire-and-forget via `src/lib/audit-publish.ts` (`buildEscrowAuditEvent`/`publishEscrowAudit`).
 
 ## Server signing key
