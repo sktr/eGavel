@@ -98,6 +98,41 @@ export function SettlementInfo({
 
   const winnerHandle = winnerNostrPubkey ? shortNpub(winnerNostrPubkey) : "anonymous"
 
+  // Winner change collection (proxy-bidding excess) — visible to the winner
+  const [changeState, setChangeState] = useState<{ amount: number | null; status: "idle" | "loading" | "collected" | "no-change" | "not-claimed" | "error"; error?: string }>({ amount: null, status: "idle" })
+  const handleCollectChange = async () => {
+    if (!identity || !auction.winner_npub || identity.pubkey !== auction.winner_npub) return
+    setChangeState({ amount: null, status: "loading" })
+    try {
+      const { collectChange } = await import("../../../lib/claim")
+      const res = await collectChange(auction.id, identity.pubkey, bytesToHex(identity.secretKey))
+      setChangeState({ amount: res.amount, status: "collected" })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes("NO_CHANGE")) setChangeState({ amount: 0, status: "no-change" })
+      else if (msg.includes("NOT_CLAIMED")) setChangeState({ amount: null, status: "not-claimed" })
+      else setChangeState({ amount: null, status: "error", error: msg })
+    }
+  }
+  useEffect(() => {
+    if (!isWinnerViewer || !identity || !auction.winner_npub) return
+    // Auto-try once for winners to surface the button without manual click
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { fetchChangeData } = await import("../../../lib/claim")
+        const data = await fetchChangeData(auction.id, identity.pubkey)
+        if (!cancelled && data.amount > 0) setChangeState({ amount: data.amount, status: "idle" })
+        else if (!cancelled && data.amount === 0) setChangeState({ amount: 0, status: "no-change" })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (!cancelled && msg.includes("NO_CHANGE")) setChangeState({ amount: 0, status: "no-change" })
+        else if (!cancelled && msg.includes("NOT_CLAIMED")) setChangeState({ amount: null, status: "not-claimed" })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isWinnerViewer, identity, auction.id, auction.winner_npub])
+
   return (
     <div
       style={{
@@ -160,6 +195,30 @@ export function SettlementInfo({
         <p style={{ color: "var(--muted)", fontSize: 14 }}>
           Reserve price not met — no winner
         </p>
+      )}
+      {isWinnerViewer && changeState.amount != null && changeState.amount > 0 && changeState.status !== "no-change" && (
+        <div style={{ marginTop: 16, padding: "12px 14px", background: "color-mix(in srgb, var(--accent) 6%, transparent)", border: "1px solid var(--accent)", borderRadius: "var(--radius)" }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Your change (max − winning price) — not in escrow, returnable now</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontWeight: 600, marginBottom: 8 }}>{changeState.amount.toLocaleString()} sats</div>
+          {changeState.status === "collected" ? (
+            <p style={{ fontSize: 13, color: "var(--accent2)" }}>Collected to your wallet</p>
+          ) : changeState.status === "not-claimed" ? (
+            <p style={{ fontSize: 13, color: "var(--muted)" }}>Awaiting seller claim — check back after the seller claims</p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleCollectChange}
+              disabled={changeState.status === "loading"}
+              style={{ border: "none", borderRadius: "var(--radius)", background: "var(--accent)", color: "#fff", padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: changeState.status === "loading" ? "not-allowed" : "pointer", opacity: changeState.status === "loading" ? 0.6 : 1 }}
+            >
+              {changeState.status === "loading" ? "Collecting…" : "Collect change"}
+            </button>
+          )}
+          {changeState.status === "error" && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 6 }}>{changeState.error}</p>}
+        </div>
+      )}
+      {isWinnerViewer && changeState.status === "no-change" && (
+        <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 8 }}>No change — your max equaled the winning price</p>
       )}
       <h3
         style={{

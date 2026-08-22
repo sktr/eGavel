@@ -202,6 +202,16 @@ export function EscrowPanel({ auction }: { auction: Auction }) {
   const hasTracking = !!escrow.tracking_number;
   const fallbackElapsed = Date.now() >= escrow.created_at + 72 * 3600 * 1000;
 
+  // Amount locked in escrow (sellerNet) — parsed from proofs_data for display
+  const escrowAmount = (() => {
+    try {
+      const d = JSON.parse(escrow.proofs_data) as { amount?: number; proofs?: { amount: number }[] };
+      if (typeof d.amount === "number") return d.amount;
+      if (Array.isArray(d.proofs)) return d.proofs.reduce((a, p) => a + (p.amount ?? 0), 0);
+    } catch {}
+    return null;
+  })();
+
   return (
     <div
       style={{
@@ -223,7 +233,12 @@ export function EscrowPanel({ auction }: { auction: Auction }) {
       >
         Escrow
       </h2>
-      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
+      {escrowAmount != null && (
+        <div style={{ fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 20, color: "var(--accent)", marginBottom: 6 }}>
+          {escrowAmount.toLocaleString()} sats <span style={{ fontWeight: 400, fontSize: 12, color: "var(--muted)" }}>in escrow</span>
+        </div>
+      )}
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 4 }}>
         Stage {escrow.stage} — {escrow.status}
         {escrow.tracking_number && (
           <span>
@@ -232,6 +247,13 @@ export function EscrowPanel({ auction }: { auction: Auction }) {
           </span>
         )}
       </div>
+      <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, lineHeight: 1.5 }}>
+        {isSeller
+          ? "Your sale proceeds are locked here, not in your wallet. They will move to your wallet after the winner confirms receipt (or after 30 days if the winner goes silent)."
+          : isWinner
+            ? "The seller's proceeds are locked here. Confirm receipt after delivery to release them."
+            : ""}
+      </p>
       {escrow.stage1_expired && (
         <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 8 }}>
           Stage 1 expired — seller can no longer report tracking.
