@@ -10,7 +10,13 @@ export interface EscrowState {
 export async function fetchEscrow(auctionId: string, partyPubkey: string, partySkHex: string, apiBase?: string): Promise<EscrowState> {
   const sig = signSecretHex(`escrow-view:${auctionId}`, partySkHex);
   const res = await fetch(apiUrl(`/auctions/${auctionId}/escrow?party_pubkey=${partyPubkey}&party_sig=${sig}`, apiBase), { cache:"no-store" });
-  if (!res.ok) throw new Error((await res.json().catch(()=>({})) as {error?:string}).error ?? "escrow fetch failed");
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    const msg = body.error ?? `escrow fetch failed (${res.status})`;
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
   return res.json() as Promise<EscrowState>;
 }
 export async function reportTracking(auctionId: string, trackingNumber: string, sellerPubkey: string, sellerSkHex: string, apiBase?: string) {

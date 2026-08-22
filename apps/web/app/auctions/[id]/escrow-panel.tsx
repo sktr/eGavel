@@ -29,7 +29,15 @@ export function EscrowPanel({ auction }: { auction: Auction }) {
       setEscrow(data);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      const msg = String(e);
+      const status = (e as { status?: number }).status;
+      // 404 means no escrow yet (not yet claimed, sellerNet=0, or legacy) — not an error
+      if (status === 404 || msg.includes("NO_ESCROW") || msg.includes("not found")) {
+        setEscrow(null);
+        setError(null);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -55,7 +63,16 @@ export function EscrowPanel({ auction }: { auction: Auction }) {
           setError(null);
         }
       } catch (e) {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) {
+          const msg = String(e);
+          const status = (e as { status?: number }).status;
+          if (status === 404 || msg.includes("NO_ESCROW") || msg.includes("not found")) {
+            setEscrow(null);
+            setError(null);
+          } else {
+            setError(msg);
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -69,8 +86,17 @@ export function EscrowPanel({ auction }: { auction: Auction }) {
   if (!identity) return null;
   if (!isSeller && !isWinner) return null;
   if (loading) return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)" }}>Loading escrow…</div>;
-  if (error) return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--red)" }}>{error}</div>;
-  if (!escrow) return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)" }}>No escrow found.</div>;
+  if (error) return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--red)" }}>Escrow error: {error}</div>;
+  if (!escrow) {
+    // No escrow row — normal before claim, or sellerNet=0 / legacy mode
+    const hint =
+      auction.state !== "SETTLED"
+        ? "Auction not yet settled — escrow will appear after the seller claims."
+        : (auction as unknown as { claimed?: boolean }).claimed
+          ? "No escrow for this auction (sellerNet was 0 or legacy mode)."
+          : "No escrow yet — awaiting seller claim.";
+    return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)" }}>{hint}</div>;
+  }
 
   const handleReport = async () => {
     if (!tracking.trim()) {
