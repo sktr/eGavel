@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { LiveBids } from "./live-bids"
 import { Checkout } from "./checkout"
 import { SettlementInfo } from "./settlement-info"
+import { EscrowPanel } from "./escrow-panel"
 import { Gallery } from "./gallery"
 import { DeleteListingButton } from "./delete-listing-button"
 import { apiUrl } from "../../../lib/api"
@@ -486,6 +487,7 @@ export default async function AuctionPage({
 
         {/* ===== BELOW THE GRID: Settlement (for SETTLED auctions) ===== */}
         {auction.state === "SETTLED" && <SettlementInfo auction={auction} serverNpub="" />}
+        {auction.state === "SETTLED" && <EscrowPanel auction={auction} />}
 
         {/* ===== BELOW THE GRID: Winner Checkout ===== */}
         <div style={{ gridColumn: "1 / -1" }}>
