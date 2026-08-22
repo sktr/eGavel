@@ -20,7 +20,7 @@ import { auctionFeeBps } from "../lib/auction-fee.js";
 import { settleIfDue } from "../lib/settle.js";
 import { isValidMintUrl } from "../lib/mint-url.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { publishAuditLog } from "../lib/audit-publish.js";
+import { publishAuditLog, publishEscrowAudit } from "../lib/audit-publish.js";
 import {
   STAGE1_LOCKTIME_SEC,
   STAGE2_LOCKTIME_SEC,
@@ -644,6 +644,14 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     const v = validateTracking(body.tracking_number);
     if (!v) return c.json({ error: "INVALID_TRACKING" }, 400);
     await db.setEscrowTracking(id, body.tracking_number.trim(), v.kind);
+    {
+      let escrowAmount = 0;
+      try {
+        const bundle = parseProofData(escrow.proofs_data);
+        escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
+      } catch { escrowAmount = 0; }
+      void publishEscrowAudit(serverKey, { auctionId: id, status: "shipped", trackingKind: v.kind, amount: escrowAmount });
+    }
     return c.json({ ok: true, kind: v.kind });
   });
 
@@ -797,30 +805,13 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       const newBundle = { proofs: newProofs, mint_url: bundle.mint_url, amount: stage2Amount };
       await db.updateEscrowStage(id, 2, JSON.stringify(newBundle), "active", Date.now());
 
-      if (usedFallback) {
-        void (async () => {
-          try {
-            const pubkey = serverXOnly;
-            if (!pubkey || !serverKey) return;
-            const template = {
-              kind: 1021,
-              content: `relock:${id}`,
-              tags: [
-                ["e", id],
-                ["t", "egavel-escrow"],
-                ["status", "relocked"],
-                ["fallback_cosign", "true"],
-              ] as string[][],
-              created_at: Math.floor(Date.now() / 1000),
-              pubkey,
-            };
-            const serialized = JSON.stringify([0, template.pubkey, template.created_at, template.kind, template.tags, template.content]);
-            const eid = bytesToHex(sha256(new TextEncoder().encode(serialized)));
-            const sig = bytesToHex(schnorr.sign(hexToBytes(eid), hexToBytes(skHexForServer())));
-            await publishAuditLog({ ...template, id: eid, sig } as never).catch(() => {});
-          } catch {}
-        })();
-      }
+      void publishEscrowAudit(serverKey, {
+        auctionId: id,
+        status: "shipped",
+        trackingKind: escrow.tracking_kind ?? undefined,
+        ...(usedFallback ? { fallbackCosign: true as const } : {}),
+        amount: stage2Amount,
+      });
 
       return c.json({ ok: true, stage: 2, status: "active", amount: stage2Amount });
     } catch (err) {
@@ -1011,28 +1002,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       await db.savePendingReceive(sellerXOnly, bundle.mint_url, JSON.stringify(releaseProofs), releaseAmount);
       await db.setEscrowStatus(id, "confirmed");
 
-      // Audit log
-      void (async () => {
-        try {
-          const pubkey = canonicalPubkey(getServerPubkeyHex());
-          if (!pubkey || !serverKey) return;
-          const template = {
-            kind: 1021,
-            content: `confirm:${id}`,
-            tags: [
-              ["e", id],
-              ["t", "egavel-escrow"],
-              ["status", "confirmed"],
-            ] as string[][],
-            created_at: Math.floor(Date.now() / 1000),
-            pubkey,
-          };
-          const serialized = JSON.stringify([0, template.pubkey, template.created_at, template.kind, template.tags, template.content]);
-          const eid = bytesToHex(sha256(new TextEncoder().encode(serialized)));
-          const sig = bytesToHex(schnorr.sign(hexToBytes(eid), hexToBytes(skHexForServer())));
-          await publishAuditLog({ ...template, id: eid, sig } as never).catch(() => {});
-        } catch {}
-      })();
+      void publishEscrowAudit(serverKey, { auctionId: id, status: "confirmed", amount: releaseAmount });
 
       return c.json({ ok: true, status: "confirmed", amount: releaseAmount });
     } catch (err) {
@@ -1167,27 +1137,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
 
       await db.setEscrowStatus(id, "split_resolved");
 
-      void (async () => {
-        try {
-          const pubkey = canonicalPubkey(getServerPubkeyHex());
-          if (!pubkey || !serverKey) return;
-          const template = {
-            kind: 1021,
-            content: `split:${id}`,
-            tags: [
-              ["e", id],
-              ["t", "egavel-escrow"],
-              ["status", "split_resolved"],
-            ] as string[][],
-            created_at: Math.floor(Date.now() / 1000),
-            pubkey,
-          };
-          const serialized = JSON.stringify([0, template.pubkey, template.created_at, template.kind, template.tags, template.content]);
-          const eid = bytesToHex(sha256(new TextEncoder().encode(serialized)));
-          const sig = bytesToHex(schnorr.sign(hexToBytes(eid), hexToBytes(skHexForServer())));
-          await publishAuditLog({ ...template, id: eid, sig } as never).catch(() => {});
-        } catch {}
-      })();
+      void publishEscrowAudit(serverKey, { auctionId: id, status: "split_resolved", amount: escrowAmount });
 
       return c.json({ ok: true, proofs: splitProofs });
     } catch (err) {
