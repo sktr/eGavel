@@ -11,7 +11,7 @@ const S10_WEIGHTS = [8, 6, 4, 2, 3, 5, 9, 7] as const;
 
 function s10CheckDigit(serial8: string): number {
   let sum = 0;
-  for (let i = 0; i < 8; i++) sum += Number(serial8[i]) * S10_WEIGHTS[i];
+  for (let i = 0; i < 8; i++) sum += Number(serial8[i]!) * S10_WEIGHTS[i]!;
   const r = sum % 11;
   const c = 11 - r;
   if (c === 10) return 0;

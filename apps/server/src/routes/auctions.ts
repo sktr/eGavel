@@ -21,10 +21,12 @@ import { settleIfDue } from "../lib/settle.js";
 import { isValidMintUrl } from "../lib/mint-url.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { publishAuditLog } from "../lib/audit-publish.js";
+import { STAGE1_LOCKTIME_SEC, buildStage1LockOptions } from "../lib/escrow.js";
 
 export interface AuctionRoutesConfig {
   serverKey?: string;
   feeBps?: number;
+  escrowMode?: "two-stage" | "legacy";
 }
 
 /**
@@ -467,6 +469,63 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         feeBps,
         mintFee,
       );
+
+      const escrowMode = config.escrowMode ?? (process.env.ESCROW_MODE === "legacy" ? "legacy" : "two-stage");
+
+      // Two-stage escrow: sellerNet is locked in a 2-of-3 P2PK (seller+winner+server,
+      // refund winner @ claim+10d) instead of being given directly to the seller.
+      if (escrowMode === "two-stage" && sellerNet > 0 && auction.winner_npub) {
+        const winnerXOnly = canonicalPubkey(auction.winner_npub);
+        const serverXOnly = canonicalPubkey(getServerPubkeyHex());
+        const locktime = Math.floor(Date.now() / 1000) + STAGE1_LOCKTIME_SEC;
+        const escrowOutputs = OutputData.createP2PKData(
+          buildStage1LockOptions(sellerXOnly, winnerXOnly, serverXOnly, locktime),
+          sellerNet,
+          keyset,
+        );
+        const winnerOutputs =
+          change > 0
+            ? OutputData.createP2PKData({ pubkey: auction.winner_npub }, change, keyset)
+            : [];
+        const feeOutputs =
+          fee > 0 ? OutputData.createP2PKData({ pubkey: getServerPubkeyHex() }, fee, keyset) : [];
+        const outputs = [...escrowOutputs, ...winnerOutputs, ...feeOutputs].map(
+          (o) => o.blindedMessage,
+        );
+
+        const swapRes = await wallet.mint.swap({ inputs: inputs as never, outputs });
+
+        const escrowProofs = escrowOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+        const winnerProofs = winnerOutputs.map((o, i) =>
+          o.toProof(swapRes.signatures[escrowOutputs.length + i]!, keyset),
+        );
+        const feeProofs = feeOutputs.map((o, i) =>
+          o.toProof(
+            swapRes.signatures[escrowOutputs.length + winnerOutputs.length + i]!,
+            keyset,
+          ),
+        );
+
+        if (feeProofs.length > 0) {
+          await db.saveFee(auction.id, fee, JSON.stringify(feeProofs));
+        }
+        if (winnerProofs.length > 0) {
+          await db.saveChange(auction.id, auction.winner_npub!, change, JSON.stringify(winnerProofs));
+        }
+        await db.saveEscrow({
+          auction_id: auction.id,
+          stage: 1,
+          status: "active",
+          proofs_data: JSON.stringify({ proofs: escrowProofs, mint_url: bundle.mint_url, amount: sellerNet }),
+          tracking_number: null,
+          tracking_kind: null,
+          migrated_at: null,
+          created_at: Date.now(),
+        });
+        await db.markClaimed(auction.id);
+
+        return c.json({ escrowed: true, stage: 1, status: "active", amount: sellerNet, fee, change });
+      }
 
       const sellerOutputs = OutputData.createP2PKData(
         { pubkey: auction.seller_pubkey },

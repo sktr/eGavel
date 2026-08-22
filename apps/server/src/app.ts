@@ -76,7 +76,9 @@ export function createApp(db: Db, config: AppConfig = {}) {
 
   app.get("/health", (c) => c.json({ ok: true, pubkey: serverPubkey }));
 
-  app.route("/api", createAuctionRoutes(db, { ...config, serverKey }));
+  const escrowMode = (config as { escrowMode?: string }).escrowMode
+    ?? (process.env.ESCROW_MODE === "legacy" ? "legacy" : "two-stage");
+  app.route("/api", createAuctionRoutes(db, { ...config, serverKey, escrowMode: escrowMode as "two-stage" | "legacy" }));
 
   return app;
 }

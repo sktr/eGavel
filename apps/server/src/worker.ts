@@ -6,14 +6,17 @@ export interface Env {
   egavel_db: D1Database;
   SERVER_PRIVATE_KEY?: string;
   AUCTION_FEE_BPS?: string;
+  ESCROW_MODE?: string;
 }
 
 export default {
   async fetch(request: Request, env: Env) {
     const db = createD1Db(env.egavel_db);
+    const escrowMode = env.ESCROW_MODE === "legacy" ? "legacy" : "two-stage";
     const app = createApp(db, {
       serverKey: env.SERVER_PRIVATE_KEY,
       feeBps: env.AUCTION_FEE_BPS ? Number(env.AUCTION_FEE_BPS) : undefined,
+      escrowMode: escrowMode as "two-stage" | "legacy",
     });
     return app.fetch(request);
   },
