@@ -10,6 +10,7 @@ import { DEFAULT_MINT } from "../../lib/config";
 import { compressImage } from "../../lib/image";
 import { uploadToBlossom } from "../../lib/blossom";
 import { buildListingEvent, publishListing } from "../../lib/nostr-listing";
+import { signSecretHex } from "../../lib/claim";
 import { ItemPlaceholder } from "../../components/item-placeholder";
 import { IdentityNostrSection } from "../identity-nostr-section";
 
@@ -222,9 +223,8 @@ export default function CreateAuctionPage() {
       };
       const auctionId = (created as { id?: string }).id ?? created.auction?.id;
 
-      showToast("Auction created!");
-
-      // Fire-and-forget NIP-99 mirror: do not block listing success, do not fail on error.
+      // NIP-99 mirror is required: listing is not considered created until 30402 is published.
+      // Block here — do not show success or navigate if publish fails.
       if (auctionId) {
         const capturedItem = item.trim();
         const capturedDescription = description.trim();
@@ -241,55 +241,68 @@ export default function CreateAuctionPage() {
         const capturedImageUrls = [...images];
         const capturedEndTime = endTime;
 
-        void (async () => {
-          try {
-            const nostr = (
-              window as unknown as {
-                nostr?: {
-                  getPublicKey: () => Promise<string>;
-                  signEvent: (e: unknown) => Promise<unknown>;
-                };
-              }
-            ).nostr;
-            if (!nostr?.signEvent || !nostr?.getPublicKey) {
-              showToast("Nostr publish skipped: connect NIP-07 extension", "cloud_off");
-              return;
+        try {
+          const nostr = (
+            window as unknown as {
+              nostr?: {
+                getPublicKey: () => Promise<string>;
+                signEvent: (e: unknown) => Promise<unknown>;
+              };
             }
-            let sellerNostrPubkey: string | null = null;
-            try {
-              sellerNostrPubkey = await nostr.getPublicKey();
-            } catch {
-              showToast("Nostr publish failed: cannot get pubkey", "cloud_off");
-              return;
-            }
-            if (!sellerNostrPubkey) {
-              showToast("Nostr publish failed: empty pubkey", "cloud_off");
-              return;
-            }
-            const event = buildListingEvent({
-              auctionId,
-              item: capturedItem,
-              description: capturedDescription,
-              startPrice: capturedStartPrice,
-              reservePrice: capturedReserve,
-              buyNowPrice: capturedBuyNow,
-              endTime: capturedEndTime,
-              category: capturedCategory,
-              imageUrls: capturedImageUrls,
-              sellerNostrPubkey,
-            });
-            try {
-              await publishListing(event, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> });
-              console.log("[Nostr] 30402 published", event);
-            } catch (e) {
-              console.error("[Nostr] publish failed", e);
-              showToast("Nostr announcement failed (retry)", "cloud_off");
-            }
-          } catch (e) {
-            console.error("[Nostr] mirror error", e);
+          ).nostr;
+          if (!nostr?.signEvent || !nostr?.getPublicKey) {
+            throw new Error("Connect NIP-07 extension to publish to Nostr");
           }
-        })();
+          let sellerNostrPubkey: string | null = null;
+          try {
+            sellerNostrPubkey = await nostr.getPublicKey();
+          } catch {
+            throw new Error("Cannot get Nostr pubkey");
+          }
+          if (!sellerNostrPubkey) throw new Error("Empty Nostr pubkey");
+          const event = buildListingEvent({
+            auctionId,
+            item: capturedItem,
+            description: capturedDescription,
+            startPrice: capturedStartPrice,
+            reservePrice: capturedReserve,
+            buyNowPrice: capturedBuyNow,
+            endTime: capturedEndTime,
+            category: capturedCategory,
+            imageUrls: capturedImageUrls,
+            sellerNostrPubkey,
+          });
+          await publishListing(event, nostr as unknown as { signEvent: (t: unknown) => Promise<unknown> });
+          console.log("[Nostr] 30402 published", event);
+        } catch (e) {
+          console.error("[Nostr] publish failed", e);
+          const msg = e instanceof Error ? e.message : String(e);
+          // Roll back the HTTP listing so we don't leave an orphan without a Nostr mirror.
+          try {
+            const sellerSig = signSecretHex(`delete:${auctionId}`, bytesToHex(identity.secretKey));
+            await fetch(
+              apiUrl(
+                `/auctions/${auctionId}?seller_pubkey=${identity.pubkey}&seller_sig=${sellerSig}`,
+              ),
+              { method: "DELETE" },
+            );
+          } catch {
+            // best-effort rollback
+          }
+          const errMsg = `Nostr publish failed: ${msg} — listing was not created. Please connect NIP-07 and retry.`;
+          setError(errMsg);
+          showToast(errMsg, "cloud_off");
+          setSubmitting(false);
+          return;
+        }
+      } else {
+        // No auctionId returned — cannot publish, treat as failure.
+        setError("Listing created but no ID returned — cannot publish to Nostr.");
+        setSubmitting(false);
+        return;
       }
+
+      showToast("Auction created!");
 
       // Reset form
       setItem("");

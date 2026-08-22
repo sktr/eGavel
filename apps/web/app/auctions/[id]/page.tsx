@@ -469,18 +469,6 @@ export default async function AuctionPage({
                 "wss://nos.lol",
                 "wss://relay.nostr.band",
               ])}
-              auction={{
-                id: auction.id,
-                item: auction.item,
-                description: auction.description,
-                start_price: auction.start_price,
-                reserve_price: auction.reserve_price ?? null,
-                buy_now_price: auction.buy_now_price ?? null,
-                end_time: auction.end_time,
-                category: auction.category ?? null,
-                images: auction.images ?? null,
-                image: auction.image ?? null,
-              }}
             />
           </div>
         )}

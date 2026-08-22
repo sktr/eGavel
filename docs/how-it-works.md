@@ -156,8 +156,10 @@ Listings are mirrored to Nostr for **discovery**, without touching settlement
   Edits re-publish the same `d`; deletion publishes kind `5`. `price` lets
   Shopstr-style clients render a fixed price, while custom tags let
   eGavel-aware clients render auction semantics. Publishing is client-signed
-  (NIP-07 or pasted nsec) and fire-and-forget — failure never blocks the
-  listing. The detail page shows `View on Nostr` (`naddr` → `nostr.at`).
+  (NIP-07 or pasted nsec) and **blocking** — if `30402` publish fails, the
+  listing is rolled back (`DELETE /auctions/:id`) and the user must retry
+  (no “Republish” button on the product page). The detail page shows `View
+  on Nostr` (`naddr` → `nostr.at`) + `Copy naddr` only.
 - **Audit log (B):** the server fire-and-forgets kind `1021` (bid hash +
   standing price) and escrow transitions as `1021`/`1022` with `[status]`
   tags (`shipped` carries *kind* only, never the number). Third parties can
