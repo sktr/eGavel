@@ -88,12 +88,12 @@ export function EscrowPanel({ auction }: { auction: Auction }) {
   if (loading) return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)" }}>Loading escrow…</div>;
   if (error) return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--red)" }}>Escrow error: {error}</div>;
   if (!escrow) {
-    // No escrow row — normal before claim, or sellerNet=0 / legacy mode
+    // No escrow row — normal before claim, or legacy auction (claimed before escrow), or sellerNet=0
     const hint =
       auction.state !== "SETTLED"
         ? "Auction not yet settled — escrow will appear after the seller claims."
         : (auction as unknown as { claimed?: boolean }).claimed
-          ? "No escrow for this auction (sellerNet was 0 or legacy mode)."
+          ? "No escrow for this auction — legacy auction (claimed before escrow) or sellerNet was 0."
           : "No escrow yet — awaiting seller claim.";
     return <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)" }}>{hint}</div>;
   }
