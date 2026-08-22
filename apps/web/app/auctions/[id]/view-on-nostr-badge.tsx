@@ -16,27 +16,44 @@ export function ViewOnNostrBadge({ naddr }: { naddr: string }) {
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--muted)", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <a
         href={`https://nostr.at/${naddr}`}
         target="_blank"
         rel="noopener"
-        style={{ fontSize: 12, color: "var(--muted)", textDecoration: "underline" }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          fontWeight: 500,
+          color: "#fff",
+          background: "#8b5cf6",
+          borderRadius: 100,
+          padding: "6px 14px",
+          textDecoration: "none",
+        }}
       >
+        <span className="material-icons" style={{ fontSize: 14 }}>open_in_new</span>
         View on Nostr
       </a>
       <button
         onClick={onCopy}
         style={{
-          fontSize: 12,
-          color: "var(--muted)",
-          background: "transparent",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--fg)",
+          background: "var(--surface)",
           border: "1px solid var(--border)",
-          borderRadius: 4,
-          padding: "2px 6px",
+          borderRadius: 100,
+          padding: "6px 14px",
           cursor: "pointer",
+          fontWeight: 500,
         }}
       >
+        <span className="material-icons" style={{ fontSize: 14 }}>{copied ? "check" : "content_copy"}</span>
         {copied ? "Copied" : "Copy naddr"}
       </button>
     </div>

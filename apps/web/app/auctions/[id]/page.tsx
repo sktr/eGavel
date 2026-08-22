@@ -198,278 +198,75 @@ export default async function AuctionPage({
           <LiveBids auction={auction} bids={bids} serverNpub={""} />
         </div>
 
-        {/* ===== BELOW THE GRID: Description ===== */}
-        {auction.description && (
-          <div style={{ gridColumn: "1 / -1", marginTop: 0 }}>
-            <h3
-              style={{
-                fontFamily: "var(--font-display)",
-                fontSize: 17,
-                fontWeight: 600,
-                letterSpacing: "-0.02em",
-                marginBottom: 16,
-              }}
-            >
-               Description
-            </h3>
-            <p
-              style={{
-                color: "var(--muted)",
-                fontSize: 14,
-                lineHeight: 1.8,
-                marginBottom: 24,
-              }}
-            >
-              {auction.description}
-            </p>
+        {/* ===== BELOW THE GRID: About this lot ===== */}
+        <div style={{ gridColumn: "1 / -1", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "28px 32px", marginBottom: 24 }}>
+          {auction.description && (
+            <>
+              <h3 style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 600, letterSpacing: "-0.02em", marginBottom: 12 }}>About this lot</h3>
+              <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.8, marginBottom: 24 }}>{auction.description}</p>
+              <div style={{ height: 1, background: "var(--border)", marginBottom: 24 }} />
+            </>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px 32px", fontSize: 13 }}>
+            <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Start Price</div><div style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>{auction.start_price.toLocaleString()} sats</div></div>
+            <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Status</div><div style={{ fontWeight: 500 }}>{auction.state}</div></div>
+            <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Start Date</div><div>{new Date(auction.start_time).toLocaleString("ja-JP")}</div></div>
+            <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>End Date</div><div>{new Date(auction.end_time).toLocaleString("ja-JP")}</div></div>
+            {auction.category && <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Category</div><div>{auction.category}</div></div>}
+            {auction.condition && <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Condition</div><div>{auction.condition}</div></div>}
+            {auction.winning_amount != null && <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Winning Amount</div><div style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--accent)" }}>{auction.winning_amount.toLocaleString()} sats</div></div>}
+            <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Seller</div><div style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}><SellerIdentity auction={auction} /></div></div>
+            {auction.winner_npub && <div><div style={{ color: "var(--muted)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>Winner</div><div style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>— <span style={{ color: "var(--muted)" }}>(anonymous)</span></div></div>}
           </div>
-        )}
-
-        {/* ===== BELOW THE GRID: Details Table ===== */}
-        <div style={{ gridColumn: "1 / -1" }}>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontSize: 14,
-              marginBottom: 40,
-            }}
-          >
-            <tbody>
-              <tr>
-                <th
-                  style={{
-                    width: 120,
-                    textAlign: "left",
-                    color: "var(--muted)",
-                    fontWeight: 400,
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  Start Price
-                </th>
-                <td
-                  style={{
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  {auction.start_price.toLocaleString()} sats
-                </td>
-              </tr>
-              <tr>
-                <th
-                  style={{
-                    width: 120,
-                    textAlign: "left",
-                    color: "var(--muted)",
-                    fontWeight: 400,
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  Status
-                </th>
-                <td
-                  style={{
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  {auction.state}
-                </td>
-              </tr>
-              <tr>
-                <th
-                  style={{
-                    width: 120,
-                    textAlign: "left",
-                    color: "var(--muted)",
-                    fontWeight: 400,
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  Start Date
-                </th>
-                <td
-                  style={{
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  {new Date(auction.start_time).toLocaleString("ja-JP")}
-                </td>
-              </tr>
-              <tr>
-                <th
-                  style={{
-                    width: 120,
-                    textAlign: "left",
-                    color: "var(--muted)",
-                    fontWeight: 400,
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  End Date
-                </th>
-                <td
-                  style={{
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  {new Date(auction.end_time).toLocaleString("ja-JP")}
-                </td>
-              </tr>
-              <tr>
-                <th
-                  style={{
-                    width: 120,
-                    textAlign: "left",
-                    color: "var(--muted)",
-                    fontWeight: 400,
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  Seller
-                </th>
-                <td
-                  style={{
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--border)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                  }}
-                >
-                  <code>
-                    <SellerIdentity auction={auction} />
-                  </code>
-                </td>
-              </tr>
-              {auction.winner_npub && (
-                <tr>
-                  <th
-                    style={{
-                      width: 120,
-                      textAlign: "left",
-                      color: "var(--muted)",
-                      fontWeight: 400,
-                      padding: "8px 0",
-                      borderBottom: "1px solid var(--border)",
-                    }}
-                  >
-                    Winner
-                  </th>
-                  <td
-                    style={{
-                      padding: "8px 0",
-                      borderBottom: "1px solid var(--border)",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                    }}
-                  >
-                    — 
-                  </td>
-                </tr>
-              )}
-              {auction.winning_amount != null && (
-                <tr>
-                  <th
-                    style={{
-                      width: 120,
-                      textAlign: "left",
-                      color: "var(--muted)",
-                      fontWeight: 400,
-                      padding: "8px 0",
-                      borderBottom: "1px solid var(--border)",
-                    }}
-                  >
-                    Winning Amount
-                  </th>
-                  <td
-                    style={{
-                      padding: "8px 0",
-                      borderBottom: "1px solid var(--border)",
-                      fontFamily: "var(--font-mono)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {auction.winning_amount.toLocaleString()} sats
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </div>
 
-        {/* ===== BELOW THE GRID: Seller Card ===== */}
-        <div style={{ gridColumn: "1 / -1" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-              padding: 16,
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              marginBottom: 40,
-            }}
-          >
-            {/* Avatar */}
+        {/* Nostr Mirror — designed card */}
+        {auction.seller_nostr_pubkey && (
+          <div style={{ gridColumn: "1 / -1", marginBottom: 24 }}>
             <div
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                background: "var(--placeholder)",
                 display: "flex",
+                gap: 16,
+                padding: "20px 24px",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-lg)",
+                background: "color-mix(in srgb, #8b5cf6 4%, var(--surface))",
                 alignItems: "center",
-                justifyContent: "center",
-                color: "var(--muted)",
-                fontSize: 14,
-                fontWeight: 600,
-                flexShrink: 0,
+                flexWrap: "wrap",
               }}
             >
-              {auction.item.charAt(0)}
-            </div>
-            {/* Info */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>
-                   Seller
-              </div>
               <div
                 style={{
-                  color: "var(--muted)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
+                  background: "#8b5cf6",
+                  display: "grid",
+                  placeItems: "center",
+                  color: "#fff",
+                  fontSize: 18,
+                  flexShrink: 0,
                 }}
-                title={auction.seller_pubkey}
+                aria-hidden="true"
               >
-                <SellerIdentity auction={auction} />
+                <span className="material-icons" style={{ fontSize: 20 }}>hub</span>
               </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, letterSpacing: "0.02em", textTransform: "uppercase", color: "#8b5cf6", marginBottom: 2 }}>
+                  Mirrored to Nostr
+                </div>
+                <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+                  This listing is published as <code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 4px", borderRadius: 4 }}>kind 30402</code> for discovery on Nostr. Anyone can view it via <code style={{ fontSize: 11 }}>naddr</code>.
+                </div>
+              </div>
+              <ViewOnNostrBadge
+                naddr={listingNaddr(auction.seller_nostr_pubkey, `egavel-${auction.id}`, [
+                  "wss://relay.damus.io",
+                  "wss://nos.lol",
+                  "wss://relay.nostr.band",
+                ])}
+              />
             </div>
-          </div>
-        </div>
-
-        {/* NIP-99 View on Nostr badge */}
-        {auction.seller_nostr_pubkey && (
-          <div style={{ gridColumn: "1 / -1", marginBottom: 16 }}>
-            <ViewOnNostrBadge
-              naddr={listingNaddr(auction.seller_nostr_pubkey, `egavel-${auction.id}`, [
-                "wss://relay.damus.io",
-                "wss://nos.lol",
-                "wss://relay.nostr.band",
-              ])}
-            />
           </div>
         )}
 
