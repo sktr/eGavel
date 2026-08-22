@@ -138,8 +138,8 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         400,
       );
     }
-    if (!Number.isFinite(startPrice) || startPrice <= 0) {
-      return c.json({ error: "start_price must be a positive number" }, 400);
+    if (!Number.isFinite(startPrice) || startPrice < 100) {
+      return c.json({ error: "start_price must be at least 100 sats" }, 400);
     }
     if (!Number.isFinite(endTime) || endTime <= Date.now()) {
       return c.json({ error: "end_time must be in the future" }, 400);

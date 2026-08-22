@@ -124,7 +124,7 @@ export default function CreateAuctionPage() {
     if (!description.trim()) errs.description = "Enter description";
     if (!condition) errs.condition = "Select condition";
     const sp = parseInt(startPrice, 10);
-    if (!sp || sp < 1) errs.startPrice = "Enter start price (minimum 1 sat)";
+    if (!sp || sp < 100) errs.startPrice = "Enter start price (minimum 100 sats)";
     if (!agreeTerms) errs.agreeTerms = "Agree to terms of service";
     setFieldErrors(errs);
 
@@ -856,7 +856,7 @@ export default function CreateAuctionPage() {
                 <input
                   id="startPrice"
                   type="number"
-                  min="1"
+                  min="100"
                   value={startPrice}
                   onChange={(e) => setStartPrice(e.target.value)}
                   placeholder="1000"
