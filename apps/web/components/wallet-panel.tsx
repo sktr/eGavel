@@ -11,7 +11,7 @@ import {
   type Proof,
 } from "@cashu/cashu-ts";
 import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret, savePendingWithdrawal, loadPendingWithdrawals, removePendingWithdrawal, splitPendingBySpent, type PendingWithdrawal } from "../lib/wallet";
-import { buildWallet } from "../lib/deterministic-wallet";
+import { buildWallet, loadMintCached } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
 import { apiUrl } from "../lib/api";
@@ -272,7 +272,7 @@ export function WalletPanel() {
         try {
           const keys = w.proofKeys!;
           const mintWallet = buildWallet(w.mint);
-          await mintWallet.loadMint();
+          await loadMintCached(mintWallet, w.mint);
           // checkProofsStates returns states in the same order as the proofs;
           // map the SPENT states back to their proof secrets.
           const states = await mintWallet.checkProofsStates(keys);
@@ -339,7 +339,7 @@ export function WalletPanel() {
     try {
       const mintUrl = activeWithdrawMint;
       const w = buildWallet(mintUrl);
-      await w.loadMint();
+      await loadMintCached(w, mintUrl);
       const store = loadStore(pubkey);
       const stored = deserializeProofs(store[mintUrl] ?? []);
       const { unspent } = await w.groupProofsByState(stored);
@@ -398,7 +398,7 @@ export function WalletPanel() {
     try {
       mintUrl = activeWithdrawMint;
       const w = buildWallet(mintUrl);
-      await w.loadMint();
+      await loadMintCached(w, mintUrl);
       const quoteRes = await w.createMeltQuoteBolt11(invoice);
       const need = Number(quoteRes.amount) + Number(quoteRes.fee_reserve ?? 0);
       const store = loadStore(pubkey);

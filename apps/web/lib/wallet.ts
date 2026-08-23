@@ -12,7 +12,7 @@ import {
   type P2PKOptions,
   type MintQuoteBolt11Response,
 } from "@cashu/cashu-ts"
-import { buildWallet } from "./deterministic-wallet"
+import { buildWallet, loadMintCached } from "./deterministic-wallet"
 import { loadAccount } from "./key-store"
 
 const LEGACY_KEY = "cashu-wallet-v1";
@@ -116,7 +116,7 @@ export function useWallet(mintUrl: string, pubkey: string) {
     ;(async () => {
       try {
         const wallet = buildWallet(mintUrl)
-        await wallet.loadMint()
+        await loadMintCached(wallet, mintUrl)
         if (cancelled) return
         walletRef.current = wallet
 
@@ -188,7 +188,7 @@ export function useWallet(mintUrl: string, pubkey: string) {
           : buildWallet(tokenMint)
 
       if (receiveWallet !== walletRef.current) {
-        await receiveWallet.loadMint()
+        await loadMintCached(receiveWallet, tokenMint)
       }
 
       const input: string | Proof[] = proofsOverride ?? tokenStr
@@ -590,7 +590,7 @@ export function useTotalBalance(pubkey: string) {
       entries.map(async ([mint, raw]): Promise<MintVerifyResult> => {
         try {
           const wallet = buildWallet(mint)
-          await wallet.loadMint()
+          await loadMintCached(wallet, mint)
           const stored = deserializeProofs(raw)
           const { unspent } = await wallet.groupProofsByState(stored)
           const amount = unspent.length > 0 ? Number(sumProofs(unspent)) : 0

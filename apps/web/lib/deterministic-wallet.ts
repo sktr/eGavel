@@ -115,6 +115,31 @@ export function buildWallet(mintUrl: string): Wallet {
   return new Wallet(mintUrl, walletOptions(mintUrl));
 }
 
+// ── Mint info cache (5 min) — avoids hammering /v1/info|keys|keysets on every
+// mount/visibilitychange. loadMint is idempotent; the cache is per-mintUrl.
+const MINT_CACHE_MS = 5 * 60 * 1000;
+const mintCache = new Map<string, { at: number; promise: Promise<void> }>();
+
+export async function loadMintCached(wallet: Wallet, mintUrl: string): Promise<void> {
+  // In tests, bypass the cache so that per-test mocks for loadMint are respected
+  // (otherwise a successful load from a previous test would be reused).
+  const isTest = typeof process !== "undefined" && ((process.env as Record<string, string | undefined>).VITEST === "true" || (process.env as Record<string, string | undefined>).NODE_ENV === "test");
+  if (!isTest) {
+    const hit = mintCache.get(mintUrl);
+    if (hit && Date.now() - hit.at < MINT_CACHE_MS) {
+      try {
+        await hit.promise;
+        return;
+      } catch {
+        // cached load failed — fall through to retry
+      }
+    }
+  }
+  const p = wallet.loadMint();
+  if (!isTest) mintCache.set(mintUrl, { at: Date.now(), promise: p });
+  await p;
+}
+
 export interface RecoverResult {
   mint: string;
   recovered: number;
@@ -143,7 +168,7 @@ export async function recoverBalanceFromSeed(opts: {
         // No counterSource: batchRestore derives from explicit counters; the
         // wallet's own persistent source is only for future mints.
       });
-      await wallet.loadMint();
+      await loadMintCached(wallet, mintUrl);
       const keysets = await fetch(`${mintUrl}/v1/keysets`)
         .then((r) => r.json())
         .then((d: { keysets: { id: string }[] }) => d.keysets ?? []);
