@@ -338,7 +338,7 @@ export default function DashboardPage() {
       }
     };
     run();
-    const timer = setInterval(run, 15000);
+    const timer = setInterval(run, 60000);
     const retryTimer = setInterval(() => {
       failedRefundsRef.current.clear();
     }, 300_000);
@@ -381,7 +381,7 @@ export default function DashboardPage() {
       }
     };
     run();
-    const timer = setInterval(run, 15000);
+    const timer = setInterval(run, 60000);
     const retryTimer = setInterval(() => {
       failedRecoverRef.current.clear();
     }, 300_000);
@@ -431,7 +431,7 @@ export default function DashboardPage() {
       if (dirty) saveHandledChange(identity.pubkey, handled);
     };
     run();
-    const timer = setInterval(run, 15000);
+    const timer = setInterval(run, 60000);
     return () => {
       cancelled = true;
       clearInterval(timer);
