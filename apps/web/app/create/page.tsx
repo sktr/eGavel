@@ -9,7 +9,7 @@ import { fetchNostrLinkStatus } from "../../lib/nostr-link";
 import { DEFAULT_MINT } from "../../lib/config";
 import { compressImage } from "../../lib/image";
 import { uploadToBlossom } from "../../lib/blossom";
-import { buildListingEvent, publishListing } from "../../lib/nostr-listing";
+import { buildListingEvent, publishSignedEvent } from "../../lib/nostr-listing";
 import { signSecretHex } from "../../lib/claim";
 import { ItemPlaceholder } from "../../components/item-placeholder";
 import { IdentityNostrSection } from "../identity-nostr-section";
@@ -272,6 +272,15 @@ export default function CreateAuctionPage() {
       }
 
       showToast("Auction created!");
+
+      // Fire-and-forget: publish the signed NIP-99 event to Nostr relays.
+      // The server also re-publishes, but the client publish ensures the event
+      // is on relays immediately (server publish is fire-and-forget after response).
+      if (nostrEvent) {
+        void publishSignedEvent(nostrEvent).catch((e) =>
+          console.error("[Nostr] client relay publish failed", e),
+        );
+      }
 
       // Reset form
       setItem("");

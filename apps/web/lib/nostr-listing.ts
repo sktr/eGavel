@@ -54,6 +54,18 @@ export async function publishListing(
   return relays
 }
 
+/** Publish an already-signed event to relays (no re-signing). */
+export async function publishSignedEvent(
+  signedEvent: unknown,
+  relays = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"],
+): Promise<void> {
+  const { SimplePool } = await import("nostr-tools")
+  const pool = new SimplePool()
+  const pubs = pool.publish(relays, signedEvent as never)
+  await Promise.allSettled(pubs)
+  pool.close(relays)
+}
+
 export function listingNaddr(pubkey: string, d: string, relays: string[]): string {
   return nip19.naddrEncode({ pubkey, kind: 30402, identifier: d, relays })
 }
