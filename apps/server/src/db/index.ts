@@ -3,12 +3,8 @@ import type { Auction, Bid } from "@egavel/shared"
 
 export interface EscrowRow {
   auction_id: string
-  stage: number
-  status: string
+  shipped: number
   proofs_data: string
-  tracking_number: string | null
-  tracking_kind: string | null
-  migrated_at: number | null
   created_at: number
 }
 
@@ -53,9 +49,8 @@ export interface Db {
   getPendingReceives: (receiverPubkey: string) => Promise<Array<{ mint_url: string; proofs: string; amount: number }>>
   saveEscrow: (row: EscrowRow) => Promise<void>
   getEscrow: (auctionId: string) => Promise<EscrowRow | null>
-  updateEscrowStage: (auctionId: string, stage: number, proofsData: string, status: string, migratedAt: number | null) => Promise<void>
-  setEscrowStatus: (auctionId: string, status: string) => Promise<void>
-  setEscrowTracking: (auctionId: string, trackingNumber: string, trackingKind: string) => Promise<void>
+  setShipped: (auctionId: string) => Promise<void>
+  deleteEscrow: (auctionId: string) => Promise<void>
   exec: (sql: string) => Promise<void>
 }
 
@@ -154,12 +149,8 @@ export function initDb(): Db {
 
     CREATE TABLE IF NOT EXISTS fulfillment_escrows (
       auction_id      TEXT PRIMARY KEY REFERENCES auctions(id),
-      stage           INTEGER NOT NULL DEFAULT 1,
-      status          TEXT NOT NULL DEFAULT 'active',
+      shipped         INTEGER NOT NULL DEFAULT 0,
       proofs_data     TEXT NOT NULL,
-      tracking_number TEXT,
-      tracking_kind   TEXT,
-      migrated_at     INTEGER,
       created_at      INTEGER NOT NULL
     );
   `)
@@ -447,22 +438,17 @@ export function initDb(): Db {
 
     async saveEscrow(row: EscrowRow) {
       db.prepare(`INSERT OR REPLACE INTO fulfillment_escrows
-        (auction_id, stage, status, proofs_data, tracking_number, tracking_kind, migrated_at, created_at)
-        VALUES (@auction_id, @stage, @status, @proofs_data, @tracking_number, @tracking_kind, @migrated_at, @created_at)`).run(row)
+        (auction_id, shipped, proofs_data, created_at)
+        VALUES (@auction_id, @shipped, @proofs_data, @created_at)`).run(row)
     },
     async getEscrow(auctionId: string) {
       return (db.prepare("SELECT * FROM fulfillment_escrows WHERE auction_id = ?").get(auctionId) ?? null) as EscrowRow | null
     },
-    async updateEscrowStage(auctionId, stage, proofsData, status, migratedAt) {
-      db.prepare("UPDATE fulfillment_escrows SET stage=?, proofs_data=?, status=?, migrated_at=? WHERE auction_id=?")
-        .run(stage, proofsData, status, migratedAt, auctionId)
+    async setShipped(auctionId: string) {
+      db.prepare("UPDATE fulfillment_escrows SET shipped = 1 WHERE auction_id = ?").run(auctionId)
     },
-    async setEscrowStatus(auctionId, status) {
-      db.prepare("UPDATE fulfillment_escrows SET status=? WHERE auction_id=?").run(status, auctionId)
-    },
-    async setEscrowTracking(auctionId, trackingNumber, trackingKind) {
-      db.prepare("UPDATE fulfillment_escrows SET tracking_number=?, tracking_kind=? WHERE auction_id=?")
-        .run(trackingNumber, trackingKind, auctionId)
+    async deleteEscrow(auctionId: string) {
+      db.prepare("DELETE FROM fulfillment_escrows WHERE auction_id = ?").run(auctionId)
     },
 
     async exec(sql: string) {

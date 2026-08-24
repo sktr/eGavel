@@ -23,7 +23,6 @@ function auctionFor(id: string): Auction {
 }
 
 async function saveEscrowWithAuction(db: Db, row: EscrowRow) {
-  // fulfillment_escrows.auction_id REFERENCES auctions(id) — need parent row for FK
   if (!(await db.getAuction(row.auction_id))) {
     await db.saveAuction(auctionFor(row.auction_id));
   }
@@ -32,10 +31,11 @@ async function saveEscrowWithAuction(db: Db, row: EscrowRow) {
 
 function escrowRow(overrides: Partial<EscrowRow> = {}): EscrowRow {
   return {
-    auction_id: "a1", stage: 1, status: "active",
+    auction_id: "a1",
+    shipped: 0,
     proofs_data: JSON.stringify({ proofs: [{ secret: "s" }], amount: 100 }),
-    tracking_number: null, tracking_kind: null, migrated_at: null,
-    created_at: Date.now(), ...overrides,
+    created_at: Date.now(),
+    ...overrides,
   };
 }
 
@@ -47,37 +47,19 @@ describe("fulfillment_escrows Db", () => {
     await saveEscrowWithAuction(db, escrowRow());
     const got = await db.getEscrow("a1");
     expect(got?.auction_id).toBe("a1");
-    expect(got?.stage).toBe(1);
-    expect(got?.status).toBe("active");
+    expect(got?.shipped).toBe(0);
   });
   it("returns null for missing escrow", async () => {
     expect(await db.getEscrow("nope")).toBeNull();
   });
-  it("updateEscrowStage changes stage/proofs/status/migratedAt", async () => {
+  it("setShipped updates shipped flag", async () => {
     await saveEscrowWithAuction(db, escrowRow());
-    await db.updateEscrowStage("a1", 2, JSON.stringify({ proofs: [] }), "migrating", Date.now());
-    const got = await db.getEscrow("a1");
-    expect(got?.stage).toBe(2);
-    expect(got?.status).toBe("migrating");
-    expect(got?.migrated_at).not.toBeNull();
+    await db.setShipped("a1");
+    expect((await db.getEscrow("a1"))?.shipped).toBe(1);
   });
-  it("setEscrowStatus updates status only", async () => {
+  it("deleteEscrow removes row", async () => {
     await saveEscrowWithAuction(db, escrowRow());
-    await db.setEscrowStatus("a1", "confirmed");
-    expect((await db.getEscrow("a1"))?.status).toBe("confirmed");
-  });
-  it("setEscrowTracking stores number and kind", async () => {
-    await saveEscrowWithAuction(db, escrowRow());
-    await db.setEscrowTracking("a1", "EE473124829US", "s10");
-    const got = await db.getEscrow("a1");
-    expect(got?.tracking_number).toBe("EE473124829US");
-    expect(got?.tracking_kind).toBe("s10");
-  });
-  it("covers all terminal statuses (enum completeness)", async () => {
-    const statuses = ["active","migrating","confirmed","refunded_winner","swept_seller","split_resolved"];
-    for (const s of statuses) {
-      await saveEscrowWithAuction(db, escrowRow({ auction_id: `a-${s}`, status: s }));
-      expect((await db.getEscrow(`a-${s}`))?.status).toBe(s);
-    }
+    await db.deleteEscrow("a1");
+    expect(await db.getEscrow("a1")).toBeNull();
   });
 });

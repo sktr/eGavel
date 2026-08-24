@@ -23,19 +23,14 @@ import { isValidMintUrl } from "../lib/mint-url.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { publishAuditLog, publishEscrowAudit } from "../lib/audit-publish.js";
 import {
-  STAGE1_LOCKTIME_SEC,
-  STAGE2_LOCKTIME_SEC,
-  TRACKING_CUTOFF_MS,
-  WINNER_FALLBACK_MS,
-  buildStage1LockOptions,
-  buildStage2LockOptions,
+  ESCROW_TIMEOUT_MS,
+  ESCROW_TIMEOUT_SEC,
+  buildEscrowLockOptions,
 } from "../lib/escrow.js";
-import { validateTracking } from "../lib/tracking.js";
 
 export interface AuctionRoutesConfig {
   serverKey?: string;
   feeBps?: number;
-  escrowMode?: "two-stage" | "legacy";
 }
 
 /**
@@ -490,20 +485,20 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     // amount. Proxy bidding: the winner locked their full MAX, so the excess
     // (locked - winning_amount) is returned to the winner as change.
     const feeBps = config.feeBps ?? auctionFeeBps();
-    const totalInput = bundle.proofs.reduce((a, p) => a + p.amount, 0);
+    const totalInput = bundle.proofs.reduce((a, p) => a + Number(p.amount), 0);
     const winningAmount = auction.winning_amount ?? 0;
 
     try {
       const wallet = new Wallet(bundle.mint_url, { unit: "sat" });
       await wallet.loadMint();
-      const keysetId = bundle.proofs[0]!.keyset_id;
+      const keysetId = (bundle.proofs[0] as unknown as { keyset_id?: string; id?: string }).keyset_id ?? (bundle.proofs[0] as unknown as { id: string }).id;
       const keyset = wallet.keyChain.getKeyset(keysetId);
 
       // Inputs: winning proofs with seller + server witnesses (SIG_INPUTS → sign the secret)
       const serverSkHex = skHexForServer();
       const inputs = bundle.proofs.map((p) => ({
-        id: p.keyset_id,
-        amount: p.amount,
+        id: (p as unknown as { id?: string; keyset_id?: string }).id ?? (p as unknown as { keyset_id?: string }).keyset_id ?? (p as unknown as { id: string }).id,
+        amount: Number(p.amount),
         secret: p.secret,
         C: p.C,
         witness: JSON.stringify({
@@ -522,16 +517,15 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         mintFee,
       );
 
-      const escrowMode = config.escrowMode ?? (process.env.ESCROW_MODE === "legacy" ? "legacy" : "two-stage");
-
       // Two-stage escrow: sellerNet is locked in a 2-of-3 P2PK (seller+winner+server,
       // refund winner @ claim+10d) instead of being given directly to the seller.
-      if (escrowMode === "two-stage" && sellerNet > 0 && auction.winner_npub) {
+      if (sellerNet > 0 && auction.winner_npub) {
         const winnerXOnly = canonicalPubkey(auction.winner_npub);
         const serverXOnly = canonicalPubkey(getServerPubkeyHex());
-        const locktime = Math.floor(Date.now() / 1000) + STAGE1_LOCKTIME_SEC;
+        const locktime = Math.floor(Date.now() / 1000) + ESCROW_TIMEOUT_SEC;
+        const lockOpts = buildEscrowLockOptions(sellerXOnly, winnerXOnly, serverXOnly, locktime);
         const escrowOutputs = OutputData.createP2PKData(
-          buildStage1LockOptions(sellerXOnly, winnerXOnly, serverXOnly, locktime),
+          { ...lockOpts, pubkey: [...lockOpts.pubkey], refundKeys: [...lockOpts.refundKeys] },
           sellerNet,
           keyset,
         );
@@ -566,17 +560,13 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         }
         await db.saveEscrow({
           auction_id: auction.id,
-          stage: 1,
-          status: "active",
+          shipped: 0,
           proofs_data: JSON.stringify({ proofs: escrowProofs, mint_url: bundle.mint_url, amount: sellerNet }),
-          tracking_number: null,
-          tracking_kind: null,
-          migrated_at: null,
           created_at: Date.now(),
         });
         await db.markClaimed(auction.id);
 
-        return c.json({ escrowed: true, stage: 1, status: "active", amount: sellerNet, fee, change });
+        return c.json({ escrowed: true, amount: sellerNet, fee, change });
       }
 
       const sellerOutputs = OutputData.createP2PKData(
@@ -625,7 +615,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
   });
 
-  // ── Escrow read: seller or winner fetches stage/status + P2PK proofs ──
+  // ── Escrow read: seller or winner fetches shipped status + P2PK proofs ──
   router.get("/auctions/:id/escrow", async (c) => {
     const id = c.req.param("id")!;
     const auction = await db.getAuction(id);
@@ -643,229 +633,18 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (!isSeller && !isWinner) {
       return c.json({ error: "FORBIDDEN" }, 403);
     }
-    const stage1_expired =
-      escrow.stage === 1 ? Date.now() >= escrow.created_at + STAGE1_LOCKTIME_SEC * 1000 : false;
+    const timeoutExpired = Date.now() >= escrow.created_at + ESCROW_TIMEOUT_MS;
     return c.json({
       auction_id: escrow.auction_id,
-      stage: escrow.stage,
-      status: escrow.status,
-      tracking_number: escrow.tracking_number,
-      tracking_kind: escrow.tracking_kind,
-      migrated_at: escrow.migrated_at,
+      shipped: escrow.shipped,
       created_at: escrow.created_at,
       proofs_data: escrow.proofs_data,
-      stage1_expired,
+      timeout_expired: timeoutExpired,
     });
   });
 
-  // ── Tracking: seller reports shipment tracking number ──
-  router.post("/auctions/:id/tracking", async (c) => {
-    const id = c.req.param("id")!;
-    const auction = await db.getAuction(id);
-    if (!auction) return c.json({ error: "not found" }, 404);
-    const body = (await c.req.json().catch(() => null)) as {
-      tracking_number?: string;
-      seller_pubkey?: string;
-      seller_sig?: string;
-    } | null;
-    if (!body?.tracking_number || !body?.seller_pubkey || !body?.seller_sig)
-      return c.json({ error: "missing fields" }, 400);
-    if (canonicalPubkey(body.seller_pubkey) !== canonicalPubkey(auction.seller_pubkey))
-      return c.json({ error: "NOT_SELLER" }, 403);
-    if (
-      !verifySecretSignature(
-        body.seller_sig,
-        `tracking:${id}:${body.tracking_number}`,
-        canonicalPubkey(body.seller_pubkey),
-      )
-    )
-      return c.json({ error: "INVALID_SIGNATURE" }, 401);
-    const escrow = await db.getEscrow(id);
-    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
-    if (escrow.stage !== 1 || escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
-    const deadlineMs = escrow.created_at + STAGE1_LOCKTIME_SEC * 1000;
-    if (Date.now() >= deadlineMs - TRACKING_CUTOFF_MS) return c.json({ error: "DEADLINE_TOO_CLOSE" }, 400);
-    const v = validateTracking(body.tracking_number);
-    if (!v) return c.json({ error: "INVALID_TRACKING" }, 400);
-    await db.setEscrowTracking(id, body.tracking_number.trim(), v.kind);
-    {
-      let escrowAmount = 0;
-      try {
-        const bundle = parseProofData(escrow.proofs_data);
-        escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
-      } catch { escrowAmount = 0; }
-      void publishEscrowAudit(serverKey, { auctionId: id, status: "shipped", trackingKind: v.kind, amount: escrowAmount });
-    }
-    return c.json({ ok: true, kind: v.kind });
-  });
-
-  // ── Escrow relock: Stage1 (winner refund 10d) -> Stage2 (seller refund 30d) ──
-  router.post("/auctions/:id/escrow/relock", async (c) => {
-    const id = c.req.param("id")!;
-    const auction = await db.getAuction(id);
-    if (!auction) return c.json({ error: "not found" }, 404);
-    const escrow = await db.getEscrow(id);
-    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
-    if (escrow.stage !== 1 || escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
-    if (!escrow.tracking_number) return c.json({ error: "NO_TRACKING" }, 400);
-    const deadlineMs = escrow.created_at + STAGE1_LOCKTIME_SEC * 1000;
-    if (Date.now() >= deadlineMs - TRACKING_CUTOFF_MS) return c.json({ error: "DEADLINE_TOO_CLOSE" }, 400);
-
-    const body = (await c.req.json().catch(() => null)) as {
-      seller_sigs?: string[];
-      winner_sigs?: string[];
-    } | null;
-    if (!body?.seller_sigs || !Array.isArray(body.seller_sigs) || body.seller_sigs.length === 0) {
-      return c.json({ error: "missing seller_sigs" }, 400);
-    }
-    const sellerSigs: string[] = body.seller_sigs;
-    const winnerSigs: string[] | undefined = Array.isArray(body.winner_sigs) ? body.winner_sigs : undefined;
-
-    let bundle: StoredProofBundle;
-    try {
-      bundle = parseProofData(escrow.proofs_data);
-    } catch {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    if (!Array.isArray(bundle.proofs) || bundle.proofs.length === 0) {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    if (sellerSigs.length !== bundle.proofs.length) {
-      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
-    }
-    if (winnerSigs && winnerSigs.length !== bundle.proofs.length) {
-      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
-    }
-
-    const sellerXOnly = canonicalPubkey(auction.seller_pubkey);
-    const winnerXOnly = auction.winner_npub ? canonicalPubkey(auction.winner_npub) : "";
-    const serverXOnly = canonicalPubkey(getServerPubkeyHex());
-
-    // Validate seller signatures
-    for (let i = 0; i < bundle.proofs.length; i++) {
-      const secret = bundle.proofs[i]!.secret;
-      if (!verifySecretSignature(sellerSigs[i]!, secret, sellerXOnly)) {
-        return c.json({ error: "INVALID_SIGNATURE" }, 400);
-      }
-    }
-
-    const escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
-
-    // Resolve second sig for each input
-    const secondSigs: string[] = [];
-    let usedFallback = false;
-    for (let i = 0; i < bundle.proofs.length; i++) {
-      const secret = bundle.proofs[i]!.secret;
-      let second: string | null = null;
-      if (winnerSigs?.[i] && winnerXOnly && verifySecretSignature(winnerSigs[i]!, secret, winnerXOnly)) {
-        second = winnerSigs[i]!;
-      } else if (Date.now() >= escrow.created_at + WINNER_FALLBACK_MS) {
-        // Server fallback co-sign after 72h
-        try {
-          second = signSecret(secret, skHexForServer());
-          usedFallback = true;
-        } catch {
-          return c.json({ error: "SERVER_KEY_MISSING" }, 500);
-        }
-      } else {
-        return c.json({ error: "WINNER_CONSENT_REQUIRED" }, 400);
-      }
-      secondSigs.push(second);
-    }
-
-    // Build inputs with 2-of-3 witnesses
-    const inputs = bundle.proofs.map((p, i) => ({
-      id: p.keyset_id,
-      amount: p.amount,
-      secret: p.secret,
-      C: p.C,
-      witness: JSON.stringify({ signatures: [sellerSigs[i]!, secondSigs[i]!] }),
-    }));
-
-    try {
-      const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
-        loadMint: () => Promise<void>;
-        keyChain: { getKeyset: (id: string) => unknown };
-        getFeesForProofs: (proofs: unknown) => unknown;
-        mint: {
-          swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }>;
-          restore?: (args: { outputs: unknown[] }) => Promise<{ signatures: unknown[] }>;
-        };
-        checkProofsStates?: (proofs: unknown[]) => Promise<Array<{ state: string }>>;
-      };
-      await wallet.loadMint();
-      const keysetId = bundle.proofs[0]!.keyset_id;
-      const keyset = wallet.keyChain.getKeyset(keysetId);
-      const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
-      let feeNum = 0;
-      if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
-      else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
-      else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
-        try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
-      } else feeNum = Number(String(mintFeeRaw ?? 0));
-      if (!Number.isFinite(feeNum)) feeNum = 0;
-      const stage2Amount = Math.max(0, escrowAmount - feeNum);
-
-      const locktimeSec = Math.floor(Date.now() / 1000) + STAGE2_LOCKTIME_SEC;
-      const stage2Outputs = (OutputData as unknown as {
-        createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
-          blindedMessage: unknown;
-          blindingFactor: bigint;
-          secret: Uint8Array;
-          toProof: (sig: unknown, ks: unknown) => unknown;
-        }>;
-        serialize: (o: { blindedMessage: unknown; blindingFactor: bigint; secret: Uint8Array }) => unknown;
-      }).createP2PKData(
-        buildStage2LockOptions(sellerXOnly, winnerXOnly, serverXOnly, locktimeSec),
-        stage2Amount,
-        keyset,
-      );
-
-      const pendingSerialized = stage2Outputs.map((o) =>
-        (OutputData as unknown as { serialize: (o: unknown) => unknown }).serialize(o as unknown as never),
-      );
-
-      const envelope = {
-        previousBundle: bundle,
-        pendingOutputs: pendingSerialized,
-        escrowAmount,
-      };
-
-      await db.updateEscrowStage(id, 1, JSON.stringify(envelope), "migrating", null);
-
-      let swapRes: { signatures: unknown[] };
-      try {
-        swapRes = await wallet.mint.swap({
-          inputs: inputs as never,
-          outputs: stage2Outputs.map((o) => o.blindedMessage),
-        });
-      } catch (e) {
-        // Keep migrating for reconcile to handle
-        console.error(`relock swap failed (auction ${id}):`, e);
-        return c.json({ error: "MIGRATION_UNKNOWN" }, 500);
-      }
-
-      const newProofs = stage2Outputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
-      const newBundle = { proofs: newProofs, mint_url: bundle.mint_url, amount: stage2Amount };
-      await db.updateEscrowStage(id, 2, JSON.stringify(newBundle), "active", Date.now());
-
-      void publishEscrowAudit(serverKey, {
-        auctionId: id,
-        status: "shipped",
-        trackingKind: escrow.tracking_kind ?? undefined,
-        ...(usedFallback ? { fallbackCosign: true as const } : {}),
-        amount: stage2Amount,
-      });
-
-      return c.json({ ok: true, stage: 2, status: "active", amount: stage2Amount });
-    } catch (err) {
-      console.error(`relock failed (auction ${id}):`, err);
-      return c.json({ error: "relock failed" }, 500);
-    }
-  });
-
-  // ── Escrow reconcile: crash recovery for migrating state ──
-  router.post("/auctions/:id/escrow/reconcile", async (c) => {
+  // ── Shipped: seller marks the escrow as shipped ──
+  router.post("/auctions/:id/shipped", async (c) => {
     const id = c.req.param("id")!;
     const auction = await db.getAuction(id);
     if (!auction) return c.json({ error: "not found" }, 404);
@@ -874,138 +653,49 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       seller_sig?: string;
     } | null;
     if (!body?.seller_pubkey || !body?.seller_sig) return c.json({ error: "missing fields" }, 400);
-    if (canonicalPubkey(body.seller_pubkey) !== canonicalPubkey(auction.seller_pubkey)) {
+    if (canonicalPubkey(body.seller_pubkey) !== canonicalPubkey(auction.seller_pubkey))
       return c.json({ error: "NOT_SELLER" }, 403);
-    }
-    if (!verifySecretSignature(body.seller_sig, `reconcile:${id}`, canonicalPubkey(body.seller_pubkey))) {
+    if (!verifySecretSignature(body.seller_sig, `shipped:${id}`, canonicalPubkey(body.seller_pubkey)))
       return c.json({ error: "INVALID_SIGNATURE" }, 401);
-    }
     const escrow = await db.getEscrow(id);
     if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
-    if (escrow.status !== "migrating") return c.json({ error: "WRONG_STATE" }, 400);
-
-    let envelope: { previousBundle: StoredProofBundle; pendingOutputs: unknown[]; escrowAmount: number };
-    try {
-      envelope = JSON.parse(escrow.proofs_data);
-    } catch {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    if (!envelope?.previousBundle?.proofs || !Array.isArray(envelope.pendingOutputs)) {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    const previousBundle = envelope.previousBundle as StoredProofBundle;
-    const pendingSerialized = envelope.pendingOutputs as Array<{
-      blindedMessage: unknown;
-      blindingFactor: string;
-      secret: string;
-    }>;
-
-    try {
-      const wallet = new Wallet(previousBundle.mint_url, { unit: "sat" }) as unknown as {
-        loadMint: () => Promise<void>;
-        keyChain: { getKeyset: (id: string) => unknown };
-        mint: {
-          restore?: (args: { outputs: unknown[] }) => Promise<{ signatures: unknown[]; outputs?: unknown[] }>;
-        };
-        checkProofsStates: (proofs: unknown[]) => Promise<Array<{ state: string }>>;
-      };
-      await wallet.loadMint();
-      const keysetId = previousBundle.proofs[0]!.keyset_id;
-      const keyset = wallet.keyChain.getKeyset(keysetId);
-
-      const states = await wallet.checkProofsStates(previousBundle.proofs as never);
-      const allUnspent = states.every((s) => s.state === "UNSPENT");
-      if (allUnspent) {
-        await db.updateEscrowStage(id, 1, JSON.stringify(previousBundle), "active", null);
-        return c.json({ ok: true, rolledBack: true, stage: 1 });
-      }
-
-      // SPENT => recover signatures via restore
-      const pendingBlinded = pendingSerialized.map((s) => (s as { blindedMessage: unknown }).blindedMessage);
-      let signatures: unknown[] = [];
-      if (wallet.mint.restore) {
-        const restoreRes = await wallet.mint.restore({ outputs: pendingBlinded });
-        signatures = (restoreRes as { signatures: unknown[] }).signatures ?? [];
-        // Some mints return { outputs: [{ blindedMessage, signature }] } – handle fallback
-        if (signatures.length === 0 && (restoreRes as { outputs?: Array<{ signature?: unknown }> }).outputs) {
-          signatures = ((restoreRes as { outputs: Array<{ signature?: unknown }> }).outputs ?? []).map((o) => o.signature);
-        }
-      } else {
-        return c.json({ error: "RESTORE_NOT_SUPPORTED" }, 500);
-      }
-
-      const restoredOutputs = pendingSerialized.map((s) =>
-        (OutputData as unknown as { deserialize: (s: unknown) => { toProof: (sig: unknown, ks: unknown) => unknown } }).deserialize(s as unknown as never),
-      );
-      const newProofs = restoredOutputs.map((o, i) => o.toProof(signatures[i], keyset));
-      const stage2Amount = (newProofs as Array<{ amount: number }>).reduce((a, p) => a + p.amount, 0);
-      // Fallback: use envelope amount if toProof mock loses amount granularity
-      const finalAmount = stage2Amount > 0 ? stage2Amount : envelope.escrowAmount;
-      const newBundle = { proofs: newProofs, mint_url: previousBundle.mint_url, amount: finalAmount };
-      await db.updateEscrowStage(id, 2, JSON.stringify(newBundle), "active", Date.now());
-      return c.json({ ok: true, stage: 2, status: "active" });
-    } catch (err) {
-      console.error(`reconcile failed (auction ${id}):`, err);
-      return c.json({ error: "RECONCILE_FAILED" }, 500);
-    }
+    if (escrow.shipped) return c.json({ error: "ALREADY_SHIPPED" }, 400);
+    await db.setShipped(id);
+    void publishEscrowAudit(serverKey, { auctionId: id, status: "shipped", amount: 0 });
+    return c.json({ ok: true });
   });
 
-  // ── Confirm receipt: winner co-signs Stage2 escrow proofs to release to seller ──
-  router.post("/auctions/:id/confirm-receipt", async (c) => {
+  // ── Confirm: winner co-signs escrow proofs to release to seller ──
+  router.post("/auctions/:id/confirm", async (c) => {
     const id = c.req.param("id")!;
     const auction = await db.getAuction(id);
     if (!auction) return c.json({ error: "not found" }, 404);
     const escrow = await db.getEscrow(id);
     if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
-    if (escrow.stage !== 2 || escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
-
     const body = (await c.req.json().catch(() => null)) as {
       winner_pubkey?: string;
       winner_sig?: string;
-      secret_sigs?: string[];
     } | null;
-    if (!body?.winner_pubkey || !body?.winner_sig || !Array.isArray(body.secret_sigs)) {
-      return c.json({ error: "missing fields" }, 400);
-    }
-
+    if (!body?.winner_pubkey || !body?.winner_sig) return c.json({ error: "missing fields" }, 400);
     const winnerXOnly = canonicalPubkey(body.winner_pubkey);
     const auctionWinnerXOnly = auction.winner_npub ? canonicalPubkey(auction.winner_npub) : "";
-    if (winnerXOnly !== auctionWinnerXOnly) {
-      return c.json({ error: "FORBIDDEN" }, 403);
-    }
-    if (!verifySecretSignature(body.winner_sig, `confirm:${id}`, winnerXOnly)) {
+    if (winnerXOnly !== auctionWinnerXOnly) return c.json({ error: "FORBIDDEN" }, 403);
+    if (!verifySecretSignature(body.winner_sig, `confirm:${id}`, winnerXOnly))
       return c.json({ error: "INVALID_SIGNATURE" }, 401);
-    }
-
-    let bundle: StoredProofBundle;
-    try {
-      bundle = parseProofData(escrow.proofs_data);
-    } catch {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    if (!Array.isArray(bundle.proofs) || bundle.proofs.length === 0) {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    if (body.secret_sigs.length !== bundle.proofs.length) {
-      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
-    }
-    for (let i = 0; i < bundle.proofs.length; i++) {
-      const secret = bundle.proofs[i]!.secret;
-      if (!verifySecretSignature(body.secret_sigs[i]!, secret, winnerXOnly)) {
-        return c.json({ error: "INVALID_SIGNATURE" }, 400);
-      }
-    }
+    if (!escrow.shipped) return c.json({ error: "NOT_SHIPPED" }, 400);
 
     const serverSkHex = skHexForServer();
-    const inputs = bundle.proofs.map((p, i) => ({
-      id: p.keyset_id,
-      amount: p.amount,
+    let bundle: StoredProofBundle;
+    try { bundle = parseProofData(escrow.proofs_data); } catch { return c.json({ error: "INVALID_PROOF" }, 400); }
+    if (!bundle.proofs?.length) return c.json({ error: "INVALID_PROOF" }, 400);
+
+    const inputs = bundle.proofs.map((p) => ({
+      id: (p as unknown as { id?: string; keyset_id?: string }).id ?? (p as unknown as { keyset_id?: string }).keyset_id ?? (p as unknown as { id: string }).id,
+      amount: Number(p.amount),
       secret: p.secret,
       C: p.C,
-      witness: JSON.stringify({ signatures: [body.secret_sigs![i]!, signSecret(p.secret, serverSkHex)] }),
+      witness: JSON.stringify({ signatures: [signSecret(p.secret, winnerXOnly), signSecret(p.secret, serverSkHex)] }),
     }));
-
-    const escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
 
     try {
       const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
@@ -1015,7 +705,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         mint: { swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }> };
       };
       await wallet.loadMint();
-      const keysetId = bundle.proofs[0]!.keyset_id;
+      const keysetId = (bundle.proofs[0] as unknown as { keyset_id?: string; id?: string }).keyset_id ?? (bundle.proofs[0] as unknown as { id: string }).id;
       const keyset = wallet.keyChain.getKeyset(keysetId);
 
       const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
@@ -1026,8 +716,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
       } else feeNum = Number(String(mintFeeRaw ?? 0));
       if (!Number.isFinite(feeNum)) feeNum = 0;
-      const releaseAmount = Math.max(0, escrowAmount - feeNum);
 
+      const escrowAmount = bundle.proofs.reduce((a, p) => a + Number(p.amount), 0);
+      const releaseAmount = Math.max(0, escrowAmount - feeNum);
       const sellerXOnly = canonicalPubkey(auction.seller_pubkey);
       const releaseOutputs = (OutputData as unknown as {
         createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
@@ -1044,149 +735,12 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       const releaseProofs = releaseOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
 
       await db.savePendingReceive(sellerXOnly, bundle.mint_url, JSON.stringify(releaseProofs), releaseAmount);
-      await db.setEscrowStatus(id, "confirmed");
-
+      await db.deleteEscrow(id);
       void publishEscrowAudit(serverKey, { auctionId: id, status: "confirmed", amount: releaseAmount });
-
-      return c.json({ ok: true, status: "confirmed", amount: releaseAmount });
+      return c.json({ ok: true, amount: releaseAmount });
     } catch (err) {
-      console.error(`confirm-receipt failed (auction ${id}):`, err);
+      console.error(`confirm failed (auction ${id}):`, err);
       return c.json({ error: "confirm failed" }, 500);
-    }
-  });
-
-  // ── Escrow split: voluntary resolution by both parties ──
-  router.post("/auctions/:id/escrow/split", async (c) => {
-    const id = c.req.param("id")!;
-    const auction = await db.getAuction(id);
-    if (!auction) return c.json({ error: "not found" }, 404);
-    const escrow = await db.getEscrow(id);
-    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
-    if (escrow.status !== "active") return c.json({ error: "WRONG_STATE" }, 400);
-
-    const body = (await c.req.json().catch(() => null)) as {
-      splits?: Array<{ pubkey: string; amount: number }>;
-      seller_pubkey?: string;
-      seller_sig?: string;
-      winner_pubkey?: string;
-      winner_sig?: string;
-      seller_secret_sigs?: string[];
-      winner_secret_sigs?: string[];
-    } | null;
-    if (
-      !body?.splits ||
-      !Array.isArray(body.splits) ||
-      body.splits.length === 0 ||
-      !body.seller_pubkey ||
-      !body.seller_sig ||
-      !body.winner_pubkey ||
-      !body.winner_sig ||
-      !Array.isArray(body.seller_secret_sigs) ||
-      !Array.isArray(body.winner_secret_sigs)
-    ) {
-      return c.json({ error: "missing fields" }, 400);
-    }
-
-    const sellerXOnly = canonicalPubkey(body.seller_pubkey);
-    const winnerXOnly = canonicalPubkey(body.winner_pubkey);
-    const auctionSellerXOnly = canonicalPubkey(auction.seller_pubkey);
-    const auctionWinnerXOnly = auction.winner_npub ? canonicalPubkey(auction.winner_npub) : "";
-    if (sellerXOnly !== auctionSellerXOnly) return c.json({ error: "NOT_SELLER" }, 403);
-    if (winnerXOnly !== auctionWinnerXOnly) return c.json({ error: "NOT_WINNER" }, 403);
-
-    const hash = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify(body.splits))));
-    const splitMsg = `split:${id}:${hash}`;
-    if (!verifySecretSignature(body.seller_sig, splitMsg, sellerXOnly)) {
-      return c.json({ error: "INVALID_SIGNATURE" }, 401);
-    }
-    if (!verifySecretSignature(body.winner_sig, splitMsg, winnerXOnly)) {
-      return c.json({ error: "INVALID_SIGNATURE" }, 401);
-    }
-
-    let bundle: StoredProofBundle;
-    try {
-      bundle = parseProofData(escrow.proofs_data);
-    } catch {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    if (!Array.isArray(bundle.proofs) || bundle.proofs.length === 0) {
-      return c.json({ error: "INVALID_PROOF" }, 400);
-    }
-    if (
-      body.seller_secret_sigs.length !== bundle.proofs.length ||
-      body.winner_secret_sigs.length !== bundle.proofs.length
-    ) {
-      return c.json({ error: "SIG_COUNT_MISMATCH" }, 400);
-    }
-    for (let i = 0; i < bundle.proofs.length; i++) {
-      const secret = bundle.proofs[i]!.secret;
-      if (!verifySecretSignature(body.seller_secret_sigs[i]!, secret, sellerXOnly)) {
-        return c.json({ error: "INVALID_SIGNATURE" }, 400);
-      }
-      if (!verifySecretSignature(body.winner_secret_sigs[i]!, secret, winnerXOnly)) {
-        return c.json({ error: "INVALID_SIGNATURE" }, 400);
-      }
-    }
-
-    const escrowAmount = bundle.proofs.reduce((a, p) => a + p.amount, 0);
-
-    const inputs = bundle.proofs.map((p, i) => ({
-      id: p.keyset_id,
-      amount: p.amount,
-      secret: p.secret,
-      C: p.C,
-      witness: JSON.stringify({ signatures: [body.seller_secret_sigs![i]!, body.winner_secret_sigs![i]!] }),
-    }));
-
-    try {
-      const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
-        loadMint: () => Promise<void>;
-        keyChain: { getKeyset: (id: string) => unknown };
-        getFeesForProofs: (proofs: unknown) => unknown;
-        mint: { swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }> };
-      };
-      await wallet.loadMint();
-      const keysetId = bundle.proofs[0]!.keyset_id;
-      const keyset = wallet.keyChain.getKeyset(keysetId);
-
-      const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
-      let feeNum = 0;
-      if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
-      else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
-      else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
-        try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
-      } else feeNum = Number(String(mintFeeRaw ?? 0));
-      if (!Number.isFinite(feeNum)) feeNum = 0;
-
-      const sumSplits = body.splits.reduce((a, s) => a + Number(s.amount), 0);
-      if (sumSplits + feeNum !== escrowAmount) {
-        return c.json({ error: "UNBALANCED" }, 400);
-      }
-
-      const splitOutputs = (body.splits as Array<{ pubkey: string; amount: number }>).flatMap((s) =>
-        (OutputData as unknown as {
-          createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
-            blindedMessage: unknown;
-            toProof: (sig: unknown, ks: unknown) => unknown;
-          }>;
-        }).createP2PKData({ pubkey: canonicalPubkey(s.pubkey) }, s.amount, keyset),
-      );
-
-      const swapRes = await wallet.mint.swap({
-        inputs: inputs as never,
-        outputs: splitOutputs.map((o) => o.blindedMessage),
-      });
-
-      const splitProofs = splitOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
-
-      await db.setEscrowStatus(id, "split_resolved");
-
-      void publishEscrowAudit(serverKey, { auctionId: id, status: "split_resolved", amount: escrowAmount });
-
-      return c.json({ ok: true, proofs: splitProofs });
-    } catch (err) {
-      console.error(`split failed (auction ${id}):`, err);
-      return c.json({ error: "split failed" }, 500);
     }
   });
 

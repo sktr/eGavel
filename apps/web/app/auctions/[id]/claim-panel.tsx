@@ -8,18 +8,20 @@ import { bytesToHex } from "../../../lib/hex";
 
 export function ClaimPanel({
   auction,
-  isSeller,
-  isWinner,
+  isSeller: isSellerProp,
+  isWinner: isWinnerProp,
 }: {
   auction: Auction;
-  isSeller: boolean;
-  isWinner: boolean;
+  isSeller?: boolean;
+  isWinner?: boolean;
 }) {
   const { identity } = useIdentity();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const isSeller = isSellerProp ?? (!!identity && identity.pubkey === auction.seller_pubkey);
+  const isWinner = isWinnerProp ?? (!!identity && !!auction.winner_npub && identity.pubkey === auction.winner_npub);
   const canClaim =
     isSeller && auction.state === "SETTLED" && auction.winner_npub !== null && !auction.claimed;
 
@@ -39,9 +41,15 @@ export function ClaimPanel({
         auction.seller_pubkey,
         bytesToHex(identity.secretKey),
       );
-      setStatus(
-        `Claimed ${(auction.winning_amount ?? 0).toLocaleString()} sats to your wallet (${result.proofs.length} proof${result.proofs.length === 1 ? "" : "s"})${result.fee > 0 ? ` — platform fee ${result.fee} sats` : ""}.`,
-      );
+      if (result.escrowed) {
+        setStatus(
+          `Claimed — ${result.amount?.toLocaleString()} sats moved to escrow. Mark shipped to proceed.`,
+        );
+      } else {
+        setStatus(
+          `Claimed ${(auction.winning_amount ?? 0).toLocaleString()} sats to your wallet (${result.proofs.length} proof${result.proofs.length === 1 ? "" : "s"})${result.fee > 0 ? ` — platform fee ${result.fee} sats` : ""}.`,
+        );
+      }
     } catch (err) {
       setError(String(err));
     } finally {

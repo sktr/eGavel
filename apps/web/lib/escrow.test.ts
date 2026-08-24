@@ -1,17 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { stubWindow, restoreWindow, jsonResponse } from "./test-utils";
+import { describe, it, expect, vi } from "vitest";
 import { fetchEscrow } from "./escrow";
 
+vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+  ok: true,
+  json: () => Promise.resolve({ auction_id: "a1", shipped: 0, created_at: 123, proofs_data: "{}", timeout_expired: false }),
+}));
+
 describe("fetchEscrow", () => {
-  beforeEach(()=> stubWindow());
-  afterEach(()=> restoreWindow());
   it("fetches GET /escrow with signed query", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ auction_id:"a1", stage:1, status:"active", proofs_data:"{}" }));
-    (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
-    // signSecretHex は固定 sk で決定的
-    const sk="ab".repeat(32);
-    const res = await fetchEscrow("a1", "02aa", sk);
-    expect(fetchMock).toHaveBeenCalled();
+    const res = await fetchEscrow("a1", "02aa".padEnd(64, "0"), "ab".repeat(32));
     expect(res.auction_id).toBe("a1");
+    expect(res.shipped).toBe(0);
   });
 });

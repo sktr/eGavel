@@ -307,19 +307,10 @@ export function createD1Db(d1: D1Database): Db {
       await d1
         .prepare(
           `INSERT OR REPLACE INTO fulfillment_escrows
-            (auction_id, stage, status, proofs_data, tracking_number, tracking_kind, migrated_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            (auction_id, shipped, proofs_data, created_at)
+           VALUES (?, ?, ?, ?)`,
         )
-        .bind(
-          row.auction_id,
-          row.stage,
-          row.status,
-          row.proofs_data,
-          row.tracking_number,
-          row.tracking_kind,
-          row.migrated_at,
-          row.created_at,
-        )
+        .bind(row.auction_id, row.shipped, row.proofs_data, row.created_at)
         .run()
     },
     async getEscrow(auctionId: string) {
@@ -328,19 +319,16 @@ export function createD1Db(d1: D1Database): Db {
         .bind(auctionId)
         .first<EscrowRow>()
     },
-    async updateEscrowStage(auctionId, stage, proofsData, status, migratedAt) {
+    async setShipped(auctionId: string) {
       await d1
-        .prepare("UPDATE fulfillment_escrows SET stage=?, proofs_data=?, status=?, migrated_at=? WHERE auction_id=?")
-        .bind(stage, proofsData, status, migratedAt, auctionId)
+        .prepare("UPDATE fulfillment_escrows SET shipped = 1 WHERE auction_id = ?")
+        .bind(auctionId)
         .run()
     },
-    async setEscrowStatus(auctionId, status) {
-      await d1.prepare("UPDATE fulfillment_escrows SET status=? WHERE auction_id=?").bind(status, auctionId).run()
-    },
-    async setEscrowTracking(auctionId, trackingNumber, trackingKind) {
+    async deleteEscrow(auctionId: string) {
       await d1
-        .prepare("UPDATE fulfillment_escrows SET tracking_number=?, tracking_kind=? WHERE auction_id=?")
-        .bind(trackingNumber, trackingKind, auctionId)
+        .prepare("DELETE FROM fulfillment_escrows WHERE auction_id = ?")
+        .bind(auctionId)
         .run()
     },
 

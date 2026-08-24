@@ -68,23 +68,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     expect(body.escrowed).toBe(true);
     expect(body).not.toHaveProperty("seller_proofs");
     const row = await db.getEscrow("a1");
-    expect(row?.stage).toBe(1); expect(row?.status).toBe("active");
-  });
-  it("legacy mode: returns seller_proofs and creates no escrow row", async () => {
-    const { sk: sellerSk, pk: sellerPk } = sellerKey();
-    const { sk: serverSk } = sellerKey();
-    const db = initDb();
-    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowMode: "legacy", feeBps: 0 }));
-    const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
-    const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
-    await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
-    await db.saveBid({ id:"a1-y", auction_id:"a1", max_amount:500, current_amount:500, bidder_npub:winnerPk, Y:"y", received_at:Date.now(), status:"verified", proof_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret, amount:500 }], mint_url:"https://mint.example", amount:500 }) } as Bid);
-    const sig = signSecret(secret, sellerSk);
-    const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
-    expect(res.status).toBe(200);
-    const body = await res.json() as Record<string,unknown>;
-    expect(body).toHaveProperty("seller_proofs");
-    expect(await db.getEscrow("a1")).toBeNull();
+    expect(row?.shipped).toBe(0);
   });
   it("two-stage: sellerNet==0 creates no escrow (degenerate, instant release)", async () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();

@@ -97,13 +97,14 @@ export async function requestCoSign(
 }
 
 /** Full seller claim: fetch → sign all → server builds the fee-split swap and
- * returns the seller's new proofs (spec §13.1). */
+ * returns either the seller's new proofs (legacy) or locks funds in escrow
+ * for the simplified flow. */
 export async function claimAuction(
   auctionId: string,
   sellerPubkey: string,
   sellerSkHex: string,
   apiBase?: string,
-): Promise<{ proofs: Proof[]; fee: number }> {
+): Promise<{ proofs: Proof[]; fee: number; escrowed?: boolean; amount?: number }> {
   const bundle = await fetchClaimData(auctionId, sellerPubkey, apiBase);
 
   const secrets = bundle.proofs.map((p) => p.secret);
@@ -118,9 +119,22 @@ export async function claimAuction(
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? "claim failed");
   }
-  const data = (await res.json()) as { seller_proofs: Proof[]; fee: number };
-  storeProofsInWallet(data.seller_proofs, bundle.mint_url, sellerPubkey);
-  return { proofs: data.seller_proofs, fee: data.fee };
+  const data = (await res.json()) as
+    | { seller_proofs: Proof[]; fee: number; change?: number }
+    | { escrowed: true; stage: number; status: string; amount: number; fee: number; change: number };
+  if ("escrowed" in data && data.escrowed) {
+    // Two-stage escrow: sellerNet is locked, not in wallet yet.
+    // Change (if any) is still returned as winner change, but seller gets nothing yet.
+    // No proofs to store for the seller at this stage.
+    return { proofs: [], fee: data.fee, escrowed: true, amount: data.amount };
+  }
+  const legacy = data as { seller_proofs: Proof[]; fee: number };
+  if (Array.isArray(legacy.seller_proofs)) {
+    storeProofsInWallet(legacy.seller_proofs, bundle.mint_url, sellerPubkey);
+    return { proofs: legacy.seller_proofs, fee: legacy.fee };
+  }
+  // Fallback for unexpected shape
+  return { proofs: [], fee: 0 };
 }
 
 /** Full bidder refund: fetch → sign each with the refund key → swap. */

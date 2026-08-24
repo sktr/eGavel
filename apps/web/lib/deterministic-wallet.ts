@@ -116,28 +116,42 @@ export function buildWallet(mintUrl: string): Wallet {
 }
 
 // ── Mint info cache (5 min) — avoids hammering /v1/info|keys|keysets on every
-// mount/visibilitychange. loadMint is idempotent; the cache is per-mintUrl.
+// mount/visibilitychange. Cache is per-mintUrl and shared across Wallet
+// instances: the first Wallet to load a mint caches its GetInfoResponse and
+// KeyChain data, and later Wallets for the same mintUrl are hydrated via
+// loadMintFromCache (no network). This keeps the 5-min window effective even
+// though the app builds a fresh Wallet per call site (header, wallet panel,
+// dashboard, etc.), which otherwise would each hit the mint.
 const MINT_CACHE_MS = 5 * 60 * 1000;
-const mintCache = new Map<string, { at: number; promise: Promise<void> }>();
+type MintCacheEntry = { at: number; info: unknown; cache: unknown };
+const mintInfoCache = new Map<string, MintCacheEntry>();
 
 export async function loadMintCached(wallet: Wallet, mintUrl: string): Promise<void> {
-  // In tests, bypass the cache so that per-test mocks for loadMint are respected
-  // (otherwise a successful load from a previous test would be reused).
   const isTest = typeof process !== "undefined" && ((process.env as Record<string, string | undefined>).VITEST === "true" || (process.env as Record<string, string | undefined>).NODE_ENV === "test");
   if (!isTest) {
-    const hit = mintCache.get(mintUrl);
+    const hit = mintInfoCache.get(mintUrl);
     if (hit && Date.now() - hit.at < MINT_CACHE_MS) {
       try {
-        await hit.promise;
+        // Hydrate this Wallet instance from the cached mint info without network
+        (wallet as unknown as { loadMintFromCache: (info: unknown, cache: unknown) => void }).loadMintFromCache(hit.info as never, hit.cache as never);
         return;
       } catch {
-        // cached load failed — fall through to retry
+        // cached hydrate failed — fall through to network load
       }
     }
   }
-  const p = wallet.loadMint();
-  if (!isTest) mintCache.set(mintUrl, { at: Date.now(), promise: p });
-  await p;
+  await wallet.loadMint();
+  if (!isTest) {
+    try {
+      const info = (wallet as unknown as { getMintInfo: () => unknown }).getMintInfo();
+      // KeyChain's internal cache is not directly exposed; store a minimal
+      // snapshot via the wallet's keyChain if available, otherwise just the info
+      const keyChain = (wallet as unknown as { keyChain: unknown }).keyChain;
+      mintInfoCache.set(mintUrl, { at: Date.now(), info, cache: keyChain });
+    } catch {
+      // best-effort cache — failure here does not affect the load
+    }
+  }
 }
 
 export interface RecoverResult {

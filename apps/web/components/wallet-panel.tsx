@@ -241,6 +241,48 @@ export function WalletPanel() {
     };
   }, [reqCreq, handleCheckPayments]);
 
+  // Auto-collect pending receives from server-side deposits (escrow
+  // confirm-receipt, NUT-18 payments). Runs every 30s when no deposit is active.
+  // Note: wallet.receive() stores proofs under the correct mint URL, and
+  // wallet.refresh() already handles all mints in the store. We must NOT
+  // call refresh() after receive() on a different mint, or it may overwrite
+  // the newly-stored proofs.
+  useEffect(() => {
+    if (!identity || reqCreq) return;
+    let cancelled = false;
+    let collected = new Set<string>(); // track which receipts we already collected
+    const run = async () => {
+      if (cancelled || !identity) return;
+      try {
+        const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey));
+        const res = await fetch(
+          apiUrl(`/wallet/receive?receiver_pubkey=${identity.pubkey}&sig=${sig}`),
+          { cache: "no-store" },
+        );
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          receipts: Array<{ mint_url: string; proofs: string; amount: number }>;
+        };
+        if (data.receipts.length === 0) return;
+        for (const r of data.receipts) {
+          const key = `${r.mint_url}:${r.amount}`;
+          if (collected.has(key)) continue; // already processed
+          collected.add(key);
+          const proofs = deserializeProofs(r.proofs);
+          // receive() stores proofs under the correct mint URL in the store.
+          // The wallet's own refresh() will handle all mints in the store
+          // on its next cycle, so we don't need to call refresh() here.
+          await wallet.receive(getEncodedToken({ mint: r.mint_url, proofs })).catch(() => {});
+        }
+      } catch {
+        // transient — skip
+      }
+    };
+    run(); // immediate on mount
+    const timer = setInterval(run, 30000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [identity, wallet, reqCreq]);
+
   // ── Withdraw (Cashu token) ──────────────────────────────────
   const [wdAmount, setWdAmount] = useState("");
   const [wdToken, setWdToken] = useState<string | null>(null);

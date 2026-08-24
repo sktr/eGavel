@@ -1,5 +1,6 @@
 import type { Auction } from "@egavel/shared"
 import type { Db } from "../db/index.js"
+import { ESCROW_TIMEOUT_MS } from "./escrow.js"
 
 /**
  * Event-driven settlement (lazy settle) + anti-sniping timing constants.
@@ -16,9 +17,19 @@ export const ANTI_SNIPING_WINDOW = 5 * 60_000
 /**
  * Settle `auction` if it is past E+grace. Returns the auction's current DB
  * state (reloaded after the atomic transition).
+ *
+ * Also processes escrow timeouts: deletes the escrow row so proofs are
+ * available for winner sweep via the refund path after locktime.
  */
-export async function settleIfDue(db: Db, auction: Auction): Promise<Auction> {
-  if (auction.state !== "ACTIVE" && auction.state !== "EXTENDED") return auction
+export async function settleIfDue(
+  db: Db,
+  auction: Auction,
+): Promise<Auction> {
+  if (auction.state !== "ACTIVE" && auction.state !== "EXTENDED") {
+    // Auction already settled — check for escrow timeout
+    await processEscrowTimeout(db, auction)
+    return auction
+  }
   if (Date.now() < auction.end_time + GRACE_MS) return auction
 
   const bids = await db.getVerifiedBids(auction.id)
@@ -32,5 +43,36 @@ export async function settleIfDue(db: Db, auction: Auction): Promise<Auction> {
   }
 
   await db.settleAuction(auction.id, winner, amount)
-  return (await db.getAuction(auction.id)) ?? auction
+  const settled = (await db.getAuction(auction.id)) ?? auction
+
+  // After settling, check for escrow timeout
+  await processEscrowTimeout(db, settled)
+
+  return settled
+}
+
+/**
+ * Process escrow timeout: delete the escrow row and log.
+ *
+ * The escrow proofs are P2PK-locked with {seller, winner, server} (n_sigs=2)
+ * and refund=winner after locktime. At timeout the server cannot produce the
+ * 2 signatures needed for a mint swap, so we clean up the DB row. The winner
+ * can sweep proofs client-side via the refund path after locktime.
+ */
+async function processEscrowTimeout(
+  db: Db,
+  auction: Auction,
+): Promise<void> {
+  if (auction.state !== "SETTLED") return
+
+  const escrow = await db.getEscrow(auction.id)
+  if (!escrow) return
+  if (Date.now() < escrow.created_at + ESCROW_TIMEOUT_MS) return
+  if (escrow.shipped) return
+
+  await db.deleteEscrow(auction.id)
+  console.log(
+    `Escrow timeout for ${auction.id}: shipped=0, escrow row deleted. ` +
+    `Proofs available for winner sweep via refund path after locktime.`
+  )
 }
