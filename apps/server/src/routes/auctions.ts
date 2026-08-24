@@ -744,6 +744,111 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
   });
 
+  // ── Release: timeout-gated seller self-release. The winner stayed silent
+  // for 14 days after shipping; the seller signs every escrow proof secret
+  // and the server co-signs, swapping the escrow into seller-owned proofs. ──
+  router.post("/auctions/:id/release", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
+    const body = (await c.req.json().catch(() => null)) as {
+      seller_pubkey?: string;
+      seller_sig?: string;
+      secrets?: string[];
+      seller_sigs?: string[];
+    } | null;
+    if (!body?.seller_pubkey || !body?.seller_sig) return c.json({ error: "missing fields" }, 400);
+    const sellerXOnly = canonicalPubkey(body.seller_pubkey);
+    if (sellerXOnly !== canonicalPubkey(auction.seller_pubkey))
+      return c.json({ error: "NOT_SELLER" }, 403);
+    if (!verifySecretSignature(body.seller_sig, `release:${id}`, sellerXOnly))
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    if (!escrow.shipped) return c.json({ error: "NOT_SHIPPED" }, 400);
+    if (Date.now() < escrow.created_at + ESCROW_TIMEOUT_MS)
+      return c.json({ error: "NOT_EXPIRED" }, 400);
+
+    const { secrets, seller_sigs } = body;
+    if (
+      !Array.isArray(secrets) ||
+      !Array.isArray(seller_sigs) ||
+      secrets.length === 0 ||
+      secrets.length !== seller_sigs.length
+    ) {
+      return c.json({ error: "missing secrets or seller_sigs" }, 400);
+    }
+
+    const serverSkHex = skHexForServer();
+    let bundle: StoredProofBundle;
+    try { bundle = parseProofData(escrow.proofs_data); } catch { return c.json({ error: "INVALID_PROOF" }, 400); }
+    if (!bundle.proofs?.length) return c.json({ error: "INVALID_PROOF" }, 400);
+
+    const validSecrets = new Set(bundle.proofs.map((p) => p.secret));
+    for (let i = 0; i < secrets.length; i++) {
+      if (!validSecrets.has(secrets[i]!)) return c.json({ error: "INVALID_MSG" }, 400);
+      if (!verifySecretSignature(seller_sigs[i]!, secrets[i]!, sellerXOnly)) {
+        return c.json({ error: "INVALID_SIGNATURE" }, 400);
+      }
+    }
+
+    try {
+      const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
+        loadMint: () => Promise<void>;
+        keyChain: { getKeyset: (id: string) => unknown };
+        getFeesForProofs: (proofs: unknown) => unknown;
+        mint: { swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }> };
+      };
+      await wallet.loadMint();
+      const keysetId = (bundle.proofs[0] as unknown as { keyset_id?: string; id?: string }).keyset_id ?? (bundle.proofs[0] as unknown as { id: string }).id;
+      const keyset = wallet.keyChain.getKeyset(keysetId);
+
+      // Witnesses: the seller's per-secret signatures + the server's co-signature.
+      const inputs = bundle.proofs.map((p) => ({
+        id: (p as unknown as { id?: string; keyset_id?: string }).id ?? (p as unknown as { keyset_id?: string }).keyset_id ?? (p as unknown as { id: string }).id,
+        amount: Number(p.amount),
+        secret: p.secret,
+        C: p.C,
+        witness: JSON.stringify({
+          signatures: [seller_sigs[secrets.indexOf(p.secret)]!, signSecret(p.secret, serverSkHex)],
+        }),
+      }));
+
+      const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
+      let feeNum = 0;
+      if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
+      else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
+      else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
+        try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
+      } else feeNum = Number(String(mintFeeRaw ?? 0));
+      if (!Number.isFinite(feeNum)) feeNum = 0;
+
+      const escrowAmount = bundle.proofs.reduce((a, p) => a + Number(p.amount), 0);
+      const releaseAmount = Math.max(0, escrowAmount - feeNum);
+      const releaseOutputs = (OutputData as unknown as {
+        createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
+          blindedMessage: unknown;
+          toProof: (sig: unknown, ks: unknown) => unknown;
+        }>;
+      }).createP2PKData({ pubkey: sellerXOnly }, releaseAmount, keyset);
+
+      const swapRes = await wallet.mint.swap({
+        inputs: inputs as never,
+        outputs: releaseOutputs.map((o) => o.blindedMessage),
+      });
+
+      const releaseProofs = releaseOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+
+      await db.savePendingReceive(sellerXOnly, bundle.mint_url, JSON.stringify(releaseProofs), releaseAmount);
+      await db.deleteEscrow(id);
+      void publishEscrowAudit(serverKey, { auctionId: id, status: "released", amount: releaseAmount });
+      return c.json({ ok: true, amount: releaseAmount });
+    } catch (err) {
+      console.error(`release failed (auction ${id}):`, err);
+      return c.json({ error: "release failed" }, 500);
+    }
+  });
+
   // ── Change: the winner collects the excess (locked max − standing price)
   // returned during the seller's claim swap (proxy bidding) ──
   router.get("/auctions/:id/change", async (c) => {
