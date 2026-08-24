@@ -15,19 +15,19 @@ auditing this software.
 
 | Party  | Can do | Cannot do |
 | ------ | ------ | --------- |
-| Bidder | Lock a bid; instantly refund when outbid (with server co-sign); sweep Stage 1 escrow after +10 d if seller never ships; confirm receipt to release Stage 2 | Spend another party's funds |
-| Seller | Claim the winner's proofs after settlement (with server co-sign) → escrow; report tracking; sweep Stage 2 after +30 d if winner ghosts; co-sign voluntary splits | Move funds alone; spend without tracking (Stage 1 refund blocks it) |
-| Winner | Confirm receipt (with server co-sign) to pay seller; approve tracking for relock; sweep Stage 1 on timeout | Spend seller's escrow alone |
-| Server | Verify bids/tracking, pick the winner, co-sign claims/refunds/relocks/releases/splits; fallback-co-sign relock after 72 h (audit-visible) | Move funds alone (2-of-3/2-of-4 enforced cryptographically) |
+| Bidder | Lock a bid; instantly refund when outbid (with server co-sign); refund a won auction themselves after the 14-day timeout if the seller never shipped | Spend another party's funds |
+| Seller | Claim the winner's proofs after settlement (with server co-sign) → escrow; mark shipped (boolean flag); release the escrow to themselves after shipping + the 14-day timeout when the winner stays silent | Move funds alone; release before the timeout once shipped |
+| Winner | Confirm receipt (per-secret signatures + server co-sign) to pay seller; self-refund after an unshipped timeout | Spend seller's escrow alone |
+| Server | Verify bids, pick the winner, gate and co-sign confirm/release/refund swaps (`shipped` + elapsed-time gates) | Move funds alone (2-of-3 enforced cryptographically); unilaterally resolve a timeout |
 | Mint   | Hold and swap e-cash | Steal proofs (bearer instruments, but see "Mint dependency" below) |
 | Nostr relays / Blossom | Mirror listings (30402) and audit log (1021/1022); host images | Touch settlement — DB + mint remain canonical |
 
 The server's honesty for **auction fairness** (did it accept my bid, did it
-settle correctly, did it co-sign a fallback early?) is NOT cryptographically
-enforced. It rests on the OSS code, self-hosting, and operator reputation.
-The non-custodial guarantee is only about **money safety against single-party
-failure** — any two keys *can* collude (e.g. `server+winner` draining Stage 2),
-which degrades to the unprotected baseline and is audit-visible.
+settle correctly?) is NOT cryptographically enforced. It rests on the OSS code,
+self-hosting, and operator reputation. The non-custodial guarantee is only
+about **money safety against single-party failure** — any two keys *can*
+collude (e.g. `server+winner` draining the escrow), which degrades to the
+unprotected baseline and is audit-visible.
 
 ## Money flows (all 2-of-3)
 
@@ -36,30 +36,29 @@ which degrades to the unprotected baseline and is audit-visible.
    the lock structure, the mint (NUT-06/07/12) and records the proofs.
 2. **Instant refund (outbid)**: bidder signature + server co-signature over the
    proof secrets → the bidder swaps the proofs back to themselves. No locktime wait.
-3. **Claim → Stage 1 escrow**: seller signature + server co-signature → the server
-   runs a swap that splits the winner's proofs into `[seller net → Stage 1
-   escrow, operator fee, winner change]`. Stage 1 is
-   `{seller,winner,server} 2-of-3, refund winner @ claim+10d`. If `seller_net==0`
-   no escrow is created (instant release); `ESCROW_MODE=legacy` disables the
-   escrow entirely.
-4. **Tracking + relock → Stage 2**: seller reports a tracking number (format-only
-   validation: S10 UPU check digit `weights [8,6,4,2,3,5,9,7]`, UPS `1Z…`, FedEx
-   12|15, DHL 10; rejected within 24 h of `claim+10d`). The server validates and
-   stores `tracking_number/kind`. Relock swap: Stage 1 proofs in
-   (`seller + winner` or, after 72 h silence, `seller + server` fallback) →
-   Stage 2 proofs out `{seller,winner,server} refund seller @ report+30d`.
-   Write-ordering: Stage 2 output secrets are persisted as `migrating` before
-   the swap; crash recovery via NUT-07 `checkProofsStates` + `restore`.
-5. **Confirm receipt**: winner signs secrets + `confirm:<id>` → server-mediated
-   release swap → 1-of-1 P2PK to seller (delivered via `pending_receives`, collected
-   with `GET /wallet/receive`). `confirmed`.
-6. **Voluntary split**: `seller+winner` sign `split:<id>:<hash>` and per-secret
-   witnesses → server executes the agreed `splits` outputs (`split_resolved`).
+3. **Claim → escrow**: seller signature + server co-signature → the server
+   runs a swap that splits the winner's proofs into `[seller net → fulfillment
+   escrow, operator fee, winner change]`. The escrow is
+   `{seller,winner,server} 2-of-3, refund winner @ claim+14d`, `shipped = 0`.
+   If `seller_net==0` no escrow is created (instant release).
+4. **Shipped**: seller clicks "Mark shipped" (Schnorr auth over `shipped:<id>`)
+   — the server flips the boolean flag only; no funds move. Shipping details
+   (address, tracking number) travel in private Nostr DMs, never through the
+   platform.
+5. **Winner confirm**: winner signs `confirm:<id>` plus every escrow proof
+   secret → server verifies + co-signs → swap to 1-of-1 P2PK proofs for the
+   seller (delivered via `pending_receives`, collected with
+   `GET /wallet/receive`). Escrow row deleted only after the swap succeeds.
+6. **Timeout resolution (party-triggered)**: after `created_at + 14 days`
+     - shipped → seller may self-release (`release:<id>` + per-secret sigs)
+       — the winner cannot prevent seller payment by staying silent;
+     - not shipped → winner may self-refund (`refund:<id>` + per-secret sigs).
+   Both swaps produce 1-of-1 P2PK outputs for the caller and delete the row.
+   The lazy timeout pass in `settleIfDue` is observe-only: the server cannot
+   sign a 2-of-3 spend alone, so it never moves or deletes escrowed funds by
+   itself.
 7. **Change return**: the excess (locked max − standing price) is a 1-of-1 P2PK
    output to the winner, collected via `GET /api/auctions/:id/change`.
-8. **Timeouts**: Stage 1 expiry → winner sweeps alone (refund key, zero server
-   involvement — proofs delivered via `GET /escrow`); Stage 2 expiry → seller
-   sweeps alone. `seller+winner` can also unlock cooperatively at any time.
 
 ## Controls in place
 
@@ -73,17 +72,17 @@ which degrades to the unprotected baseline and is audit-visible.
   more than one bid. Locked in `bid_proofs` (UNIQUE on Y) before the bid is
   saved; concurrent cross-auction races are closed by lock-then-verify
   ordering with rollback.
-- **Signature verification**: claim/refund/co-sign/escrow paths verify Schnorr
-  signatures over the proof secrets against the expected key (seller for
-  claim/tracking, bidder/winner for refund/confirm, both for split/relock).
-  The `proofs_data` endpoints return P2PK-locked proofs — harmless to disclose,
-  the effective gate is the co-sign check.
-- **Tracking validation** (`lib/tracking.ts`): S10 check digit with UPU weights
-  `[8,6,4,2,3,5,9,7]` (`11-(sum%11)`, `10→0`/`11→5`), UPS/FedEx/DHL regex. Invalid
-  formats never migrate; the 24 h cutoff and 72 h fallback are code-enforced.
-- **Escrow write-ordering & reconciliation**: relock persists `migrating` with
-  serialized Stage 2 output secrets before the swap; `POST /escrow/reconcile`
-  recovers via NUT-07 state checks and `restore` (never blind-resubmits).
+- **Signature verification**: claim/refund/co-sign and every escrow resolution
+  path verify Schnorr signatures over the proof secrets against the expected
+  key (seller for claim/release, winner for refund/confirm). The party's
+  per-secret signatures are what the mint checks — a witness fabricated from
+  a public key can never verify, so resolution swaps are cryptographically
+  bound to an entitled party. The `proofs_data` endpoints return P2PK-locked
+  proofs — harmless to disclose, the effective gate is the co-sign check.
+- **Post-swap persistence**: after a successful mint swap the inputs are spent,
+  so `settleEscrowTo` retries `pending_receives` persistence (5 attempts with
+  backoff) and, if it still fails, dumps the payout proofs to the server log
+  for manual recovery — swapped funds are never silently destroyed.
 - **Winner contact (npub handoff)**: after settlement the winner's linked
   Nostr npub is revealed only to the seller (and to the winner themselves) via
   a Schnorr-signed read (`winner-view:<id>`); it is never included in public
@@ -97,11 +96,11 @@ which degrades to the unprotected baseline and is audit-visible.
   without a valid mirror, even via direct API. Settlement fields (`max`,
   `standing`) stay in DB. Images are content-addressed Blossom URLs (60 bytes
   each); the DB holds pointers only. Audit log kind `1021` (bid hash + standing)
-  and `1022` (escrow `shipped/confirmed/split/fallback`) never carry `secret`,
-  `proof`, `max`, or the tracking *number* (only *kind*).
+  and `1022` (escrow `shipped/confirmed/released/refunded`) never carry `secret`,
+  `proof`, or `max`.
 - **Rate limits** (`lib/rate-limit.ts`): bids 30/min, auction creation
   10/min, co-sign 20/min, claim-data/refund-data/escrow-read 30/min,
-  tracking/confirm/relock/split 20/min.
+  shipped/confirm/release/refund 20/min.
 - **Max secrecy**: the API exposes only the standing price; `max_amount`
   stays server-side (second-price incentive protection).
 
@@ -116,43 +115,40 @@ which degrades to the unprotected baseline and is audit-visible.
    (privacy trade-off).
 3. **Mint dependency.** If the mint disappears or refuses to serve, locked
    e-cash is stranded. This is a Cashu-ecosystem property, not specific to
-   this project. Mint outages near the `claim+10d` boundary cause the Stage 1
-   refund to proceed gracefully (seller keeps item).
-4. **`ALLOW_TEST_BIDS=1` bypasses mint checks.** With the test mint
-   (`test://local`), the NUT-07 unspent check and mint reachability are
-   skipped. Must be `0` in production.
-5. **Legacy data.** Bids created before the proof double-lock guard are not in
+   this project. A mint outage during the escrow window delays confirm/
+   release/refund but loses nothing — the row (with the proof secrets) stays
+   until a swap succeeds.
+4. **Legacy data.** Bids created before the proof double-lock guard are not in
    `bid_proofs`; their proofs could in theory be re-submitted (NUT-07 would
-   still catch already-spent ones). New bids are fully guarded.
-6. **Server key custody.** `SERVER_PRIVATE_KEY` is the server's co-signing key.
+   still catch already-spent ones). New bids are fully guarded. Escrows created
+   by the superseded two-stage design are rebuilt to the v1 shape by migration
+   0009 / the initDb shape repair (`shipped` resets to 0).
+5. **Server key custody.** `SERVER_PRIVATE_KEY` is the server's co-signing key.
    If leaked, an attacker still cannot move funds alone (needs a second
    party), but they can grief (co-sign refunds of outbid bids they control,
    or refuse to co-sign). Protect it like any signing key.
-7. **Fulfillment quality disputes are out of scope in v1.** The escrow
-   guarantees *that* a shipment was initiated (tracking) and *that* funds
-   move on confirmation/timeout, but not *what* was shipped. "Arrived but
-   fake" / "tracking real but item lost" are handled off-platform via Nostr
-   negotiation + voluntary split + permanent Nostr-link accountability. A
-   future arbiter registry (opt-in premium, `seller+winner+server+arbiter`
-   2-of-4, paid upfront per protection count) is designed but deferred
-   (see `2026-08-23-two-stage-fulfillment-escrow-design.md` §9).
+6. **Fulfillment quality disputes are out of scope in v1.** The platform only
+   knows a boolean `shipped` flag — it cannot verify that anything was
+   actually sent or what it contained. "Arrived but fake" / "marked shipped
+   but nothing sent" are handled off-platform via Nostr negotiation +
+   permanent Nostr-link accountability; reputation and an arbiter registry
+   are deferred to v2 (see the v1 design §11).
 8. **No moderation of Nostr/Blossom mirrors.** Relays and Blossom servers are
    third-party; listings there are eventually consistent and not moderated by
    this server. `DB` remains canonical for settlement.
 
 ## Deployment checklist
 
-- `ALLOW_TEST_BIDS=0`
 - `SERVER_PRIVATE_KEY` from a secure store (not committed; never in the repo;
   Cloudflare Worker: `wrangler secret put SERVER_PRIVATE_KEY`, not a `vars` entry)
-- `ESCROW_MODE` set deliberately (`two-stage` default, `legacy` to disable escrow)
 - `AUCTION_FEE_BPS` set deliberately
 - `NEXT_PUBLIC_BLOSSOM_URL` / `_FALLBACK` (`blossom.primal.net` / `cdn.nostrcheck.me` defaults)
 - HTTPS in front of the API (TLS is mandatory for mint/bid/escrow traffic)
 - SQLite backups (`data/auction.db`) — `proof_data` and `fulfillment_escrows.proofs_data`
-  must be persisted (P2PK secrets needed for co-sign; escrow `migrating` recovery
-  needs serialized output secrets)
+  must be persisted (P2PK secrets needed for co-sign; escrow `proofs_data` is the
+  only copy of the escrow secrets until funds move)
 - D1 migrations applied (`wrangler d1 migrations apply egavel-db --remote`,
-  fallback `wrangler d1 execute`)
-- Run the test suite before upgrades; the settle/claim/escrow/relock paths are the
-  money paths (`pnpm --filter @egavel/server test` — 232 tests as of 2026-08-23)
+  fallback `wrangler d1 execute`); if the remote DB predates the v1 escrow,
+  migration 0009 rebuilds the legacy table
+- Run the test suite before upgrades; the settle/claim/escrow paths are the
+  money paths (`pnpm --filter @egavel/server test` — 240 tests as of 2026-08-24)
