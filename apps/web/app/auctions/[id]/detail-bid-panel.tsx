@@ -46,7 +46,7 @@ export function DetailBidPanel({
   bids: PublicBid[]
   serverNpub: string
   /** Forwarded to BidForm; fired with the new standing price after a bid. */
-  onBidPlaced?: (currentAmount: number) => void
+  onBidPlaced?: (currentAmount: number, bid: { id: string; bidder_npub: string; current_amount: number; received_at: number }) => void
 }) {
   const { identity } = useIdentity()
   // Read localStorage entries in an effect, not during render: SSR has no

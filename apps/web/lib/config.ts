@@ -12,6 +12,3 @@ import { DEV_TOOLS } from "./dev-tools";
 export const DEFAULT_MINT = DEV_TOOLS
   ? "https://testnut.cashu.space"
   : "https://mint.minibits.cash/Bitcoin";
-
-/** Dev-only test mint for Test Mode bids (no real tokens). */
-export const TEST_MINT_URL = "test://local";

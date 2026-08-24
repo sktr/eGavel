@@ -125,7 +125,7 @@ export function useWallet(mintUrl: string, pubkey: string) {
 
         if (raw.length > 0) {
           const stored = deserializeProofs(raw)
-          const { unspent } = await wallet.groupProofsByState(stored)
+          const unspent = await groupProofsByStateCached(wallet, mintUrl, stored)
           store[mintUrl] = serializeProofs(unspent)
           saveStore(pubkey, store)
           setBalance(unspent.length > 0 ? Number(sumProofs(unspent)) : 0)
@@ -223,7 +223,7 @@ export function useWallet(mintUrl: string, pubkey: string) {
 
       const store = loadStore(pubkey)
       const stored = deserializeProofs(store[mintUrl] ?? [])
-      const { unspent } = await wallet.groupProofsByState(stored)
+      const unspent = await groupProofsByStateCached(wallet, mintUrl, stored)
 
       if (unspent.length === 0) throw new Error("No unspent proofs available")
 
@@ -311,7 +311,7 @@ export function useWallet(mintUrl: string, pubkey: string) {
 
     const store = loadStore(pubkey)
     const stored = deserializeProofs(store[mintUrl] ?? [])
-    const { unspent } = await wallet.groupProofsByState(stored)
+    const unspent = await groupProofsByStateCached(wallet, mintUrl, stored)
     store[mintUrl] = serializeProofs(unspent)
     saveStore(pubkey, store)
     setBalance(unspent.length > 0 ? Number(sumProofs(unspent)) : 0)
@@ -351,6 +351,73 @@ export function replaceMintProofs(proofs: Proof[], mintUrl: string, pubkey: stri
 export interface MintBalance {
   mint: string
   amount: number
+}
+
+/**
+ * Short-lived cache for `groupProofsByState()` results keyed by a hash of the
+ * serialized proofs. Prevents the same mint from being hammered when multiple
+ * components (Header, WalletPanel, BidForm) mount simultaneously or when
+ * WALLET_CHANGED_EVENT fires rapidly. TTL is 15 seconds — long enough to
+ * dedupe mount cascades, short enough that a real mutation (bid/refund/receive)
+ * picked up on the next cycle.
+ */
+const PROOF_STATE_CACHE_TTL = 15_000
+type ProofStateCacheEntry = { at: number; unspent: Proof[] }
+const proofStateCache = new Map<string, ProofStateCacheEntry>()
+
+function proofStateKey(mintUrl: string, proofs: Proof[]): string {
+  // Use the sorted secret list as a stable key — secrets are unique per proof.
+  const secrets = proofs.map((p) => p.secret).sort()
+  return `${mintUrl}|${secrets.join(",")}`
+}
+
+/**
+ * Mutex per mint URL: only one `groupProofsByState` call runs at a time per
+ * mint. If a call is already in-flight, subsequent callers receive the cached
+ * (or pending) result instead of firing a duplicate network request.
+ */
+const mintMutex = new Map<string, Promise<Proof[]>>()
+
+async function groupProofsByStateCached(
+  wallet: Wallet,
+  mintUrl: string,
+  proofs: Proof[],
+): Promise<Proof[]> {
+  const key = proofStateKey(mintUrl, proofs)
+
+  // Fast path: cache hit within TTL.
+  const hit = proofStateCache.get(key)
+  if (hit && Date.now() - hit.at < PROOF_STATE_CACHE_TTL) {
+    return hit.unspent
+  }
+
+  // Mutex: if the same mint is already being checked, wait for it.
+  const inflight = mintMutex.get(mintUrl)
+  if (inflight) {
+    try {
+      const unspent = await inflight
+      // Store in cache for subsequent callers.
+      proofStateCache.set(key, { at: Date.now(), unspent })
+      return unspent
+    } catch {
+      // fall through to own request
+    }
+  }
+
+  const promise = wallet
+    .groupProofsByState(proofs)
+    .then((result) => {
+      proofStateCache.set(key, { at: Date.now(), unspent: result.unspent })
+      mintMutex.delete(mintUrl)
+      return result.unspent
+    })
+    .catch((err) => {
+      mintMutex.delete(mintUrl)
+      throw err
+    })
+
+  mintMutex.set(mintUrl, promise)
+  return promise
 }
 
 /**
@@ -592,7 +659,7 @@ export function useTotalBalance(pubkey: string) {
           const wallet = buildWallet(mint)
           await loadMintCached(wallet, mint)
           const stored = deserializeProofs(raw)
-          const { unspent } = await wallet.groupProofsByState(stored)
+          const unspent = await groupProofsByStateCached(wallet, mint, stored)
           const amount = unspent.length > 0 ? Number(sumProofs(unspent)) : 0
           // Self-heal the store: drop proofs the mint reports spent so the
           // optimistic estimate stays honest for the next mint-down window.
@@ -619,18 +686,26 @@ export function useTotalBalance(pubkey: string) {
     load()
     // Refresh whenever the wallet store mutates (bid/refund/receive/claim) —
     // this keeps the header balance in sync without polling the mint.
-    const onChanged = () => {
-      void load()
+    // Debounce rapid-fire events (e.g. saveStore followed by a cascade) to
+    // avoid hammering the mint with redundant groupProofsByState calls.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedLoad = () => {
+      if (debounceTimer !== null) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null
+        void load()
+      }, 500)
     }
     // Coming back to the tab is a cheap freshness signal too: another tab may
     // have placed a bid or recovered a refund while this one was hidden.
     const onVisibility = () => {
       if (!document.hidden) void load()
     }
-    window.addEventListener(WALLET_CHANGED_EVENT, onChanged)
+    window.addEventListener(WALLET_CHANGED_EVENT, debouncedLoad)
     document.addEventListener("visibilitychange", onVisibility)
     return () => {
-      window.removeEventListener(WALLET_CHANGED_EVENT, onChanged)
+      if (debounceTimer !== null) clearTimeout(debounceTimer)
+      window.removeEventListener(WALLET_CHANGED_EVENT, debouncedLoad)
       document.removeEventListener("visibilitychange", onVisibility)
     }
   }, [load])

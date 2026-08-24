@@ -10,7 +10,6 @@ import { isValidMintUrl } from "../lib/mint-url.js"
 
 const LOCKTIME_MARGIN_MS = LOCKTIME_MS
 const END_TIME_MARGIN_MS = 30_000
-const TEST_MINT_URL = "test://local"
 
 export interface BidPayloadProof {
   id: string
@@ -216,26 +215,21 @@ export async function verifyBid(
   }
 
   // ── mint selection ──────────────────────────────
-  const allowTest = process.env.ALLOW_TEST_BIDS === "1"
-  const isTestMint = payload.mint_url === TEST_MINT_URL
-
   if (auction.mint_url === "") {
     return { ok: false, error: { code: "LEGACY_AUCTION" } }
   }
-  if (!allowTest || !isTestMint) {
-    if (payload.mint_url !== auction.mint_url) {
-      return {
-        ok: false,
-        error: { code: "MINT_URL_MISMATCH", expected: auction.mint_url, actual: payload.mint_url },
-      }
+  if (payload.mint_url !== auction.mint_url) {
+    return {
+      ok: false,
+      error: { code: "MINT_URL_MISMATCH", expected: auction.mint_url, actual: payload.mint_url },
     }
-    // Defense in depth: never fetch from an unsafe mint URL even if a legacy
-    // auction predates the creation-time SSRF guard.
-    if (!isValidMintUrl(payload.mint_url)) {
-      return {
-        ok: false,
-        error: { code: "MINT_URL_UNSAFE", message: payload.mint_url },
-      }
+  }
+  // Defense in depth: never fetch from an unsafe mint URL even if a legacy
+  // auction predates the creation-time SSRF guard.
+  if (!isValidMintUrl(payload.mint_url)) {
+    return {
+      ok: false,
+      error: { code: "MINT_URL_UNSAFE", message: payload.mint_url },
     }
   }
 
@@ -303,10 +297,6 @@ export async function verifyBid(
     } catch {
       return { ok: false, error: { code: "INVALID_SECRET_FORMAT", message: "failed to compute Y" } }
     }
-  }
-
-  if (allowTest && isTestMint) {
-    return { ok: true, Ys }
   }
 
   // ── mint reachability + NUT-06 ───────────────────

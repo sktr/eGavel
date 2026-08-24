@@ -8,7 +8,6 @@
  * make requests to it. This module rejects such URLs.
  *
  * Rules:
- * - `test://local` is allowed only when allowTestBids is set (dev-only mint).
  * - Scheme must be `https:`.
  * - Host must not be a private / loopback / link-local IP literal, and must
  *   not be `localhost` or another loopback name.
@@ -17,8 +16,6 @@
  * pragmatic trade-off: blocking IP literals closes the obvious metadata /
  * internal-service vectors without requiring a resolver.
  */
-
-const TEST_MINT_URL = "test://local";
 
 /** Loopback hostnames (case-insensitive). */
 const LOOPBACK_HOSTS = new Set(["localhost", "localhost.localdomain"]);
@@ -55,9 +52,7 @@ function isIpLiteral(host: string): boolean {
 
 export function isValidMintUrl(
   mintUrl: string,
-  opts: { allowTestBids?: boolean } = {},
 ): boolean {
-  if (mintUrl === TEST_MINT_URL) return opts.allowTestBids === true;
   if (!mintUrl) return false;
 
   let url: URL;

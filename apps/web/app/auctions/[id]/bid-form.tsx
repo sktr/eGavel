@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { bytesToHex } from "../../../lib/hex"
 import { rootUrl } from "../../../lib/api"
 import { DEV_TOOLS } from "../../../lib/dev-tools"
-import { DEFAULT_MINT, TEST_MINT_URL } from "../../../lib/config"
+import { DEFAULT_MINT } from "../../../lib/config"
 import { MintQuoteState, createP2PKsecret, Amount, PaymentRequest, PaymentRequestTransportType, deserializeProofs, getEncodedToken } from "@cashu/cashu-ts"
 import type { Proof } from "@cashu/cashu-ts"
 import { LOCKTIME_MS } from "@egavel/shared"
@@ -30,7 +30,7 @@ export function BidForm({
   serverNpub: string
   buyNowPrice?: number | null
   /** Called immediately after a successful bid with the new standing price. */
-  onBidPlaced?: (currentAmount: number) => void
+  onBidPlaced?: (currentAmount: number, bid: { id: string; bidder_npub: string; current_amount: number; received_at: number }) => void
 }) {
   const router = useRouter()
   const { identity, isLoaded } = useIdentity()
@@ -88,7 +88,6 @@ export function BidForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [testMode, setTestMode] = useState(false)
   const [receiveToken, setReceiveToken] = useState("")
   const [receiveStatus, setReceiveStatus] = useState<string | null>(null)
   const [receiveError, setReceiveError] = useState<string | null>(null)
@@ -313,12 +312,11 @@ export function BidForm({
       }
     }
 
-    if (!testMode) {
-      if (!wallet.ready) {
-        setError("wallet not ready yet")
-        return
-      }
-      if (wallet.balance < bidAmount) {
+    if (!wallet.ready) {
+      setError("wallet not ready yet")
+      return
+    }
+    if (wallet.balance < bidAmount) {
         // Distinguish "nothing usable" from "funds exist on another mint":
         // a token is mint-specific, so only this auction's mint can bid.
         const otherMints = byMint.filter((m) => m.mint !== mintUrl && m.amount > 0)
@@ -338,7 +336,6 @@ export function BidForm({
         }
         return
       }
-    }
 
     if (!serverPubkeyHex) {
       setError("server pubkey not available — is the server running?")
@@ -352,39 +349,20 @@ export function BidForm({
         (auction.end_time + LOCKTIME_MS) / 1000,
       )
 
-      // 1. Create proof (real P2PK or test dummy)
-      let proof: Proof
+      // 1. Create proof (real P2PK)
       let proofs: Proof[]
       let mintUrlForBid: string
 
-      if (testMode) {
-        const secret = createP2PKsecret(auction.seller_pubkey, [
-          ["pubkeys", serverPubkeyHex, identity.pubkey],
-          ["n_sigs", "2"],
-          ["locktime", String(locktime)],
-          ["refund", identity.pubkey],
-        ])
-        proofs = [
-          {
-            id: "test-keyset",
-            amount: Amount.from(bidAmount),
-            secret,
-            C: "test-signature",
-          },
-        ]
-        mintUrlForBid = TEST_MINT_URL
-      } else {
-        const { proofs: walletProofs } = await wallet.sendP2PK(bidAmount, {
-          // 2-of-3: {seller, server, bidder} — bidder's key enables instant
-          // refund co-signing when outbid (spec §2.2).
-          pubkey: [auction.seller_pubkey, serverPubkeyHex, identity.pubkey],
-          requiredSignatures: 2,
-          locktime,
-          refundKeys: [identity.pubkey],
-        })
-        proofs = walletProofs
-        mintUrlForBid = mintUrl
-      }
+      const { proofs: walletProofs } = await wallet.sendP2PK(bidAmount, {
+        // 2-of-3: {seller, server, bidder} — bidder's key enables instant
+        // refund co-signing when outbid (spec §2.2).
+        pubkey: [auction.seller_pubkey, serverPubkeyHex, identity.pubkey],
+        requiredSignatures: 2,
+        locktime,
+        refundKeys: [identity.pubkey],
+      })
+      proofs = walletProofs
+      mintUrlForBid = mintUrl
 
       // 2. Build the server payload — a bid is backed by a bundle of proofs
       const payloadObj = {
@@ -434,7 +412,12 @@ export function BidForm({
 
       setSuccess("bid submitted!")
       if (placed.ok && placed.current_amount != null) {
-        onBidPlaced?.(placed.current_amount)
+        onBidPlaced?.(placed.current_amount, {
+          id: `optimistic-${Date.now()}`,
+          bidder_npub: identity?.pubkey ?? "",
+          current_amount: placed.current_amount,
+          received_at: Date.now(),
+        })
       }
       setTimeout(() => router.refresh(), 2000)
     } catch (err) {
@@ -469,7 +452,7 @@ export function BidForm({
   }
 
   // Mint unreachable → bidding cannot work; explain why instead of a dead form.
-  if (!testMode && wallet.error) {
+  if (wallet.error) {
     return (
       <div
         style={{
@@ -531,7 +514,7 @@ export function BidForm({
         />
         <button
           type="submit"
-          disabled={submitting || (!testMode && !wallet.ready)}
+          disabled={submitting || !wallet.ready}
           style={{
             border: "none",
             borderRadius: "var(--radius)",
@@ -541,9 +524,9 @@ export function BidForm({
             fontSize: 15,
             fontWeight: 500,
             fontFamily: "inherit",
-            cursor: submitting || (!testMode && !wallet.ready) ? "not-allowed" : "pointer",
+            cursor: submitting || !wallet.ready ? "not-allowed" : "pointer",
             whiteSpace: "nowrap",
-            opacity: submitting || (!testMode && !wallet.ready) ? 0.5 : 1,
+            opacity: submitting || !wallet.ready ? 0.5 : 1,
             lineHeight: 1.4,
           }}
           onMouseEnter={(e) => {
@@ -555,7 +538,7 @@ export function BidForm({
         >
           {submitting
             ? "Submitting…"
-            : !testMode && !wallet.ready
+            : !wallet.ready
               ? "Checking wallet…"
               : "Place Bid"}
         </button>
@@ -582,32 +565,9 @@ export function BidForm({
           Wallet &amp; Funding
         </summary>
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
-          {/* Test mode toggle — dev-only */}
-          {DEV_TOOLS && (
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              cursor: "pointer",
-              userSelect: "none",
-              fontSize: 13,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={testMode}
-              onChange={(e) => setTestMode(e.target.checked)}
-              style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }}
-            />
-            <span>Test Mode</span>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>(no real tokens needed)</span>
-          </label>
-          )}
 
-          {/* Wallet status (non-test mode only) */}
-          {!testMode && (
-            <div
+          {/* Wallet status */}
+          <div
               style={{
                 background: "var(--bg)",
                 borderRadius: "var(--radius)",
@@ -652,7 +612,6 @@ export function BidForm({
                 )}
               </span>
             </div>
-          )}
 
           {/* Receive token — the real funding path */}
           <div>
@@ -761,8 +720,7 @@ export function BidForm({
           </div>
 
           {/* Mint sats (Lightning) — always expanded once the section is open */}
-          {!testMode && (
-            <div>
+          <div>
               <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>
                 {DEV_TOOLS ? "Get Sats" : "Mint sats (Lightning)"}
               </label>
@@ -943,7 +901,6 @@ export function BidForm({
                 )}
               </div>
             </div>
-          )}
         </div>
       </details>
     </form>

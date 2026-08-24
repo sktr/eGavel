@@ -127,9 +127,22 @@ export function LiveBids({
         auction={auction}
         bids={bids}
         serverNpub={serverNpub}
-        onBidPlaced={(currentAmount) =>
+        onBidPlaced={(currentAmount, bid) => {
           setAuction((prev) => ({ ...prev, current_amount: currentAmount }))
-        }
+          // Optimistically add the new bid so myBidState() immediately
+          // recognises the user as leader without waiting for the next poll.
+          setBids((prev) => {
+            const optimistic: PublicBid = {
+              id: bid.id,
+              auction_id: initialAuction.id,
+              current_amount: bid.current_amount,
+              bidder_npub: bid.bidder_npub,
+              received_at: bid.received_at,
+              status: "verified",
+            }
+            return [optimistic, ...prev.filter((b) => b.bidder_npub !== bid.bidder_npub)]
+          })
+        }}
       />
 
       {/* Bid History */}

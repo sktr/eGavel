@@ -141,7 +141,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
 
     // SSRF guard: mint_url must be a safe https URL (or the dev-only test mint).
-    if (!isValidMintUrl(mintUrl, { allowTestBids: process.env.ALLOW_TEST_BIDS === "1" })) {
+    if (!isValidMintUrl(mintUrl)) {
       return c.json(
         { error: "mint_url must be an https URL with a public hostname" },
         400,

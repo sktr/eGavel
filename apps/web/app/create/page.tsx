@@ -45,6 +45,14 @@ const CONDITIONS = [
   "Junk / For Parts",
 ] as const;
 
+const SHIPPING_OPTIONS = [
+  "Ships worldwide",
+  "Ships domestic only",
+  "In-person handover",
+  "Digital delivery",
+  "Contact after winning",
+] as const;
+
 const FOCUS_STYLE = {
   borderColor: "var(--accent)",
   boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent)",
@@ -64,7 +72,7 @@ export default function CreateAuctionPage() {
   const [duration, setDuration] = useState("5d");
   const [category, setCategory] = useState("");
   const [condition, setCondition] = useState<string | null>(null);
-  const [shipping, setShipping] = useState("");
+  const [shipping, setShipping] = useState<string | null>(null);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +131,7 @@ export default function CreateAuctionPage() {
     if (!item.trim()) errs.item = "Enter item name";
     if (!description.trim()) errs.description = "Enter description";
     if (!condition) errs.condition = "Select condition";
+    if (!shipping) errs.shipping = "Select shipping method";
     const sp = parseInt(startPrice, 10);
     if (!sp || sp < 100) errs.startPrice = "Enter start price (minimum 100 sats)";
     if (!agreeTerms) errs.agreeTerms = "Agree to terms of service";
@@ -131,7 +140,7 @@ export default function CreateAuctionPage() {
     const hasErrors = Object.keys(errs).length > 0;
     if (hasErrors) {
       // Scroll to the first invalid field so the user can see what's missing.
-      const order = ["item", "category", "condition", "description", "startPrice", "agree1"];
+      const order = ["item", "category", "condition", "shippingMethod", "description", "startPrice", "agree1"];
       const first = order.find((f) => errs[f]);
       if (first) {
         const el = document.getElementById(first);
@@ -213,6 +222,8 @@ export default function CreateAuctionPage() {
               : undefined,
           endTime,
           category: category || undefined,
+          condition: condition || undefined,
+          shipping: shipping || undefined,
           imageUrls: [...images],
           sellerNostrPubkey,
         });
@@ -291,7 +302,7 @@ export default function CreateAuctionPage() {
       setDuration("5d");
       setCategory("");
       setCondition(null);
-      setShipping("");
+      setShipping(null);
       setAgreeTerms(false);
       setImages([]);
       setFieldErrors({});
@@ -991,10 +1002,9 @@ export default function CreateAuctionPage() {
             </div>
           </div>
 
-          {/* Shipping Method (optional free text) */}
+          {/* Shipping Method */}
           <div style={{ marginBottom: 24 }}>
             <label
-              htmlFor="shippingMethod"
               style={{
                 display: "block",
                 fontSize: 14,
@@ -1002,19 +1012,49 @@ export default function CreateAuctionPage() {
                 marginBottom: 8,
               }}
             >
-              Shipping Method{" "}
-              <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}>(optional)</span>
+              Shipping Method <span style={{ color: "var(--red)" }}>*</span>
             </label>
-            <input
-              id="shippingMethod"
-              type="text"
-              value={shipping}
-              onChange={(e) => setShipping(e.target.value)}
-              placeholder="e.g. Ships worldwide, insured, buyer pays shipping"
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-              style={inputTextStyle}
-            />
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              {SHIPPING_OPTIONS.map((opt) => (
+                <span
+                  key={opt}
+                  onClick={() => setShipping(opt === shipping ? null : opt)}
+                  onMouseEnter={(e) => {
+                    if (opt !== shipping) {
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (opt !== shipping) {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                    }
+                  }}
+                  style={{
+                    border: `1px solid ${opt === shipping ? "var(--accent)" : "var(--border)"}`,
+                    borderRadius: 100,
+                    padding: "6px 18px",
+                    fontSize: 14,
+                    background: opt === shipping ? "var(--accent)" : "var(--surface)",
+                    color: opt === shipping ? "#fff" : "var(--fg)",
+                    cursor: "pointer",
+                    transition: "all .15s",
+                  }}
+                >
+                  {opt}
+                </span>
+              ))}
+            </div>
+            {fieldErrors.shipping && (
+              <span style={{ fontSize: 12, color: "var(--red)", marginTop: 4, display: "block" }}>
+                {fieldErrors.shipping}
+              </span>
+            )}
           </div>
 
           {/* Agreement */}

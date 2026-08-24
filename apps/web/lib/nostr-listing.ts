@@ -10,6 +10,8 @@ export type ListingInput = {
   buyNowPrice?: number
   endTime: number
   category?: string
+  condition?: string
+  shipping?: string
   imageUrls: string[]
   sellerNostrPubkey: string
 }
@@ -27,6 +29,8 @@ export function buildListingEvent(input: ListingInput): EventTemplate {
     ["expiration", String(Math.floor(input.endTime / 1000))],
   ]
   if (input.category) tags.push(["t", input.category])
+  if (input.condition) tags.push(["condition", input.condition])
+  if (input.shipping) tags.push(["shipping", input.shipping])
   for (const url of input.imageUrls) tags.push(["image", url, "", "0"])
   if (input.reservePrice) tags.push(["reserve", String(input.reservePrice)])
   if (input.buyNowPrice) tags.push(["buy_now", String(input.buyNowPrice)])
