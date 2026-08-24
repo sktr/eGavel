@@ -139,4 +139,23 @@ describe("POST /auctions/:id/confirm", () => {
     const body=await res.json() as Record<string,unknown>;
     expect(body.error).toBe("NOT_SHIPPED");
   });
+
+  it("second confirm after success finds no escrow (404 NO_ESCROW)", async () => {
+    // Double-submit / retry race: once funds have been released the row is
+    // gone, so a replayed confirm must be rejected rather than re-swapped.
+    state.failLoadMint = false;
+    const seller=kp(), winner=kp(), server=kp();
+    const db=initDb(); const app=new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: server.sk }));
+    await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:seller.pk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winner.pk, winning_amount:100, mint_url:"https://mint.example", claimed:true } as unknown as Auction);
+    await db.saveEscrow({ auction_id:"a1", shipped:1, proofs_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret:"s", amount:100 }], mint_url:"https://mint.example", amount:100 }), created_at: Date.now() });
+    const body = JSON.stringify({ winner_pubkey: winner.pk, winner_sig: signSecret(`confirm:a1`, winner.sk), secrets:["s"], winner_sigs:[signSecret("s", winner.sk)] });
+    const first = await app.request("http://localhost/api/auctions/a1/confirm",{ method:"POST", headers:{ "Content-Type":"application/json" }, body });
+    expect(first.status).toBe(200);
+    const second = await app.request("http://localhost/api/auctions/a1/confirm",{ method:"POST", headers:{ "Content-Type":"application/json" }, body });
+    expect(second.status).toBe(404);
+    const secondBody = await second.json() as Record<string,unknown>;
+    expect(secondBody.error).toBe("NO_ESCROW");
+    // and exactly one payout exists
+    expect((await db.getPendingReceives(seller.pk)).length).toBe(1);
+  });
 });
