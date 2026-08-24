@@ -12,16 +12,17 @@ packages/shared shared types
 - **Images**: `BlossomClient` (`PUT /upload` with `kind 24242` auth) to `blossom.primal.net` (fallback `cdn.nostrcheck.me`); `auctions.images` is `string[]` of URLs (≤4, total ≤2 MB)
 - **Bid flow**: the client creates a 2-of-3 P2PK proof bundle (locking the full max) → `POST /api/bids` → the server validates (NUT-06/NUT-07) → computes the standing price from all bidders' maxes (second-highest max + minimum increment, `min-increment` table)
 - **Refunds**: outbid detection (polling) → bidder signature + server co-sign → mint swap
-- **Claim → escrow**: `POST /auctions/:id/claim` (seller+server) → server splits into `[escrow (Stage 1), operator fee, winner change]`; `seller net → fulfillment_escrows` (`stage 1, refund winner @ +10d`, `ESCROW_MODE=two-stage` default, `legacy` disables, `seller_net=0` skips)
-- **Tracking**: `POST /auctions/:id/tracking` (seller `tracking:<id>:<number>` + `validateTracking` S10/UPS/FedEx/DHL, rejected within 24 h of `claim+10d`)
-- **Relock**: `POST /auctions/:id/escrow/relock` (`seller sig + winner sig` or, after 72 h, `seller + server` fallback) → Stage 2 `{seller,winner,server} refund seller @ +30d` (write-ordering: persist `migrating` before swap; `POST /escrow/reconcile` via NUT-07/`restore`)
-- **Confirm**: `POST /auctions/:id/confirm-receipt` (winner `confirm:<id>` + per-secret sigs) → server-mediated release → `pending_receives` → seller collects via `GET /wallet/receive`
-- **Split**: `POST /auctions/:id/escrow/split` (`split:<id>:<hash>` + per-secret witnesses from both parties) → `split_resolved`
-- **Read**: `GET /auctions/:id/escrow` (Schnorr `escrow-view:<id>`, seller/winner only, returns `proofs_data` for pure-locktime sweeps, plus `stage1_expired`)
+- **Claim → escrow**: `POST /auctions/:id/claim` (seller per-secret sigs + server) → server splits into `[escrow, operator fee, winner change]`; `seller net → fulfillment_escrows` (`{seller,winner,server}` 2-of-3 P2PK, refund winner @ claim+14d, `shipped=0`; `seller_net=0` skips escrow). Escrow creation happens inside the claim call because bid proofs are seller-locked — the server cannot swap them alone (non-custodial).
+- **Shipped**: `POST /auctions/:id/shipped` (seller Schnorr over `shipped:<id>`) → flips the boolean `shipped` flag only; no funds move. Shipping details travel in private Nostr DMs, never through the platform.
+- **Confirm**: `POST /auctions/:id/confirm` (winner `confirm:<id>` + per-secret sigs) → server verifies + co-signs → `settleEscrowTo` swaps into 1-of-1 P2PK proofs for the seller → `pending_receives` → seller collects via `GET /wallet/receive`
+- **Release** (timeout-gated): `POST /auctions/:id/release` (seller `release:<id>` + per-secret sigs; requires `shipped && now ≥ created_at+14d`) → same swap as confirm but payee = seller
+- **Refund** (timeout-gated): `POST /auctions/:id/refund` (winner `refund:<id>` + per-secret sigs; requires `!shipped && expired`) → swap into winner-owned proofs
+- **Read**: `GET /auctions/:id/escrow` (Schnorr `escrow-view:<id>` verified BEFORE any existence check — bad sigs always get 401; seller/winner only; returns `proofs_data`, `shipped`, `timeout_expired`)
+- **Timeout policy**: party-triggered only. The server holds one of three keys and can never move or delete escrowed funds itself; `settleIfDue`'s timeout pass is observe-only (logs, never deletes rows)
 - **Claim change**: the excess is collected via `GET /api/auctions/:id/change`
 - **Timing**: event-driven — anti-sniping extends by 5 minutes at bid time for bids in the last 5 minutes before E; an auction settles (lazy) the first time it is read after `end_time + 30s` (grace)
 - **Winner contact (npub handoff)**: after settlement the winner stays anonymous publicly. The winner's linked Nostr npub is revealed only to the seller (and to the winner themselves) via a Schnorr-signed read of `GET /api/auctions/:id` (`winner-view:<id>`) — the seller sees it in Settlement Info, so they can verify an inbound contact is the genuine winner. Contact happens in the user's own Nostr client (nostr.at). The platform collects no shipping address.
-- **Audit log (fire-and-forget)**: bids → kind `1021` (hash + standing); escrow → kind `1021`/`1022` with `[status]`/`[tracking kind]`/`[note fallback_cosign]` (never the tracking number, `secret`, `max`, or `proof`)
+- **Audit log (fire-and-forget)**: bids → kind `1021` (hash + standing); escrow → kind `1022` with `[status]` tags (`shipped` / `confirmed` / `released` / `refunded`) — never `secret`, `proof`, or `max`
 
 ## P2PK lock structure
 
@@ -39,43 +40,44 @@ refund  = bidder
 - The server can never move funds alone — it only co-signs the claim (seller + server) or the refund (bidder + server).
 - If the server disappears, funds are locked until the locktime, then the bidder recovers via the `refund` key.
 
-### Fulfillment escrow (two-stage)
+### Fulfillment escrow (v1 rev 2)
 
 ```
-Stage 1: {seller, winner, server} 2-of-3, locktime=claim+10d,  refund=winner  (winner vs seller ghost)
-Stage 2: {seller, winner, server} 2-of-3, locktime=report+30d, refund=seller  (seller vs winner ghost)
+Escrow: {seller, winner, server} 2-of-3, locktime=claim+14d (ESCROW_TIMEOUT_MS), refund=winner
 ```
 
-Both stages are `n_sigs=2`; any cooperative pair can unlock immediately. `seller_net` is created as Stage 1 via `OutputData.createP2PKData(buildStage1LockOptions(...), sellerNet, keyset)`; relock builds Stage 2 via `buildStage2LockOptions`. Fees for the relock swap are reserved from the escrowed amount (seller-borne). Future arbiter: `seller+winner+server+arbiter` 2-of-4.
+Built at the claim swap via `OutputData.createP2PKData(buildEscrowLockOptions(...), sellerNet, keyset)` (`apps/server/src/lib/escrow.ts`). Resolution paths:
+- **Winner confirm** any time after shipping: witnesses `[winner_sig_i, server_sig_i]`
+- **Seller release** after shipped + 14 days: witnesses `[seller_sig_i, server_sig_i]`
+- **Winner refund** after unshipped + 14 days: witnesses `[winner_sig_i, server_sig_i]` (after locktime the winner's refund key alone would also sweep — funds can never strand)
+
+Every path runs through `settleEscrowTo` (`routes/auctions.ts`): verify party per-secret signatures → fee-aware swap → persist to `pending_receives` with retries → delete escrow row. Witnesses must be REAL client-signed per-secret signatures; signing with a public key can never verify at a mint. Future arbiter: `seller+winner+server+arbiter` 2-of-4.
 
 ## DB & migrations
 
 ```
 auctions, bids, bid_proofs, fees, change_returns, nostr_links, pending_receives,
-fulfillment_escrows  ← new (migration 0008)
+fulfillment_escrows  ← migration 0008 (v1 shape; rewritten in place — see caveat below)
 ```
 
 ```sql
 CREATE TABLE IF NOT EXISTS fulfillment_escrows (
   auction_id      TEXT PRIMARY KEY REFERENCES auctions(id),
-  stage           INTEGER NOT NULL DEFAULT 1,       -- 1 | 2
-  status          TEXT NOT NULL DEFAULT 'active',   -- active | migrating | confirmed | refunded_winner | swept_seller | split_resolved
-  proofs_data     TEXT NOT NULL,                    -- current locked proof bundle JSON (migrating: envelope with pendingOutputs)
-  tracking_number TEXT,
-  tracking_kind   TEXT,                             -- s10 | ups | fedex | dhl
-  migrated_at     INTEGER,
+  shipped         INTEGER NOT NULL DEFAULT 0,       -- boolean flag; the ONLY fulfillment state the server stores
+  proofs_data     TEXT NOT NULL,                    -- locked escrow proof bundle JSON (ONLY persisted copy of the secrets)
   created_at      INTEGER NOT NULL
 );
 ```
 
-- Dual-maintained: `migrations/0008_fulfillment_escrows.sql` (D1) + `initDb()` DDL (better-sqlite3), and both `src/db/index.ts` / `src/db/d1.ts` implement `saveEscrow`/`getEscrow`/`updateEscrowStage`/`setEscrowStatus`/`setEscrowTracking`.
-- `pending_receives` also backs escrow release: `confirm-receipt` writes `pending_receives` for the seller (same as NUT-18 `POST /wallet/receive`).
+- Dual-maintained: `migrations/0008_fulfillment_escrows.sql` (D1) + `initDb()` DDL (better-sqlite3), and both `src/db/index.ts` / `src/db/d1.ts` implement `saveEscrow`/`getEscrow`/`setShipped`/`deleteEscrow`.
+- ⚠️ Migration history lesson: 0008 was originally applied remotely as an 8-column two-stage table and later REWRITTEN in place — remote D1 therefore never gained `shipped`. Migration `0009_fulfillment_escrows_rebuild.sql` rebuilds legacy tables to the v1 shape; never rewrite an applied migration again.
+- `pending_receives` also backs escrow release: confirm/release/refund write `pending_receives` for the payee (same as NUT-18 `POST /wallet/receive`).
 
 ## Auction state machine
 
 ```
 PENDING → ACTIVE → (EXTENDED)* → CLOSED/SETTLED
-                              ↘ claim → escrow (stage 1 → stage 2 → confirmed / split / timeout)
+                              ↘ claim → escrow (shipped → confirmed | release@timeout | refund@timeout)
 ```
 
 - `ACTIVE`: open for bids.
@@ -87,7 +89,7 @@ PENDING → ACTIVE → (EXTENDED)* → CLOSED/SETTLED
 ## NIP-99 + Blossom
 
 - **Blossom**: `apps/web/lib/blossom.ts` wraps `PUT /upload` with `Authorization: Nostr <base64(24242)>`; primary `https://blossom.primal.net` (env `NEXT_PUBLIC_BLOSSOM_URL`), fallback `https://cdn.nostrcheck.me`.
-- **NIP-99**: `apps/web/lib/nostr-listing.ts` builds kind `30402` (`d=egavel-<id>`, `title`/`summary`/`price`/`t`/`image`/`r`/`published_at`/`expiration`/`reserve`/`buy_now`/`auction:start|end` + `location` shipping text), signed via NIP-07 (or pasted nsec) before `POST`. Server verifies with `lib/nip99.ts:verifyNip99ListingEvent` (kind/pubkey/d/sig/`created_at` ±10 min) and fire-and-forget publishes the same event via `SimplePool.publish` to `["wss://relay.damus.io","wss://nos.lol","wss://relay.nostr.band"]` (+ `wss://sendit.nosflare.com` withBlastr). `naddr` (`a:30402:pubkey:d`) is shareable via `nostr.at`. Mirror is **server-enforced**: `POST` without a valid `30402` is rejected.
+- **NIP-99**: `apps/web/lib/nostr-listing.ts` builds kind `30402` (`d=egavel-<id>`, `title`/`summary`/`price`/`t`/`image`/`r`/`published_at`/`expiration`/`reserve`/`buy_now`/`auction:start|end` + `location` shipping text), signed via NIP-07 (or pasted nsec) before `POST`. The client additionally fire-and-forget publishes the already-signed event to relays on create (`publishSignedEvent`). Server verifies with `lib/nip99.ts:verifyNip99ListingEvent` (kind/pubkey/d/sig/`created_at` ±10 min) and also fire-and-forget publishes via `SimplePool.publish` to `["wss://relay.damus.io","wss://nos.lol","wss://relay.nostr.band"]`. `naddr` (`a:30402:pubkey:d`) is shareable via `nostr.at`. Mirror is **server-enforced**: `POST` without a valid `30402` is rejected.
 - **Audit**: server publishes kind `1021` (bid `hash` + `standing`) and `1022` (escrow `[status]` etc.) fire-and-forget via `src/lib/audit-publish.ts` (`buildEscrowAuditEvent`/`publishEscrowAudit`).
 
 ## Server signing key
@@ -105,9 +107,7 @@ Write `apps/server/.env`:
 SERVER_PRIVATE_KEY=<64-char hex>  # server signing key
 PORT=3001
 DB_PATH=data/auction.db
-ALLOW_TEST_BIDS=1                 # dev only (allows the test://local mint)
 AUCTION_FEE_BPS=0                 # seller fee (0 = free marketplace; 500 = 5%)
-ESCROW_MODE=two-stage             # two-stage (default) | legacy (disable escrow)
 NEXT_PUBLIC_BLOSSOM_URL=https://blossom.primal.net
 NEXT_PUBLIC_BLOSSOM_FALLBACK_URL=https://cdn.nostrcheck.me
 ```

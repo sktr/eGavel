@@ -77,7 +77,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();
     const { sk: serverSk } = sellerKey();
     const db = initDb();
-    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowMode: "two-stage", feeBps: 0 }));
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
     const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
     const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
     await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
@@ -95,7 +95,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();
     const { sk: serverSk } = sellerKey();
     const db = initDb();
-    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowMode: "two-stage", feeBps: 10000 })); // 100% fee -> sellerNet 0
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 10000 })); // 100% fee -> sellerNet 0
     const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
     const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
     await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
