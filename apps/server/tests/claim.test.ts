@@ -346,13 +346,13 @@ describe("POST /api/auctions/:id/claim — swap failure never leaks internals", 
       }),
     });
 
-    // The swap cannot run without a server key → 500 with a generic message.
-    // The response must never contain server internals ("server key not
-    // configured", stack traces, mint URLs).
-    expect(res.status).toBe(500);
+    // The swap cannot run without a server key → fail fast with an
+    // actionable 503. The response must never contain server internals
+    // (stack traces, mint URLs).
+    expect(res.status).toBe(503);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("claim swap failed");
-    expect(body.error).not.toMatch(/server key|not configured|mint\.example/i);
+    expect(body.error).toBe("SERVER_NOT_CONFIGURED");
+    expect(body.error).not.toMatch(/stack|mint\.example/i);
   });
 });
 
