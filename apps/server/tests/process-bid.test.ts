@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { initDb, type Db } from "../src/db/index.js"
 import { processBid, processPendingBid } from "../src/process-bid.js"
 import { createAuctionRoutes } from "../src/routes/auctions.js"
@@ -58,23 +58,42 @@ function payload(auction: Auction, max: number, nonce: string, bidder = BIDDER) 
       secret: p2pk(SELLER, locktime, bidder, nonce),
       C: "c",
     }],
-    mint_url: "test://local",
+    mint_url: "https://mint.example",
     auction_id: auction.id,
     amount: max,
     bidder_pubkey: bidder,
   }
 }
 
+/**
+ * Stub the mint HTTP surface so bids against https://mint.example verify
+ * fully offline (NUT-06 info + NUT-07 checkstate). The old dev-only
+ * test://local bypass was removed from verify/index.ts.
+ */
+function stubMintFetch() {
+  vi.stubGlobal("fetch", async (url: string, init?: { body?: string }) => {
+    if (url === "https://mint.example/v1/info") {
+      return {
+        ok: true,
+        json: async () => ({ nuts: { "7": { supported: true }, "8": { supported: true }, "10": { supported: true }, "11": { supported: true } } }),
+      }
+    }
+    if (url === "https://mint.example/v1/checkstate") {
+      let ys: string[] = []
+      try { ys = (JSON.parse(String(init?.body))?.Ys ?? []) as string[] } catch { /* fallthrough */ }
+      return { ok: true, json: async () => ({ states: ys.map(() => ({ state: "UNSPENT" })) }) }
+    }
+    throw new Error("unexpected fetch " + url)
+  })
+}
+
 describe("processBid (proxy bidding)", async () => {
   let db: Db
   beforeEach(async () => {
     db = initDb()
-    process.env.ALLOW_TEST_BIDS = "1"
+    stubMintFetch()
     await db.saveNostrLink(BIDDER, "03nostrkey")
     await db.saveNostrLink(BIDDER2, "03nostrkey2")
-  })
-  afterAll(async () => {
-    delete process.env.ALLOW_TEST_BIDS
   })
 
   it("rejects a bid for an unknown auction", async () => {
@@ -165,7 +184,7 @@ describe("processBid (proxy bidding)", async () => {
     const locktime = Math.ceil((auction1.end_time + LOCKTIME_MS) / 1000) + 100
     const sameProofs = (auctionId: string, amount: number) => ({
       proofs: [{ id: "ks1", amount, secret: p2pk(SELLER, locktime, BIDDER, "n1"), C: "c" }],
-      mint_url: "test://local",
+      mint_url: "https://mint.example",
       auction_id: auctionId,
       amount,
       bidder_pubkey: BIDDER,
@@ -272,15 +291,12 @@ describe("processPendingBid (pre-registration)", () => {
   let db: Db
   beforeEach(async () => {
     db = initDb()
-    process.env.ALLOW_TEST_BIDS = "1"
+    stubMintFetch()
     await db.saveNostrLink(BIDDER, "03nostrkey")
     await db.saveNostrLink(BIDDER2, "03nostrkey2")
   })
   afterEach(() => {
     vi.unstubAllGlobals()
-  })
-  afterAll(async () => {
-    delete process.env.ALLOW_TEST_BIDS
   })
 
   it("rejects a pending bid from a bidder with no Nostr link (LINK_REQUIRED)", async () => {
@@ -372,10 +388,9 @@ describe("processPendingBid (pre-registration)", () => {
   })
 
   it("rejects reusing a refunded bundle as a pending bid (PROOF_ALREADY_SPENT)", async () => {
-    // test://local bypasses the NUT-07 check (verify/index.ts short-circuits
-    // for test mints), so use a real-looking mint URL with a stubbed fetch.
-    // The URL must be unique per test: checkMintCapabilities caches by URL at
-    // module level (INFO_TTL_MS), so a reused URL would hit the cache.
+    // Use a unique mint URL with a stubbed fetch: checkMintCapabilities
+    // caches by URL at module level (INFO_TTL_MS), so a reused URL would hit
+    // the cache and never reach this test's SPENT response.
     const mintUrl = `https://mint-spent-${Date.now()}.test`
     const auction = makeAuction({ mint_url: mintUrl })
     await db.saveAuction(auction)
@@ -439,7 +454,7 @@ describe("POST /api/bids — response carries the new standing price", async () 
           C: "c",
         },
       ],
-      mint_url: "test://local",
+      mint_url: "https://mint.example",
       auction_id: auction.id,
       amount: max,
       bidder_pubkey: bidder,
@@ -448,11 +463,8 @@ describe("POST /api/bids — response carries the new standing price", async () 
 
   beforeEach(async () => {
     db = initDb()
-    process.env.ALLOW_TEST_BIDS = "1"
+    stubMintFetch()
     await db.saveNostrLink(BIDDER, "03nostrkey")
-  })
-  afterAll(async () => {
-    delete process.env.ALLOW_TEST_BIDS
   })
 
   it("returns current_amount on a normal live bid", async () => {

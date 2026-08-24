@@ -1,16 +1,30 @@
-import { describe, it, expect, beforeEach, afterAll, vi, afterEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { initDb, type Db } from "../src/db/index.js"
 import { LOCKTIME_MS } from "@egavel/shared"
 import type { Auction } from "@egavel/shared"
 import { canonicalPubkey } from "../src/lib/canonical.js"
 
-beforeEach(() => {
-  process.env.ALLOW_TEST_BIDS = "1"
-})
-
-afterAll(() => {
-  delete process.env.ALLOW_TEST_BIDS
-})
+/**
+ * Stub the mint HTTP surface so bids against an https mint URL verify fully
+ * offline: NUT-06 info advertises the required nuts, NUT-07 checkstate reports
+ * every Y as UNSPENT. (The old dev-only test://local bypass was removed.)
+ */
+function stubHealthyMint(mintUrl: string) {
+  vi.stubGlobal("fetch", async (url: string, init?: { body?: string }) => {
+    if (url === `${mintUrl}/v1/info`) {
+      return {
+        ok: true,
+        json: async () => ({ nuts: { "7": { supported: true }, "8": { supported: true }, "10": { supported: true }, "11": { supported: true } } }),
+      }
+    }
+    if (url === `${mintUrl}/v1/checkstate`) {
+      let ys: string[] = []
+      try { ys = (JSON.parse(String(init?.body))?.Ys ?? []) as string[] } catch { /* fallthrough */ }
+      return { ok: true, json: async () => ({ states: ys.map(() => ({ state: "UNSPENT" })) }) }
+    }
+    throw new Error("unexpected fetch " + url)
+  })
+}
 
 function makeAuction(overrides: Partial<Auction> = {}): Auction {
   return {
@@ -192,12 +206,13 @@ describe("verifyBid", () => {
   })
 
   it("accepts a max strictly above the current price", async () => {
+    stubHealthyMint("https://mint.example")
     const locktime = auction.end_time + LOCKTIME_MS
     const secret = makeP2PKSecret(SELLER_PUBKEY, locktime, BIDDER_PUBKEY)
     const result = await verifyBid(
       {
         proofs: [{ id: "x", amount: 400, secret, C: "x" }],
-        mint_url: "test://local",
+        mint_url: "https://mint.example",
         auction_id: "a1",
         amount: 400,
         bidder_pubkey: BIDDER_PUBKEY,
@@ -390,9 +405,10 @@ describe("verifyBid lock structure checks", () => {
       },
     ])
     // bidder == seller == 02deadbeef; pubkeys contains only the server key
+    stubHealthyMint("https://mint-self.example")
     const result = await verifyBid(
-      bidPayload(secret, { bidder_pubkey: "02deadbeef", mint_url: "test://local" }),
-      { ...auction, mint_url: "test://local" } as never,
+      bidPayload(secret, { bidder_pubkey: "02deadbeef", mint_url: "https://mint-self.example" }),
+      { ...auction, mint_url: "https://mint-self.example" } as never,
       undefined,
       SERVER_PUBKEY,
     )
@@ -464,10 +480,11 @@ describe("verifyBid lock structure checks", () => {
     if (!result.ok) expect(result.error.code).toBe("MINT_URL_UNSAFE")
   })
 
-  it("accepts a well-formed standard P2PK bid against the test mint", async () => {
+  it("accepts a well-formed standard P2PK bid against a healthy mint", async () => {
+    stubHealthyMint("https://mint.example")
     const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n7")
     const result = await verifyBid(
-      bidPayload(secret, { mint_url: "test://local" }),
+      bidPayload(secret),
       auction as never,
       undefined,
       SERVER_PUBKEY,
@@ -479,10 +496,11 @@ describe("verifyBid lock structure checks", () => {
     // Regression: the web bid form previously computed locktime with Math.floor,
     // which is always < the server's Math.ceil floor → every real bid was rejected
     // with LOCKTIME_TOO_EARLY. This test fails with floor and passes with ceil.
+    stubHealthyMint("https://mint.example")
     const exactCeilLocktime = Math.ceil((auction.end_time + LOCKTIME_MS) / 1000)
     const secret = makeP2PKSecret("02deadbeef", exactCeilLocktime, "03cafebabe", "n-ceil")
     const result = await verifyBid(
-      bidPayload(secret, { mint_url: "test://local" }),
+      bidPayload(secret),
       auction as never,
       undefined,
       SERVER_PUBKEY,
@@ -494,7 +512,7 @@ describe("verifyBid lock structure checks", () => {
     const tooEarlyLocktime = Math.ceil((auction.end_time + LOCKTIME_MS) / 1000) - 1
     const secret = makeP2PKSecret("02deadbeef", tooEarlyLocktime, "03cafebabe", "n-too-early")
     const result = await verifyBid(
-      bidPayload(secret, { mint_url: "test://local" }),
+      bidPayload(secret),
       auction as never,
       undefined,
       SERVER_PUBKEY,
@@ -503,21 +521,19 @@ describe("verifyBid lock structure checks", () => {
     if (!result.ok) expect(result.error.code).toBe("LOCKTIME_TOO_EARLY")
   })
 
-  it("rejects test://local bids when ALLOW_TEST_BIDS is off", async () => {
+  it("rejects non-https pseudo-scheme mints (dev test://local removed)", async () => {
     const secret = makeP2PKSecret("02deadbeef", locktime, "03cafebabe", "n8")
-    const prev = process.env.ALLOW_TEST_BIDS
-    delete process.env.ALLOW_TEST_BIDS
-    try {
-      const result = await verifyBid(
-        bidPayload(secret, { mint_url: "test://local" }),
-        auction as never,
-        undefined,
-        SERVER_PUBKEY,
-      )
-      expect(result.ok).toBe(false)
-      if (!result.ok) expect(result.error.code).toBe("MINT_URL_MISMATCH")
-    } finally {
-      if (prev !== undefined) process.env.ALLOW_TEST_BIDS = prev
+    const result = await verifyBid(
+      bidPayload(secret, { mint_url: "test://local" }),
+      auction as never,
+      undefined,
+      SERVER_PUBKEY,
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      // MINT_URL_MISMATCH (payload vs auction URL) is checked before the
+      // scheme guard; either rejection means the pseudo-scheme bid is dead.
+      expect(["MINT_URL_MISMATCH", "MINT_URL_UNSAFE"]).toContain(result.error.code)
     }
   })
 })
@@ -567,7 +583,6 @@ describe("verifyBid mint checks", () => {
       }
       throw new Error("unexpected fetch " + url)
     })
-    delete process.env.ALLOW_TEST_BIDS
     const result = await verifyBid(
       payload(mintUrl),
       { ...auction, mint_url: mintUrl } as never,
@@ -583,7 +598,6 @@ describe("verifyBid mint checks", () => {
     vi.stubGlobal("fetch", async () => {
       throw new Error("network down")
     })
-    delete process.env.ALLOW_TEST_BIDS
     const result = await verifyBid(
       payload(mintUrl),
       { ...auction, mint_url: mintUrl } as never,
@@ -621,7 +635,6 @@ describe("verifyBid mint checks", () => {
       }
       throw new Error("unexpected fetch " + url)
     })
-    delete process.env.ALLOW_TEST_BIDS
     const result = await verifyBid(
       payload(mintUrl),
       { ...auction, mint_url: mintUrl } as never,
@@ -665,7 +678,6 @@ describe("verifyBid mint checks", () => {
       }
       throw new Error("unexpected fetch " + url)
     })
-    delete process.env.ALLOW_TEST_BIDS
     const result = await verifyBid(p, auction2 as never, undefined, SERVER_PUBKEY)
     expect(result.ok).toBe(true)
   })

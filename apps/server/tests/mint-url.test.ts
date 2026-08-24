@@ -36,8 +36,8 @@ describe("isValidMintUrl — SSRF guard", () => {
     expect(isValidMintUrl("https://")).toBe(false);
   });
 
-  it("allows the dev-only test mint when allowTestBids is set", () => {
-    expect(isValidMintUrl("test://local", { allowTestBids: true })).toBe(true);
+  it("rejects non-https pseudo-schemes (dev-only test://local mint was removed)", () => {
     expect(isValidMintUrl("test://local")).toBe(false);
+    expect(isValidMintUrl("data:text/plain,hi")).toBe(false);
   });
 });

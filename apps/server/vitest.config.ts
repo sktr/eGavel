@@ -6,7 +6,6 @@ export default defineConfig({
     environment: "node",
     env: {
       DB_PATH: ":memory:",
-      ALLOW_TEST_BIDS: "1",
     },
   },
 })
