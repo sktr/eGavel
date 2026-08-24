@@ -155,6 +155,33 @@ export function initDb(): Db {
     );
   `)
 
+  // ── Legacy escrow repair (v1 redesign, 2026-08-24) ──
+  // Databases created by the superseded two-stage design carry an 8-column
+  // fulfillment_escrows (stage/status/tracking_*/migrated_at, no `shipped`).
+  // CREATE TABLE IF NOT EXISTS silently no-ops on them, leaving every v1
+  // write broken. Detect the shape and rebuild in place; only columns common
+  // to both designs survive (auction_id/proofs_data/created_at) and shipped
+  // resets to 0 for carried-over rows — their two-stage semantics do not map
+  // onto v1 anyway.
+  {
+    const cols = db.prepare("PRAGMA table_info(fulfillment_escrows)").all() as Array<{ name: string }>
+    if (cols.length > 0 && !cols.some((c) => c.name === "shipped")) {
+      db.exec(`
+        CREATE TABLE fulfillment_escrows_repaired (
+          auction_id      TEXT PRIMARY KEY REFERENCES auctions(id),
+          shipped         INTEGER NOT NULL DEFAULT 0,
+          proofs_data     TEXT NOT NULL,
+          created_at      INTEGER NOT NULL
+        );
+        INSERT OR IGNORE INTO fulfillment_escrows_repaired (auction_id, proofs_data, created_at)
+          SELECT auction_id, proofs_data, created_at FROM fulfillment_escrows;
+        DROP TABLE fulfillment_escrows;
+        ALTER TABLE fulfillment_escrows_repaired RENAME TO fulfillment_escrows;
+      `)
+      console.log("initDb: rebuilt legacy two-stage fulfillment_escrows to the v1 shape")
+    }
+  }
+
   // Add proof_data column if it doesn't exist (migration for existing DBs)
   try {
     db.exec("ALTER TABLE bids ADD COLUMN proof_data TEXT")
