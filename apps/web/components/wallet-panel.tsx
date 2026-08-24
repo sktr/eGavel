@@ -180,40 +180,46 @@ export function WalletPanel() {
 
   // Collect pending NUT-18 payments into the wallet (signed GET).
   // `silent` suppresses the "No incoming payments" message during auto-poll.
+  // Shared sweep: POST /wallet/receive (server-held pending receives —
+  // escrow releases, NUT-18 payments) and claim every proof into the wallet.
+  // Returns the total collected; 0 when nothing is waiting.
+  const fetchAndCollectReceipts = useCallback(async (): Promise<number> => {
+    if (!identity) throw new Error("Identity not available");
+    const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey));
+    const res = await fetch(
+      apiUrl(`/wallet/receive?receiver_pubkey=${identity.pubkey}&sig=${sig}`),
+      { cache: "no-store" },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "collect failed");
+    }
+    const data = (await res.json()) as {
+      receipts: Array<{ mint_url: string; proofs: string; amount: number }>;
+    };
+    if (data.receipts.length === 0) return 0;
+    let total = 0;
+    for (const r of data.receipts) {
+      const proofs = deserializeProofs(r.proofs);
+      await wallet.receive(
+        getEncodedToken({ mint: r.mint_url, proofs }),
+      ).catch(() => {});
+      total += r.amount;
+    }
+    return total;
+  }, [identity, wallet]);
+
   const handleCheckPayments = useCallback(async (silent = false) => {
     setReqErr(null);
     if (!silent) setReqMsg(null);
-    if (!identity) {
-      setReqErr("Identity not available");
-      return;
-    }
     // Only the manual click flips the button label (Checking…) — the auto-poll
     // must not toggle it, or the button text flickers every few seconds.
     if (!silent) setReqBusy(true);
     try {
-      const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey));
-      const res = await fetch(
-        apiUrl(`/wallet/receive?receiver_pubkey=${identity.pubkey}&sig=${sig}`),
-        { cache: "no-store" },
-      );
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "collect failed");
-      }
-      const data = (await res.json()) as {
-        receipts: Array<{ mint_url: string; proofs: string; amount: number }>;
-      };
-      if (data.receipts.length === 0) {
+      const total = await fetchAndCollectReceipts();
+      if (total === 0) {
         if (!silent) setReqMsg("No incoming payments.");
         return;
-      }
-      let total = 0;
-      for (const r of data.receipts) {
-        const proofs = deserializeProofs(r.proofs);
-        await wallet.receive(
-          getEncodedToken({ mint: r.mint_url, proofs }),
-        ).catch(() => {});
-        total += r.amount;
       }
       setReqMsg(`Collected ${total.toLocaleString()} sats.`);
       setReqCreq(null);
@@ -223,7 +229,32 @@ export function WalletPanel() {
     } finally {
       if (!silent) setReqBusy(false);
     }
-  }, [identity, wallet, refresh]);
+  }, [fetchAndCollectReceipts, refresh]);
+
+  // ── Fund Collection (manual sweep of server-held incoming proofs) ──
+  const [fcBusy, setFcBusy] = useState(false);
+  const [fcMsg, setFcMsg] = useState<string | null>(null);
+  const [fcErr, setFcErr] = useState<string | null>(null);
+  const handleFundCollection = useCallback(async () => {
+    if (!identity) return;
+    setFcBusy(true);
+    setFcMsg(null);
+    setFcErr(null);
+    try {
+      const total = await fetchAndCollectReceipts();
+      if (total === 0) {
+        setFcMsg("No funds waiting for collection.");
+        return;
+      }
+      setFcMsg(`Collected ${total.toLocaleString()} sats into your wallet.`);
+      refresh();
+    } catch (err) {
+      setFcErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFcBusy(false);
+    }
+  }, [identity, fetchAndCollectReceipts, refresh]);
+
 
   // Auto-poll while the payment-request QR is showing: once the payer's
   // wallet POSTs the token, collect it without waiting for a manual click.
@@ -563,6 +594,27 @@ export function WalletPanel() {
         from. Deposit via Lightning, receive a Cashu token, or withdraw as a token (import into
         any Cashu wallet) or by paying a Lightning invoice.
       </p>
+
+      {/* ── Fund Collection (manual sweep, safety net for auto-polling) ── */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
+        <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block" }}>
+          Fund Collection
+        </label>
+        <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
+          Escrow releases and incoming payments are held by the server until collected.
+          They usually arrive automatically — use this to collect them right now.
+        </p>
+        <button
+          type="button"
+          onClick={handleFundCollection}
+          disabled={!identity || fcBusy}
+          style={{ padding: "8px 18px", fontSize: 13 }}
+        >
+          {fcBusy ? "Collecting…" : "Collect funds"}
+        </button>
+        {fcMsg && <p style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>{fcMsg}</p>}
+        {fcErr && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{fcErr}</p>}
+      </div>
 
       {/* ── Deposit ── */}
       <div
