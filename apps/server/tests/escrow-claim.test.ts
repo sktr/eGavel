@@ -43,6 +43,27 @@ import { bytesToHex, hexToBytes } from "../src/lib/hex.js";
 import { initDb, type Db } from "../src/db/index.js";
 import { createAuctionRoutes } from "../src/routes/auctions.js";
 import { signSecret } from "../src/lib/schnorr.js";
+
+describe("claim without a server signing key", () => {
+  it("fails fast with SERVER_NOT_CONFIGURED (503) instead of a generic swap failure", async () => {
+    const { sk: sellerSk, pk: sellerPk } = sellerKey();
+    const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
+    const db = initDb();
+    const app = new Hono();
+    // No serverKey in config or env.
+    delete process.env.SERVER_PRIVATE_KEY;
+    app.route("/api", createAuctionRoutes(db, {}));
+    await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
+    const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
+    await db.saveBid({ id:"a1-y", auction_id:"a1", max_amount:500, current_amount:500, bidder_npub:winnerPk, Y:"y", received_at:Date.now(), status:"verified", proof_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret, amount:500 }], mint_url:"https://mint.example", amount:500 }) } as Bid);
+    const sig = signSecret(secret, sellerSk);
+    const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
+    expect(res.status).toBe(503);
+    const body = await res.json() as Record<string,unknown>;
+    expect(body.error).toBe("SERVER_NOT_CONFIGURED");
+  });
+});
+
 import type { Auction, Bid } from "@egavel/shared";
 
 function sellerKey() {

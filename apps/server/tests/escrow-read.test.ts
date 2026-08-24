@@ -16,12 +16,34 @@ describe("GET /auctions/:id/escrow", () => {
   let db: Db;
   beforeEach(() => { db = initDb(); });
 
-  it("returns 404 when no escrow row", async () => {
+  function makeAuction(id: string, sellerPk: string, winnerPk: string): Auction {
+    return { id, item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:100, mint_url:"https://mint.example" };
+  }
+
+  it("returns NO_ESCROW for an authenticated party when no escrow row", async () => {
+    const seller = kp(), winner = kp(), server = kp();
     const app = new Hono();
-    app.route("/api", createAuctionRoutes(db, { serverKey: kp().sk }));
-    await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:"02aa", state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:"03bb", winning_amount:100, mint_url:"https://mint.example" } as Auction);
-    const res = await app.request("http://localhost/api/auctions/a1/escrow?party_pubkey=02aa&party_sig=sig");
+    app.route("/api", createAuctionRoutes(db, { serverKey: server.sk }));
+    await db.saveAuction(makeAuction("a1", seller.pk, winner.pk));
+    const sig = signSecret(`escrow-view:a1`, seller.sk);
+    const res = await app.request(`http://localhost/api/auctions/a1/escrow?party_pubkey=${seller.pk}&party_sig=${sig}`);
     expect(res.status).toBe(404);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.error).toBe("NO_ESCROW");
+  });
+
+  it("does not leak escrow existence: bad signature gets 401 even when no escrow exists", async () => {
+    const seller = kp(), winner = kp(), server = kp();
+    const app = new Hono();
+    app.route("/api", createAuctionRoutes(db, { serverKey: server.sk }));
+    await db.saveAuction(makeAuction("a1", seller.pk, winner.pk));
+    // No escrow row at all — an unauthenticated caller must see the same 401
+    // as against an existing escrow, never a distinguishing 404.
+    const res = await app.request(`http://localhost/api/auctions/a1/escrow?party_pubkey=${seller.pk}&party_sig=badsig`);
+    expect(res.status).toBe(401);
+    // Same for a nonexistent auction id.
+    const res2 = await app.request("http://localhost/api/auctions/ghost/escrow?party_pubkey=x&party_sig=y");
+    expect(res2.status).toBe(401);
   });
 
   it("seller can read own escrow (Schnorr over escrow-view:<id>)", async () => {

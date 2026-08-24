@@ -563,6 +563,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   // ── Claim: seller claims the winning bid; server builds the swap and
   // splits the proceeds into [seller_net, operator_fee] (seller-paid fee) ──
   router.post("/auctions/:id/claim", async (c) => {
+    // Fail fast with an actionable error: without the co-signing key no swap
+    // can be built, and a generic 500 after validation would mislead sellers.
+    if (!serverKey) return c.json({ error: "SERVER_NOT_CONFIGURED" }, 503);
     const auction = await db.getAuction(c.req.param("id")!);
     if (!auction) return c.json({ error: "not found" }, 404);
     let body: { secrets?: string[]; seller_sigs?: string[] };
@@ -734,23 +737,25 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
   });
 
   // ── Escrow read: seller or winner fetches shipped status + P2PK proofs ──
+  // Auth comes FIRST: a bad signature gets the same 401 whether or not an
+  // escrow exists, so unauthenticated callers cannot probe escrow existence.
   router.get("/auctions/:id/escrow", async (c) => {
     const id = c.req.param("id")!;
-    const auction = await db.getAuction(id);
-    if (!auction) return c.json({ error: "not found" }, 404);
-    const escrow = await db.getEscrow(id);
-    if (!escrow) return c.json({ error: "not found" }, 404);
     const partyPubkey = c.req.query("party_pubkey") ?? "";
     const partySig = c.req.query("party_sig") ?? "";
     if (!verifySecretSignature(partySig, `escrow-view:${id}`, canonicalPubkey(partyPubkey))) {
       return c.json({ error: "INVALID_SIGNATURE" }, 401);
     }
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
     const isSeller = canonicalPubkey(partyPubkey) === canonicalPubkey(auction.seller_pubkey);
     const isWinner =
       !!auction.winner_npub && canonicalPubkey(partyPubkey) === canonicalPubkey(auction.winner_npub);
     if (!isSeller && !isWinner) {
       return c.json({ error: "FORBIDDEN" }, 403);
     }
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
     const timeoutExpired = Date.now() >= escrow.created_at + ESCROW_TIMEOUT_MS;
     return c.json({
       auction_id: escrow.auction_id,
