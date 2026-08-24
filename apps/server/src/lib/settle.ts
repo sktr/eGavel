@@ -52,12 +52,16 @@ export async function settleIfDue(
 }
 
 /**
- * Process escrow timeout: delete the escrow row and log.
+ * Process escrow timeout: observe only — never move funds, never delete rows.
  *
- * The escrow proofs are P2PK-locked with {seller, winner, server} (n_sigs=2)
- * and refund=winner after locktime. At timeout the server cannot produce the
- * 2 signatures needed for a mint swap, so we clean up the DB row. The winner
- * can sweep proofs client-side via the refund path after locktime.
+ * The escrow proofs are P2PK-locked {seller, winner, server} (n_sigs=2), and
+ * the server holds just one key, so no server-side routine can spend them
+ * (non-custodial). Timeout resolution is therefore party-triggered:
+ *   shipped → seller calls POST /auctions/:id/release after the timeout
+ *   !shipped → winner calls POST /auctions/:id/refund after the timeout
+ * The row MUST stay until funds actually move: proofs_data is the only
+ * persisted copy of the escrow secrets; deleting it early makes the proofs
+ * permanently unspendable by anyone.
  */
 async function processEscrowTimeout(
   db: Db,
@@ -68,11 +72,9 @@ async function processEscrowTimeout(
   const escrow = await db.getEscrow(auction.id)
   if (!escrow) return
   if (Date.now() < escrow.created_at + ESCROW_TIMEOUT_MS) return
-  if (escrow.shipped) return
 
-  await db.deleteEscrow(auction.id)
   console.log(
-    `Escrow timeout for ${auction.id}: shipped=0, escrow row deleted. ` +
-    `Proofs available for winner sweep via refund path after locktime.`
+    `Escrow timeout for ${auction.id}: shipped=${escrow.shipped}. ` +
+    `Awaiting ${escrow.shipped ? "seller release" : "winner refund"} (party-triggered).`
   )
 }

@@ -46,7 +46,7 @@ describe("escrow timeout handling", () => {
     expect(await db.getEscrow("a1")).not.toBeNull()
   })
 
-  it("deletes escrow row when shipped=false and timeout exceeded", async () => {
+  it("preserves escrow row when shipped=false and timeout exceeded (funds not moved yet)", async () => {
     const auction = makeAuction()
     await db.saveAuction(auction)
     await db.saveEscrow({
@@ -58,7 +58,7 @@ describe("escrow timeout handling", () => {
 
     const settled = await settleIfDue(db, auction)
     expect(settled.state).toBe("SETTLED")
-    expect(await db.getEscrow("a1")).toBeNull()
+    expect(await db.getEscrow("a1")).not.toBeNull()
   })
 
   it("does not delete escrow before timeout", async () => {

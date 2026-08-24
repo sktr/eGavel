@@ -849,6 +849,116 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     }
   });
 
+  // ── Refund: timeout-gated winner self-refund. The seller never shipped
+  // within 14 days; the winner signs every escrow proof secret and the
+  // server co-signs, swapping the escrow into winner-owned proofs. ──
+  router.post("/auctions/:id/refund", async (c) => {
+    const id = c.req.param("id")!;
+    const auction = await db.getAuction(id);
+    if (!auction) return c.json({ error: "not found" }, 404);
+    const escrow = await db.getEscrow(id);
+    if (!escrow) return c.json({ error: "NO_ESCROW" }, 404);
+    const body = (await c.req.json().catch(() => null)) as {
+      winner_pubkey?: string;
+      winner_sig?: string;
+      secrets?: string[];
+      winner_sigs?: string[];
+    } | null;
+    if (!body?.winner_pubkey || !body?.winner_sig) return c.json({ error: "missing fields" }, 400);
+    const winnerXOnly = canonicalPubkey(body.winner_pubkey);
+    if (
+      !auction.winner_npub ||
+      winnerXOnly !== canonicalPubkey(auction.winner_npub)
+    )
+      return c.json({ error: "FORBIDDEN" }, 403);
+    if (!verifySecretSignature(body.winner_sig, `refund:${id}`, winnerXOnly))
+      return c.json({ error: "INVALID_SIGNATURE" }, 401);
+    if (escrow.shipped) return c.json({ error: "SHIPPED" }, 400);
+    if (Date.now() < escrow.created_at + ESCROW_TIMEOUT_MS)
+      return c.json({ error: "NOT_EXPIRED" }, 400);
+
+    const { secrets, winner_sigs } = body;
+    if (
+      !Array.isArray(secrets) ||
+      !Array.isArray(winner_sigs) ||
+      secrets.length === 0 ||
+      secrets.length !== winner_sigs.length
+    ) {
+      return c.json({ error: "missing secrets or winner_sigs" }, 400);
+    }
+
+    const serverSkHex = skHexForServer();
+    let bundle: StoredProofBundle;
+    try { bundle = parseProofData(escrow.proofs_data); } catch { return c.json({ error: "INVALID_PROOF" }, 400); }
+    if (!bundle.proofs?.length) return c.json({ error: "INVALID_PROOF" }, 400);
+
+    const validSecrets = new Set(bundle.proofs.map((p) => p.secret));
+    for (let i = 0; i < secrets.length; i++) {
+      if (!validSecrets.has(secrets[i]!)) return c.json({ error: "INVALID_MSG" }, 400);
+      if (!verifySecretSignature(winner_sigs[i]!, secrets[i]!, winnerXOnly)) {
+        return c.json({ error: "INVALID_SIGNATURE" }, 400);
+      }
+    }
+
+    try {
+      const wallet = new Wallet(bundle.mint_url, { unit: "sat" }) as unknown as {
+        loadMint: () => Promise<void>;
+        keyChain: { getKeyset: (id: string) => unknown };
+        getFeesForProofs: (proofs: unknown) => unknown;
+        mint: { swap: (args: { inputs: unknown[]; outputs: unknown[] }) => Promise<{ signatures: unknown[] }> };
+      };
+      await wallet.loadMint();
+      const keysetId = (bundle.proofs[0] as unknown as { keyset_id?: string; id?: string }).keyset_id ?? (bundle.proofs[0] as unknown as { id: string }).id;
+      const keyset = wallet.keyChain.getKeyset(keysetId);
+
+      // Witnesses: the winner's per-secret signatures + the server's co-signature.
+      // (After locktime the winner's refund key alone would also be valid, but
+      // 2-of-3 is always accepted and keeps one code path.)
+      const inputs = bundle.proofs.map((p) => ({
+        id: (p as unknown as { id?: string; keyset_id?: string }).id ?? (p as unknown as { keyset_id?: string }).keyset_id ?? (p as unknown as { id: string }).id,
+        amount: Number(p.amount),
+        secret: p.secret,
+        C: p.C,
+        witness: JSON.stringify({
+          signatures: [winner_sigs[secrets.indexOf(p.secret)]!, signSecret(p.secret, serverSkHex)],
+        }),
+      }));
+
+      const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
+      let feeNum = 0;
+      if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
+      else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
+      else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
+        try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
+      } else feeNum = Number(String(mintFeeRaw ?? 0));
+      if (!Number.isFinite(feeNum)) feeNum = 0;
+
+      const escrowAmount = bundle.proofs.reduce((a, p) => a + Number(p.amount), 0);
+      const releaseAmount = Math.max(0, escrowAmount - feeNum);
+      const releaseOutputs = (OutputData as unknown as {
+        createP2PKData: (opts: unknown, amount: number, ks: unknown) => Array<{
+          blindedMessage: unknown;
+          toProof: (sig: unknown, ks: unknown) => unknown;
+        }>;
+      }).createP2PKData({ pubkey: winnerXOnly }, releaseAmount, keyset);
+
+      const swapRes = await wallet.mint.swap({
+        inputs: inputs as never,
+        outputs: releaseOutputs.map((o) => o.blindedMessage),
+      });
+
+      const releaseProofs = releaseOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+
+      await db.savePendingReceive(winnerXOnly, bundle.mint_url, JSON.stringify(releaseProofs), releaseAmount);
+      await db.deleteEscrow(id);
+      void publishEscrowAudit(serverKey, { auctionId: id, status: "refunded", amount: releaseAmount });
+      return c.json({ ok: true, amount: releaseAmount });
+    } catch (err) {
+      console.error(`refund failed (auction ${id}):`, err);
+      return c.json({ error: "refund failed" }, 500);
+    }
+  });
+
   // ── Change: the winner collects the excess (locked max − standing price)
   // returned during the seller's claim swap (proxy bidding) ──
   router.get("/auctions/:id/change", async (c) => {
