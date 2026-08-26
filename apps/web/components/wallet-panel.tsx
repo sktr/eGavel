@@ -567,7 +567,7 @@ export function WalletPanel() {
           Fund Collection
         </label>
         <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
-          Escrow releases and incoming payments are held by the server until collected.
+          Auction payouts and incoming payments are held by the server until collected.
           They usually arrive automatically — use this to collect them right now.
         </p>
         <button

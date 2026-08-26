@@ -32,6 +32,14 @@ import { coerceMintFee } from "../lib/mint-fee.js";
 export interface AuctionRoutesConfig {
   serverKey?: string;
   feeBps?: number;
+  /**
+   * Fulfillment escrow (v1 rev 2) is DORMANT by default: claims pay the
+   * seller directly and no escrow row is created. Flip to true to restore
+   * winner-protected claims (the whole hardened pipeline — shipped/confirm/
+   * release/refund — stays available). Kept after the 2026-08-25 decision
+   * to simplify trades back to direct pay; users must never see escrow UI.
+   */
+  escrowEnabled?: boolean;
 }
 
 /**
@@ -658,10 +666,10 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         mintFee,
       );
 
-      // Fulfillment escrow v1: sellerNet is locked in a 2-of-3 P2PK
-      // ({seller, winner, server}, refund winner @ claim+14d) instead of
-      // being given directly to the seller.
-      if (sellerNet > 0 && auction.winner_npub) {
+      // Fulfillment escrow v1 (DORMANT by default): sellerNet is locked in a
+      // 2-of-3 P2PK ({seller, winner, server}, refund winner @ claim+14d)
+      // instead of being given directly to the seller.
+      if ((config.escrowEnabled ?? false) && sellerNet > 0 && auction.winner_npub) {
         const winnerXOnly = canonicalPubkey(auction.winner_npub);
         const serverXOnly = canonicalPubkey(getServerPubkeyHex());
         const locktime = Math.floor(Date.now() / 1000) + ESCROW_TIMEOUT_SEC;

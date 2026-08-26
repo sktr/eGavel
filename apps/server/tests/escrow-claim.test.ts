@@ -51,6 +51,28 @@ import { initDb, type Db } from "../src/db/index.js";
 import { createAuctionRoutes } from "../src/routes/auctions.js";
 import { signSecret } from "../src/lib/schnorr.js";
 
+describe("claim pays the seller directly by default (escrow dormant)", () => {
+  it("returns seller_proofs and creates NO escrow when escrowEnabled is unset", async () => {
+    const { sk: sellerSk, pk: sellerPk } = sellerKey();
+    const { sk: serverSk } = sellerKey();
+    const db = initDb();
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+    // NOTE: no escrowEnabled flag — direct pay is the default.
+    const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
+    const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
+    await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
+    await db.saveBid({ id:"a1-y", auction_id:"a1", max_amount:500, current_amount:500, bidder_npub:winnerPk, Y:"y", received_at:Date.now(), status:"verified", proof_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret, amount:500 }], mint_url:"https://mint.example", amount:500 }) } as Bid);
+    const sig = signSecret(secret, sellerSk);
+    const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.escrowed).toBeUndefined();
+    const proofs = body.seller_proofs as unknown[];
+    expect(proofs.length).toBeGreaterThan(0);
+    expect(await db.getEscrow("a1")).toBeNull();
+  });
+});
+
 describe("claim without a server signing key", () => {
   it("fails fast with SERVER_NOT_CONFIGURED (503) instead of a generic swap failure", async () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();
@@ -84,7 +106,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();
     const { sk: serverSk } = sellerKey();
     const db = initDb();
-    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowEnabled: true, feeBps: 0 }));
     const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
     const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
     await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
@@ -102,7 +124,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();
     const { sk: serverSk } = sellerKey();
     const db = initDb();
-    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 10000 })); // 100% fee -> sellerNet 0
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowEnabled: true, feeBps: 10000 })); // 100% fee -> sellerNet 0
     const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
     const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
     await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
@@ -128,7 +150,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
       const { sk: sellerSk, pk: sellerPk } = sellerKey();
       const { sk: serverSk } = sellerKey();
       const db = initDb();
-      const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+      const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowEnabled: true, feeBps: 0 }));
       const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
       const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
       await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:400, mint_url:"https://mint.example" } as Auction);
@@ -150,7 +172,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();
     const { sk: serverSk } = sellerKey();
     const db = initDb();
-    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowEnabled: true, feeBps: 0 }));
     const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
     const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
     await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:400, mint_url:"https://mint.example" } as Auction);
@@ -180,7 +202,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     const { sk: sellerSk, pk: sellerPk } = sellerKey();
     const { sk: serverSk } = sellerKey();
     const db = initDb();
-    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, escrowEnabled: true, feeBps: 0 }));
     const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
     const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
     await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);

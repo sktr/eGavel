@@ -198,7 +198,7 @@ export function SettlementInfo({
       )}
       {isWinnerViewer && changeState.amount != null && changeState.amount > 0 && changeState.status !== "no-change" && (
         <div style={{ marginTop: 16, padding: "12px 14px", background: "color-mix(in srgb, var(--accent) 6%, transparent)", border: "1px solid var(--accent)", borderRadius: "var(--radius)" }}>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Your change (max − winning price) — not in escrow, returnable now</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Your change (max − winning price) — returnable now</div>
           <div style={{ fontFamily: "var(--font-mono)", fontWeight: 600, marginBottom: 8 }}>{changeState.amount.toLocaleString()} sats</div>
           {changeState.status === "collected" ? (
             <p style={{ fontSize: 13, color: "var(--accent2)" }}>Collected to your wallet</p>

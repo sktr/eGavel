@@ -6,6 +6,7 @@ export interface Env {
   egavel_db: D1Database;
   SERVER_PRIVATE_KEY?: string;
   AUCTION_FEE_BPS?: string;
+  ESCROW_ENABLED?: string;
 }
 
 export default {
@@ -14,6 +15,7 @@ export default {
     const app = createApp(db, {
       serverKey: env.SERVER_PRIVATE_KEY,
       feeBps: env.AUCTION_FEE_BPS ? Number(env.AUCTION_FEE_BPS) : undefined,
+      escrowEnabled: env.ESCROW_ENABLED === "1",
     });
     return app.fetch(request);
   },

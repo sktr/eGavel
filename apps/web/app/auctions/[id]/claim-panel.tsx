@@ -41,7 +41,8 @@ export function ClaimPanel({
         auction.seller_pubkey,
         bytesToHex(identity.secretKey),
       );
-      if (result.escrowed) {
+      if (false && result.escrowed) {
+        // Escrow is dormant; kept for a future opt-in mode.
         setStatus(
           `Claimed — ${result.amount?.toLocaleString()} sats moved to escrow. Mark shipped to proceed.`,
         );
