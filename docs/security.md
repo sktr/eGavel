@@ -133,6 +133,13 @@ unprotected baseline and is audit-visible.
    but nothing sent" are handled off-platform via Nostr negotiation +
    permanent Nostr-link accountability; reputation and an arbiter registry
    are deferred to v2 (see the v1 design §11).
+7. **Mint input fees can eat tiny proceeds.** The claim reserves the mint's
+   NUT-02 input fee from the seller's net. On mints with a high
+   `input_fee_ppk`, tiny auctions can net zero — the claim then completes
+   with `degenerate: true`, no escrow, and empty `seller_proofs`. The client
+   surfaces this instead of silently showing an empty wallet (the silent
+   variant was a real bug: 2026-08-25 test10 incident, fixed by routing the
+   fee through `coerceMintFee` — a NaN there used to skip escrow entirely).
 8. **No moderation of Nostr/Blossom mirrors.** Relays and Blossom servers are
    third-party; listings there are eventually consistent and not moderated by
    this server. `DB` remains canonical for settlement.

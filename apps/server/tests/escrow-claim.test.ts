@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 // NOTE: vi.mock はファイル先頭でホイストされる。factory は inline で完結させる。
+const feeState = vi.hoisted(() => ({ mode: "zero" as "zero" | "broken" }));
 vi.mock("@cashu/cashu-ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@cashu/cashu-ts")>();
   const { Amount } = actual as never as { Amount: { from(n:number): unknown } };
@@ -16,7 +17,13 @@ vi.mock("@cashu/cashu-ts", async (importOriginal) => {
       constructor(public mintUrl: string) {}
       async loadMint() {}
       keyChain = { getKeyset: (_id: string) => ({ id: _id, keys: {} }) };
-      getFeesForProofs() { return (Amount as unknown as { from(n:number): unknown }).from(0); }
+      getFeesForProofs() {
+        // "broken": real-world cashu-ts shape drift returned a value that
+        // Number() coerced to NaN, which silently zeroed seller_net and
+        // skipped the escrow (test10 incident, 2026-08-25).
+        if (feeState.mode === "broken") return { weird: "shape" } as unknown;
+        return (Amount as unknown as { from(n:number): unknown }).from(0);
+      }
       mint = {
         swap: async ({ outputs }: { outputs: unknown[] }) => ({
           signatures: (outputs as unknown[]).map((_, i) => ({ C_: `sig${i}`, amount: 1 })),
@@ -104,5 +111,38 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
     const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
     expect(res.status).toBe(200);
     expect(await db.getEscrow("a1")).toBeNull();
+    const body = await res.json() as Record<string, unknown>;
+    // The client must be able to tell "no proceeds on purpose" from a bug.
+    expect(body.degenerate).toBe(true);
+  });
+
+  it("escapes to the escrow branch even when the mint returns an unparseable fee shape", async () => {
+    // Regression for the 2026-08-25 test10 incident: cashu-ts returned a
+    // non-number fee shape in production, Number() produced NaN, sellerNet
+    // became NaN, and the claim silently fell into the direct-pay branch
+    // with EMPTY seller_proofs — the seller's proceeds vanished. An
+    // unparseable fee must be treated as 0 so claims keep their protection
+    // (an actually-unbalanced swap then fails loudly at the mint).
+    feeState.mode = "broken";
+    try {
+      const { sk: sellerSk, pk: sellerPk } = sellerKey();
+      const { sk: serverSk } = sellerKey();
+      const db = initDb();
+      const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+      const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
+      const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
+      await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
+      await db.saveBid({ id:"a1-y", auction_id:"a1", max_amount:500, current_amount:500, bidder_npub:winnerPk, Y:"y", received_at:Date.now(), status:"verified", proof_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret, amount:500 }], mint_url:"https://mint.example", amount:500 }) } as Bid);
+      const sig = signSecret(secret, sellerSk);
+      const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.escrowed).toBe(true);
+      const row = await db.getEscrow("a1");
+      expect(row).not.toBeNull();
+      expect(row!.shipped).toBe(0);
+    } finally {
+      feeState.mode = "zero";
+    }
   });
 });

@@ -27,6 +27,7 @@ import {
   ESCROW_TIMEOUT_SEC,
   buildEscrowLockOptions,
 } from "../lib/escrow.js";
+import { coerceMintFee } from "../lib/mint-fee.js";
 
 export interface AuctionRoutesConfig {
   serverKey?: string;
@@ -509,14 +510,7 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       }),
     }));
 
-    const mintFeeRaw = wallet.getFeesForProofs(inputs as never) as unknown;
-    let feeNum = 0;
-    if (typeof mintFeeRaw === "number") feeNum = mintFeeRaw;
-    else if (typeof mintFeeRaw === "bigint") feeNum = Number(mintFeeRaw);
-    else if (mintFeeRaw && typeof (mintFeeRaw as { toNumber?: () => number }).toNumber === "function") {
-      try { feeNum = (mintFeeRaw as { toNumber: () => number }).toNumber(); } catch { feeNum = Number(String(mintFeeRaw)); }
-    } else feeNum = Number(String(mintFeeRaw ?? 0));
-    if (!Number.isFinite(feeNum)) feeNum = 0;
+    const feeNum = coerceMintFee(wallet.getFeesForProofs(inputs as never));
 
     const escrowAmount = bundle.proofs.reduce((a, p) => a + Number(p.amount), 0);
     const releaseAmount = Math.max(0, escrowAmount - feeNum);
@@ -630,7 +624,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       // Reserve exactly the mint's swap fee for these inputs (NUT-02:
       // ceil(sum(input_fee_ppk) / 1000)), not a hardcoded 1 sat — fee-free
       // mints reject a 1-sat shortfall (CDK 11005 TransactionUnbalanced).
-      const mintFee = Number(wallet.getFeesForProofs(inputs as never));
+      // coerceMintFee guards against cashu-ts shape drift: a NaN here once
+      // silently zeroed seller_net and skipped the escrow (test10 incident).
+      const mintFee = coerceMintFee(wallet.getFeesForProofs(inputs as never));
       const { sellerNet, fee, change } = computeClaimSplit(
         totalInput,
         winningAmount,
@@ -638,8 +634,9 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         mintFee,
       );
 
-      // Two-stage escrow: sellerNet is locked in a 2-of-3 P2PK (seller+winner+server,
-      // refund winner @ claim+10d) instead of being given directly to the seller.
+      // Fulfillment escrow v1: sellerNet is locked in a 2-of-3 P2PK
+      // ({seller, winner, server}, refund winner @ claim+14d) instead of
+      // being given directly to the seller.
       if (sellerNet > 0 && auction.winner_npub) {
         const winnerXOnly = canonicalPubkey(auction.winner_npub);
         const serverXOnly = canonicalPubkey(getServerPubkeyHex());
@@ -728,7 +725,20 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       // fail anyway — the input proofs are already spent at the mint).
       await db.markClaimed(auction.id);
 
-      return c.json({ seller_proofs: sellerProofs, fee, change });
+      // Degenerate case (seller_net === 0, e.g. 100% operator fee): the
+      // design intentionally skips escrow — but the client must be able to
+      // tell "no proceeds on purpose" apart from a bug, and the server logs
+      // it for auditing.
+      const degenerate = sellerNet === 0 && totalInput > 0 && !!auction.winner_npub;
+      if (degenerate) {
+        console.warn(
+          `claim ${auction.id}: seller_net is 0 (fee=${fee}, mintFee reserved at swap) — ` +
+          `no escrow created, seller receives no proofs`,
+        );
+      }
+      return c.json(
+        { seller_proofs: sellerProofs, fee, change, ...(degenerate ? { degenerate: true } : {}) },
+      );
     } catch (err) {
       // Log the internal detail server-side; never leak it to the browser.
       console.error(`claim swap failed (auction ${auction.id}):`, err);
