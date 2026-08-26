@@ -50,6 +50,7 @@ import { bytesToHex, hexToBytes } from "../src/lib/hex.js";
 import { initDb, type Db } from "../src/db/index.js";
 import { createAuctionRoutes } from "../src/routes/auctions.js";
 import { signSecret } from "../src/lib/schnorr.js";
+import { canonicalPubkey } from "../src/lib/canonical.js";
 
 describe("claim pays the seller directly by default (escrow dormant)", () => {
   it("returns seller_proofs and creates NO escrow when escrowEnabled is unset", async () => {
@@ -69,6 +70,11 @@ describe("claim pays the seller directly by default (escrow dormant)", () => {
     expect(body.escrowed).toBeUndefined();
     const proofs = body.seller_proofs as unknown[];
     expect(proofs.length).toBeGreaterThan(0);
+    // Durable mirror row exists so a lost response can never strand funds;
+    // the client acks it after storing.
+    expect(typeof body.pending_rid).toBe("number");
+    const mirrored = await db.getPendingReceives(canonicalPubkey(sellerPk));
+    expect(mirrored.length).toBe(1);
     expect(await db.getEscrow("a1")).toBeNull();
   });
 });

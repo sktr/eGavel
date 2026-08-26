@@ -20,8 +20,12 @@ export function locktimeExpiredWinningEntries(
     if (e.status !== "live") return false;
     if (e.locktime * 1000 > now) return false;
     const a = auctions[e.auctionId];
-    if (!a || a.state !== "SETTLED" || a.winner_npub !== myPubkey) return false;
-    if (a.claimed) return false;
-    return true;
+    if (!a || a.state !== "SETTLED" || a.claimed) return false;
+    // Recoverable shapes:
+    //  - I am the winner and the seller never claimed (classic path);
+    //  - the auction settled with NO winner (reserve unmet) — every bidder's
+    //    own locked proofs are otherwise frozen forever, since refund-data
+    //    rejects verified bids. The local copy + refund key suffice.
+    return a.winner_npub === myPubkey || a.winner_npub === null;
   });
 }

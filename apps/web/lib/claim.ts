@@ -104,7 +104,7 @@ export async function claimAuction(
   sellerPubkey: string,
   sellerSkHex: string,
   apiBase?: string,
-): Promise<{ proofs: Proof[]; fee: number; escrowed?: boolean; amount?: number }> {
+): Promise<{ proofs: Proof[]; fee: number; escrowed?: boolean; amount?: number; pendingRid?: number }> {
   const bundle = await fetchClaimData(auctionId, sellerPubkey, apiBase);
 
   const secrets = bundle.proofs.map((p) => p.secret);
@@ -120,18 +120,24 @@ export async function claimAuction(
     throw new Error(body.error ?? "claim failed");
   }
   const data = (await res.json()) as
-    | { seller_proofs: Proof[]; fee: number; change?: number }
-    | { escrowed: true; stage: number; status: string; amount: number; fee: number; change: number };
+    | { seller_proofs: Proof[]; fee: number; change?: number; pending_rid?: number }
+    | { escrowed: true; amount: number; fee: number; change: number };
   if ("escrowed" in data && data.escrowed) {
     // Two-stage escrow: sellerNet is locked, not in wallet yet.
     // Change (if any) is still returned as winner change, but seller gets nothing yet.
     // No proofs to store for the seller at this stage.
     return { proofs: [], fee: data.fee, escrowed: true, amount: data.amount };
   }
-  const legacy = data as { seller_proofs: Proof[]; fee: number };
+  const legacy = data as { seller_proofs: Proof[]; fee: number; pending_rid?: number };
   if (Array.isArray(legacy.seller_proofs)) {
     storeProofsInWallet(legacy.seller_proofs, bundle.mint_url, sellerPubkey);
-    return { proofs: legacy.seller_proofs, fee: legacy.fee };
+    return {
+      proofs: legacy.seller_proofs,
+      fee: legacy.fee,
+      // Durable mirror row id — the caller acks it once the wallet stored
+      // the proofs (until then Fund Collection can re-deliver).
+      pendingRid: legacy.pending_rid,
+    };
   }
   // Fallback for unexpected shape
   return { proofs: [], fee: 0 };

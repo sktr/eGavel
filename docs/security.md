@@ -90,6 +90,9 @@ unprotected baseline and is audit-visible.
   `POST /wallet/receive/ack` listing receipts the client actually stored.
   A failed wallet write therefore leaves the payout on the server for retry
   instead of destroying it (clear-on-read used to do exactly that).
+  Direct-pay claims mirror their payout proofs into `pending_receives`
+  server-side and return `pending_rid`; the client acks after its wallet
+  stored them — a lost response can no longer strand the proceeds.
 - **Winner contact (npub handoff)**: after settlement the winner's linked
   Nostr npub is revealed only to the seller (and to the winner themselves) via
   a Schnorr-signed read (`winner-view:<id>`); it is never included in public

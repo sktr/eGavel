@@ -800,6 +800,10 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       // ── Post-swap guard (degenerate direct-pay path) ────────────
       let dumped = false;
       let sellerProofs: Array<Record<string, unknown>> = [];
+      // Mirror of the payout: the HTTP response is a single copy the client
+      // may never receive — this pending_receives row is the durable recovery
+      // path (Fund Collection / auto-poll re-delivers until acked).
+      let pendingRid: number | null = null;
       try {
         sellerProofs = sellerOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset)) as Array<Record<string, unknown>>;
         const winnerProofs = winnerOutputs.map((o, i) =>
@@ -810,6 +814,17 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         );
 
         const writes: Array<[string, () => Promise<void>]> = [];
+        writes.push([
+          "seller",
+          async () => {
+            pendingRid = await db.savePendingReceive(
+              canonicalPubkey(auction.seller_pubkey),
+              bundle.mint_url,
+              JSON.stringify(sellerProofs),
+              sellerNet,
+            );
+          },
+        ]);
         if (feeProofs.length > 0) {
           writes.push(["fee", () => db.saveFee(auction.id, fee, JSON.stringify(feeProofs))]);
         }
@@ -878,7 +893,13 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         );
       }
       return c.json(
-        { seller_proofs: sellerProofs, fee, change, ...(degenerate ? { degenerate: true } : {}) },
+        {
+          seller_proofs: sellerProofs,
+          fee,
+          change,
+          ...(pendingRid ? { pending_rid: pendingRid } : {}),
+          ...(degenerate ? { degenerate: true } : {}),
+        },
       );
     } catch (err) {
       // Log the internal detail server-side; never leak it to the browser.

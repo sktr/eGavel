@@ -44,7 +44,12 @@ export interface Db {
   /** Unlink a trading pubkey from its nostr pubkey. */
   deleteNostrLink: (tradingPubkey: string) => Promise<void>
   /** NUT-18 incoming payments: append proofs for a receiver (deduped by secret). */
-  savePendingReceive: (receiverPubkey: string, mintUrl: string, proofs: string, amount: number) => Promise<void>
+  savePendingReceive: (receiverPubkey: string, mintUrl: string, proofs: string, amount: number) => Promise<number | null>
+  /**
+   * Returns the rowid of the newly inserted row (null when the dedupe filter
+   * dropped every proof as already-known). The claim route uses this rid to
+   * let the client ack the mirrored copy once its wallet stored the proofs.
+   */
   /** All pending receipts for a receiver; clears them (single collection). */
   getPendingReceives: (receiverPubkey: string) => Promise<Array<{ rid: number; mint_url: string; proofs: string; amount: number }>>
   /**
@@ -455,10 +460,11 @@ export function initDb(): Db {
         for (const p of JSON.parse(row.proofs) as Array<{ secret: string }>) seen.add(p.secret)
       }
       const fresh = incoming.filter((p) => !seen.has(p.secret))
-      if (fresh.length === 0) return
-      db.prepare(
+      if (fresh.length === 0) return null
+      const res = db.prepare(
         "INSERT INTO pending_receives (receiver_pubkey, mint_url, proofs, amount, created_at) VALUES (?, ?, ?, ?, ?)",
       ).run(receiverPubkey, mintUrl, JSON.stringify(fresh), amount, Date.now())
+      return Number(res.lastInsertRowid)
     },
 
     async getPendingReceives(receiverPubkey) {

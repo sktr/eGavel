@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Auction } from "@egavel/shared";
 import { useIdentity } from "../../../lib/identity";
 import { claimAuction } from "../../../lib/claim";
+import { ackPendingReceipts } from "../../../lib/wallet";
 import { bytesToHex } from "../../../lib/hex";
 
 export function ClaimPanel({
@@ -41,6 +42,19 @@ export function ClaimPanel({
         auction.seller_pubkey,
         bytesToHex(identity.secretKey),
       );
+      // The server mirrored the payout into pending_receives (durable copy).
+      // Ack it now that the wallet stored the proofs — until then Fund
+      // Collection would re-deliver them.
+      if (result.pendingRid) {
+        await ackPendingReceipts(
+          identity.pubkey,
+          bytesToHex(identity.secretKey),
+          [result.pendingRid],
+        ).catch(() => {
+          // Ack failure is safe: worst case the row lingers and a later
+          // collect is deduped by secret at the mint.
+        });
+      }
       if (false && result.escrowed) {
         // Escrow is dormant; kept for a future opt-in mode.
         setStatus(

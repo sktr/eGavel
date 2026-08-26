@@ -285,13 +285,14 @@ export function createD1Db(d1: D1Database): Db {
         for (const p of JSON.parse(row.proofs) as Array<{ secret: string }>) seen.add(p.secret)
       }
       const fresh = incoming.filter((p) => !seen.has(p.secret))
-      if (fresh.length === 0) return
-      await d1
+      if (fresh.length === 0) return null
+      const res = await d1
         .prepare(
           "INSERT INTO pending_receives (receiver_pubkey, mint_url, proofs, amount, created_at) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(receiverPubkey, mintUrl, JSON.stringify(fresh), amount, Date.now())
         .run()
+      return Number((res as unknown as { meta?: { last_row_id?: number } }).meta?.last_row_id ?? 0) || null
     },
 
     async getPendingReceives(receiverPubkey) {

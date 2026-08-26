@@ -65,6 +65,9 @@ export function createApp(db: Db, config: AppConfig = {}) {
   app.use("/api/auctions/*/claim-data", rateLimit({ windowMs: 60_000, max: 30 }));
   app.use("/api/bids/*/refund-data", rateLimit({ windowMs: 60_000, max: 30 }));
   app.use("/api/auctions/:id/escrow", rateLimit({ windowMs: 60_000, max: 30 }));
+  // NUT-18 receive (GET poll) + signed ack + payer POST share one bucket.
+  // Unauthenticated POSTs would otherwise allow unbounded row growth.
+  app.use("/api/wallet/receive", rateLimit({ windowMs: 60_000, max: 60 }));
   app.use("/api/auctions/*/shipped", rateLimit({ windowMs: 60_000, max: 20 }));
   app.use("/api/auctions/*/confirm", rateLimit({ windowMs: 60_000, max: 20 }));
 

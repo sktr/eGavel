@@ -806,3 +806,19 @@ export async function collectPendingReceipts(opts: {
   }
   return { collectedAmount, collectedCount, failedCount }
 }
+
+/** Signed acknowledgement that the wallet stored the given receipt rows. */
+export async function ackPendingReceipts(
+  pubkey: string,
+  skHex: string,
+  rowids: number[],
+  apiBase?: string,
+): Promise<void> {
+  if (rowids.length === 0) return
+  const sig = signWalletMsg(`wallet-receive-ack:${pubkey}`, skHex)
+  await fetch(apiUrl("/wallet/receive/ack", apiBase), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ receiver_pubkey: pubkey, sig, rowids }),
+  })
+}

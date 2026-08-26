@@ -32,6 +32,15 @@ describe("locktimeExpiredWinningEntries", () => {
     expect(result).toContain(e);
   });
 
+  it("recovers the leader when reserve was unmet (settled, no winner, unclaimed)", () => {
+    // Reserve-unmet settlement leaves winner_npub null and the leader's bid
+    // status "verified" — previously a dead end (no refund, no auto-recover).
+    const noWinner = { a9: { state: "SETTLED", winner_npub: null, claimed: false } };
+    const e = entry({ auctionId: "a9" });
+    const result = locktimeExpiredWinningEntries([e], noWinner, MY_PUBKEY);
+    expect(result).toContain(e);
+  });
+
   it("excludes outbid/refunded entries", () => {
     const outbid = entry({ status: "outbid" });
     const refunded = entry({ bidId: "a1-def456", status: "refunded" });
