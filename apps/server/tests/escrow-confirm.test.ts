@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 const state = vi.hoisted(() => ({
   swapInputs: [] as Array<{ secret: string; witness: string }>,
   failLoadMint: false,
+  failToProof: false,
 }));
 vi.mock("@cashu/cashu-ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@cashu/cashu-ts")>();
@@ -21,7 +22,7 @@ vi.mock("@cashu/cashu-ts", async (importOriginal) => {
     OutputData: {
       createP2PKData: (opts:unknown, amount:number, _ks:unknown)=>{
         if(amount<=0) return [];
-        return [{ blindedMessage:{ amount:String(amount), B_:"B", id:"ks1" }, blindingFactor:BigInt(1), secret: new TextEncoder().encode("confirm"), toProof:()=>({ id:"ks1", amount, secret:"confirm", C:"C" }) }];
+        return [{ blindedMessage:{ amount:String(amount), B_:"B", id:"ks1" }, blindingFactor:BigInt(1), secret: new TextEncoder().encode("confirm"), toProof:()=>{ if (state.failToProof) throw new Error("toProof exploded"); return ({ id:"ks1", amount, secret:"confirm", C:"C" }); } }];
       },
     },
   };
@@ -114,6 +115,30 @@ describe("POST /auctions/:id/confirm", () => {
       expect((await db.getPendingReceives(seller.pk)).length).toBeGreaterThan(0);
       expect(await db.getEscrow("a1")).toBeNull();
     } finally { spy.mockRestore(); }
+  });
+
+  it("dumps recovery data to the log when proof reconstruction crashes post-swap (no silent loss)", async () => {
+    // Post-swap the inputs are SPENT at the mint — any crash between swap and
+    // persistence must still emit the CRITICAL recovery dump (payout proofs
+    // or their raw ingredients), otherwise funds are stranded invisibly.
+    state.failToProof = true;
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const seller=kp(), winner=kp(), server=kp();
+      const db=initDb(); const app=new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: server.sk }));
+      await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:seller.pk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winner.pk, winning_amount:100, mint_url:"https://mint.example", claimed:true } as unknown as Auction);
+      await db.saveEscrow({ auction_id:"a1", shipped:1, proofs_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret:"s", amount:100 }], mint_url:"https://mint.example", amount:100 }), created_at: Date.now() });
+      const res=await app.request("http://localhost/api/auctions/a1/confirm",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ winner_pubkey: winner.pk, winner_sig: signSecret(`confirm:a1`, winner.sk), secrets:["s"], winner_sigs:[signSecret("s", winner.sk)] }) });
+      expect(res.status).toBe(500);
+      // Escrow row kept (funds recoverable) and recovery data emitted.
+      expect(await db.getEscrow("a1")).not.toBeNull();
+      const dumped = errSpy.mock.calls.map((c) => c.join(" ")).find((t) => t.includes("CRITICAL"));
+      expect(dumped).toBeTruthy();
+      expect(dumped).toContain("signatures");
+    } finally {
+      state.failToProof = false;
+      vi.restoreAllMocks();
+    }
   });
 
   it("rejects non-winner (403 FORBIDDEN)", async () => {

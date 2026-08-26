@@ -526,32 +526,51 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
       outputs: releaseOutputs.map((o) => o.blindedMessage),
     });
 
-    const releaseProofs = releaseOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+    // ── Post-swap guard ─────────────────────────────────────────────
+    // The inputs are SPENT at the mint now, so ANY crash between here and
+    // successful persistence must emit the CRITICAL recovery dump exactly
+    // once — either the finished payout proofs, or their raw ingredients
+    // (blindings + signatures) for manual reconstruction.
+    let dumped = false;
+    try {
+      const releaseProofs = releaseOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
 
-    // Post-swap persistence: must succeed (see docstring above).
-    let saved = false;
-    let lastErr: unknown = null;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      try {
-        if (!saved) {
-          await db.savePendingReceive(payeeXOnly, bundle.mint_url, JSON.stringify(releaseProofs), releaseAmount);
-          saved = true;
+      let saved = false;
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          if (!saved) {
+            await db.savePendingReceive(payeeXOnly, bundle.mint_url, JSON.stringify(releaseProofs), releaseAmount);
+            saved = true;
+          }
+          await db.deleteEscrow(auctionId);
+          void publishEscrowAudit(serverKey, { auctionId, status: auditStatus, amount: releaseAmount });
+          return releaseAmount;
+        } catch (err) {
+          lastErr = err;
+          await sleepMs(50 * (attempt + 1));
         }
-        await db.deleteEscrow(auctionId);
-        void publishEscrowAudit(serverKey, { auctionId, status: auditStatus, amount: releaseAmount });
-        return releaseAmount;
-      } catch (err) {
-        lastErr = err;
-        await sleepMs(50 * (attempt + 1));
       }
+      console.error(
+        `CRITICAL: escrow ${auctionId} swapped at mint but persistence failed after retries. ` +
+        `Manual recovery required — payee=${payeeXOnly} mint=${bundle.mint_url} amount=${releaseAmount} ` +
+        `proofs=${JSON.stringify(releaseProofs)}`,
+        lastErr,
+      );
+      dumped = true;
+      throw lastErr ?? new Error("escrow persistence failed");
+    } catch (err) {
+      if (!dumped) {
+        console.error(
+          `CRITICAL: escrow ${auctionId} crashed post-swap before persistence. ` +
+          `Manual recovery required — payee=${payeeXOnly} mint=${bundle.mint_url} amount=${releaseAmount} ` +
+          `signatures=${JSON.stringify(swapRes.signatures)} ` +
+          `blindedOutputs=${JSON.stringify(releaseOutputs.map((o) => ({ blindingFactor: String((o as { blindingFactor?: unknown }).blindingFactor), blindedMessage: (o as { blindedMessage?: unknown }).blindedMessage })))}`,
+          err,
+        );
+      }
+      throw err;
     }
-    console.error(
-      `CRITICAL: escrow ${auctionId} swapped at mint but persistence failed after retries. ` +
-      `Manual recovery required — payee=${payeeXOnly} mint=${bundle.mint_url} amount=${releaseAmount} ` +
-      `proofs=${JSON.stringify(releaseProofs)}`,
-      lastErr,
-    );
-    throw lastErr ?? new Error("escrow persistence failed");
   }
 
   // ── Claim: seller claims the winning bid; server builds the swap and
