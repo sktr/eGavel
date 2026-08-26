@@ -79,10 +79,17 @@ unprotected baseline and is audit-visible.
   a public key can never verify, so resolution swaps are cryptographically
   bound to an entitled party. The `proofs_data` endpoints return P2PK-locked
   proofs — harmless to disclose, the effective gate is the co-sign check.
-- **Post-swap persistence**: after a successful mint swap the inputs are spent,
-  so `settleEscrowTo` retries `pending_receives` persistence (5 attempts with
-  backoff) and, if it still fails, dumps the payout proofs to the server log
-  for manual recovery — swapped funds are never silently destroyed.
+- **Post-swap persistence**: every code path that swaps at a mint (claim,
+  confirm/release/refund) wraps everything after the swap in a guard: DB
+  writes retry (5×, backoff) and — on total failure — a single CRITICAL log
+  line carries every output proof set (or raw blindings + signatures) so the
+  funds are always manually recoverable. A bare throw after a successful
+  swap used to strand proceeds invisibly; that class of bug is now closed.
+- **Pending-receive ack protocol**: `GET /wallet/receive` is read-only
+  (rows carry rid); deletion happens only via signed
+  `POST /wallet/receive/ack` listing receipts the client actually stored.
+  A failed wallet write therefore leaves the payout on the server for retry
+  instead of destroying it (clear-on-read used to do exactly that).
 - **Winner contact (npub handoff)**: after settlement the winner's linked
   Nostr npub is revealed only to the seller (and to the winner themselves) via
   a Schnorr-signed read (`winner-view:<id>`); it is never included in public
