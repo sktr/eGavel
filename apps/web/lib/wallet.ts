@@ -717,3 +717,92 @@ export function useTotalBalance(pubkey: string) {
 
   return { total, byMint, loading, refreshing, refresh, stale }
 }
+
+// ── Pending receipts (server-held payouts: escrow releases, NUT-18) ──────
+
+import { getEncodedToken } from "@cashu/cashu-ts"
+import { schnorr } from "@noble/curves/secp256k1.js"
+import { sha256 } from "@noble/hashes/sha2.js"
+import { bytesToHex, hexToBytes } from "./hex"
+import { apiUrl } from "./api"
+
+export interface PendingReceipt {
+  rid: number
+  mint_url: string
+  proofs: string
+  amount: number
+}
+
+export interface CollectReceiptsResult {
+  collectedAmount: number
+  collectedCount: number
+  /** Receipts left on the server for a later retry (never dropped silently). */
+  failedCount: number
+}
+
+function signWalletMsg(msg: string, skHex: string): string {
+  const digest = sha256(new TextEncoder().encode(msg))
+  return bytesToHex(schnorr.sign(digest, hexToBytes(skHex)))
+}
+
+/**
+ * Sweep server-held pending receipts into the wallet WITHOUT ever dropping
+ * funds: GET /wallet/receive is read-only, and rows are deleted only via
+ * the signed /ack AFTER `store.receive` succeeded. A receipt whose storage
+ * threw stays on the server (failedCount) and is retried by the next poll;
+ * "already stored"-style errors are treated as collected.
+ */
+export async function collectPendingReceipts(opts: {
+  pubkey: string
+  skHex: string
+  store: { receive(encodedToken: string): Promise<unknown> }
+  apiBase?: string
+  fetchImpl?: typeof fetch
+}): Promise<CollectReceiptsResult> {
+  const f = opts.fetchImpl ?? fetch
+  const sig = signWalletMsg(`wallet-receive:${opts.pubkey}`, opts.skHex)
+  const res = await f(
+    apiUrl(`/wallet/receive?receiver_pubkey=${opts.pubkey}&sig=${sig}`, opts.apiBase),
+    { cache: "no-store" },
+  )
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error ?? "collect failed")
+  }
+  const data = (await res.json()) as { receipts: PendingReceipt[] }
+  if (!data.receipts?.length) return { collectedAmount: 0, collectedCount: 0, failedCount: 0 }
+
+  let collectedAmount = 0
+  let collectedCount = 0
+  let failedCount = 0
+  const ackRids: number[] = []
+  for (const r of data.receipts) {
+    try {
+      const proofs = deserializeProofs(r.proofs)
+      await opts.store.receive(getEncodedToken({ mint: r.mint_url, proofs }))
+      ackRids.push(r.rid)
+      collectedAmount += r.amount
+      collectedCount++
+    } catch (err) {
+      // Already-stored duplicates are as good as collected — ack them too so
+      // they stop retrying; genuine failures stay on the server.
+      if (/already/i.test(String(err))) {
+        ackRids.push(r.rid)
+        collectedAmount += r.amount
+        collectedCount++
+      } else {
+        failedCount++
+      }
+    }
+  }
+
+  if (ackRids.length > 0) {
+    const ackSig = signWalletMsg(`wallet-receive-ack:${opts.pubkey}`, opts.skHex)
+    await f(apiUrl("/wallet/receive/ack", opts.apiBase), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ receiver_pubkey: opts.pubkey, sig: ackSig, rowids: ackRids }),
+    })
+  }
+  return { collectedAmount, collectedCount, failedCount }
+}

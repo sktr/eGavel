@@ -46,7 +46,14 @@ export interface Db {
   /** NUT-18 incoming payments: append proofs for a receiver (deduped by secret). */
   savePendingReceive: (receiverPubkey: string, mintUrl: string, proofs: string, amount: number) => Promise<void>
   /** All pending receipts for a receiver; clears them (single collection). */
-  getPendingReceives: (receiverPubkey: string) => Promise<Array<{ mint_url: string; proofs: string; amount: number }>>
+  getPendingReceives: (receiverPubkey: string) => Promise<Array<{ rid: number; mint_url: string; proofs: string; amount: number }>>
+  /**
+   * Delete exactly the acknowledged rows (read is no longer destructive:
+   * the client acks only receipts it has actually stored in its wallet, so
+   * a failed collection never orphans funds). Rows belonging to other
+   * receivers are ignored. Returns the number of rows removed.
+   */
+  ackPendingReceives: (receiverPubkey: string, rowids: number[]) => Promise<number>
   saveEscrow: (row: EscrowRow) => Promise<void>
   getEscrow: (auctionId: string) => Promise<EscrowRow | null>
   setShipped: (auctionId: string) => Promise<void>
@@ -455,12 +462,21 @@ export function initDb(): Db {
     },
 
     async getPendingReceives(receiverPubkey) {
+      // Read-only: rows stay until the client acks them (see ackPendingReceives).
       const rows = db
-        .prepare("SELECT mint_url, proofs, amount FROM pending_receives WHERE receiver_pubkey = ? ORDER BY created_at")
-        .all(receiverPubkey) as Array<{ mint_url: string; proofs: string; amount: number }>
-      // Clear them: a receipt is collected once.
-      db.prepare("DELETE FROM pending_receives WHERE receiver_pubkey = ?").run(receiverPubkey)
+        .prepare("SELECT rowid AS rid, mint_url, proofs, amount FROM pending_receives WHERE receiver_pubkey = ? ORDER BY created_at")
+        .all(receiverPubkey) as Array<{ rid: number; mint_url: string; proofs: string; amount: number }>
       return rows
+    },
+    async ackPendingReceives(receiverPubkey, rowids) {
+      if (rowids.length === 0) return 0
+      const placeholders = rowids.map(() => "?").join(",")
+      const res = db
+        .prepare(
+          `DELETE FROM pending_receives WHERE receiver_pubkey = ? AND rowid IN (${placeholders})`,
+        )
+        .run(receiverPubkey, ...rowids)
+      return Number((res as unknown as { changes?: number }).changes ?? 0)
     },
 
     async saveEscrow(row: EscrowRow) {

@@ -683,32 +683,91 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
 
         const swapRes = await wallet.mint.swap({ inputs: inputs as never, outputs });
 
-        const escrowProofs = escrowOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
-        const winnerProofs = winnerOutputs.map((o, i) =>
-          o.toProof(swapRes.signatures[escrowOutputs.length + i]!, keyset),
-        );
-        const feeProofs = feeOutputs.map((o, i) =>
-          o.toProof(
-            swapRes.signatures[escrowOutputs.length + winnerOutputs.length + i]!,
-            keyset,
-          ),
-        );
+        // ── Post-swap guard (mirrors settleEscrowTo) ────────────────
+        // The bid proofs are SPENT at the mint now. Every output proof set
+        // must be persisted (with retries) or dumped to the CRITICAL log —
+        // a bare throw here would permanently strand the seller's proceeds.
+        let dumped = false;
+        try {
+          const escrowProofs = escrowOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
+          const winnerProofs = winnerOutputs.map((o, i) =>
+            o.toProof(swapRes.signatures[escrowOutputs.length + i]!, keyset),
+          );
+          const feeProofs = feeOutputs.map((o, i) =>
+            o.toProof(
+              swapRes.signatures[escrowOutputs.length + winnerOutputs.length + i]!,
+              keyset,
+            ),
+          );
 
-        if (feeProofs.length > 0) {
-          await db.saveFee(auction.id, fee, JSON.stringify(feeProofs));
-        }
-        if (winnerProofs.length > 0) {
-          await db.saveChange(auction.id, auction.winner_npub!, change, JSON.stringify(winnerProofs));
-        }
-        await db.saveEscrow({
-          auction_id: auction.id,
-          shipped: 0,
-          proofs_data: JSON.stringify({ proofs: escrowProofs, mint_url: bundle.mint_url, amount: sellerNet }),
-          created_at: Date.now(),
-        });
-        await db.markClaimed(auction.id);
+          const writes: Array<[string, () => Promise<void>]> = [];
+          if (feeProofs.length > 0) {
+            writes.push(["fee", () => db.saveFee(auction.id, fee, JSON.stringify(feeProofs))]);
+          }
+          if (winnerProofs.length > 0) {
+            writes.push(["change", () => db.saveChange(auction.id, auction.winner_npub!, change, JSON.stringify(winnerProofs))]);
+          }
+          writes.push([
+            "escrow",
+            () =>
+              db.saveEscrow({
+                auction_id: auction.id,
+                shipped: 0,
+                proofs_data: JSON.stringify({ proofs: escrowProofs, mint_url: bundle.mint_url, amount: sellerNet }),
+                created_at: Date.now(),
+              }),
+          ]);
 
-        return c.json({ escrowed: true, amount: sellerNet, fee, change });
+          const done = new Set<string>();
+          let lastErr: unknown = null;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+              for (const [name, run] of writes) {
+                if (done.has(name)) continue;
+                await run();
+                done.add(name);
+              }
+              break;
+            } catch (err) {
+              lastErr = err;
+              await sleepMs(50 * (attempt + 1));
+            }
+          }
+          if (done.size < writes.length) {
+            console.error(
+              `CRITICAL: claim ${auction.id} swapped at mint but persistence failed after retries ` +
+              `(completed: ${[...done].join(",") || "none"}). Manual recovery required — ` +
+              `sellerNet=${sellerNet} mint=${bundle.mint_url} ` +
+              `escrowProofs=${JSON.stringify(escrowProofs)} winnerProofs=${JSON.stringify(winnerProofs)} feeProofs=${JSON.stringify(feeProofs)}`,
+              lastErr,
+            );
+            dumped = true;
+            throw lastErr ?? new Error("claim persistence failed");
+          }
+
+          // Claim idempotency: persist the claimed flag so a page reload after a
+          // successful claim stops showing the claim button (a second claim would
+          // fail anyway — the input proofs are already spent at the mint).
+          await db.markClaimed(auction.id);
+
+          return c.json({ escrowed: true, amount: sellerNet, fee, change });
+        } catch (err) {
+          if (!dumped) {
+            console.error(
+              `CRITICAL: claim ${auction.id} crashed post-swap before persistence. ` +
+              `Manual recovery required — sellerNet=${sellerNet} mint=${bundle.mint_url} keysetId=${keysetId} ` +
+              `signatures=${JSON.stringify(swapRes.signatures)} blindedOutputs=${JSON.stringify(
+                [...escrowOutputs, ...winnerOutputs, ...feeOutputs].map((o) => ({
+                  blindingFactor: String((o as unknown as { blindingFactor?: unknown }).blindingFactor),
+                  blindedMessage: (o as unknown as { blindedMessage?: unknown }).blindedMessage,
+                  secret: Buffer.from((o as unknown as { secret?: Uint8Array }).secret ?? new Uint8Array()).toString("utf8"),
+                })),
+              )}`,
+              err,
+            );
+          }
+          throw err;
+        }
       }
 
       const sellerOutputs = OutputData.createP2PKData(
@@ -730,20 +789,70 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
 
       const swapRes = await wallet.mint.swap({ inputs: inputs as never, outputs });
 
-      const sellerProofs = sellerOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset));
-      const winnerProofs = winnerOutputs.map((o, i) =>
-        o.toProof(swapRes.signatures[sellerOutputs.length + i]!, keyset),
-      );
-      const feeProofs = feeOutputs.map((o, i) =>
-        o.toProof(swapRes.signatures[sellerOutputs.length + winnerOutputs.length + i]!, keyset),
-      );
+      // ── Post-swap guard (degenerate direct-pay path) ────────────
+      let dumped = false;
+      let sellerProofs: Array<Record<string, unknown>> = [];
+      try {
+        sellerProofs = sellerOutputs.map((o, i) => o.toProof(swapRes.signatures[i]!, keyset)) as Array<Record<string, unknown>>;
+        const winnerProofs = winnerOutputs.map((o, i) =>
+          o.toProof(swapRes.signatures[sellerOutputs.length + i]!, keyset),
+        );
+        const feeProofs = feeOutputs.map((o, i) =>
+          o.toProof(swapRes.signatures[sellerOutputs.length + winnerOutputs.length + i]!, keyset),
+        );
 
-      if (feeProofs.length > 0) {
-        await db.saveFee(auction.id, fee, JSON.stringify(feeProofs));
+        const writes: Array<[string, () => Promise<void>]> = [];
+        if (feeProofs.length > 0) {
+          writes.push(["fee", () => db.saveFee(auction.id, fee, JSON.stringify(feeProofs))]);
+        }
+        if (winnerProofs.length > 0 && auction.winner_npub) {
+          const winnerNpub: string = auction.winner_npub;
+          writes.push(["change", async () => { await db.saveChange(auction.id, winnerNpub, change, JSON.stringify(winnerProofs)); }]);
+        }
+
+        const done = new Set<string>();
+        let lastErr: unknown = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            for (const [name, run] of writes) {
+              if (done.has(name)) continue;
+              await run();
+              done.add(name);
+            }
+            break;
+          } catch (err) {
+            lastErr = err;
+            await sleepMs(50 * (attempt + 1));
+          }
+        }
+        if (done.size < writes.length) {
+          console.error(
+            `CRITICAL: claim ${auction.id} (direct) swapped at mint but persistence failed after retries ` +
+            `(completed: ${[...done].join(",") || "none"}). Manual recovery required — ` +
+            `sellerProofs=${JSON.stringify(sellerProofs)} winnerProofs=${JSON.stringify(winnerProofs)} feeProofs=${JSON.stringify(feeProofs)}`,
+            lastErr,
+          );
+          dumped = true;
+          throw lastErr ?? new Error("claim persistence failed");
+        }
+      } catch (err) {
+        if (!dumped) {
+          console.error(
+            `CRITICAL: claim ${auction.id} (direct) crashed post-swap before persistence. ` +
+            `Manual recovery required — mint=${bundle.mint_url} keysetId=${keysetId} ` +
+            `signatures=${JSON.stringify(swapRes.signatures)} blindedOutputs=${JSON.stringify(
+              [...sellerOutputs, ...winnerOutputs, ...feeOutputs].map((o) => ({
+                blindingFactor: String((o as unknown as { blindingFactor?: unknown }).blindingFactor),
+                blindedMessage: (o as unknown as { blindedMessage?: unknown }).blindedMessage,
+                secret: Buffer.from((o as unknown as { secret?: Uint8Array }).secret ?? new Uint8Array()).toString("utf8"),
+              })),
+            )}`,
+            err,
+          );
+        }
+        throw err;
       }
-      if (winnerProofs.length > 0 && auction.winner_npub) {
-        await db.saveChange(auction.id, auction.winner_npub, change, JSON.stringify(winnerProofs));
-      }
+
       // Claim idempotency: persist the claimed flag so a page reload after a
       // successful claim stops showing the claim button (a second claim would
       // fail anyway — the input proofs are already spent at the mint).
@@ -1149,8 +1258,30 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
     if (!verifySecretSignature(sig, `wallet-receive:${receiverPubkey}`, canonicalPubkey(receiverPubkey))) {
       return c.json({ error: "INVALID_SIGNATURE" }, 400)
     }
+    // Read-only: rows are removed only via the signed /ack endpoint after the
+    // client has actually stored them — clear-on-read once orphaned proofs
+    // when the client-side wallet write failed.
     const rows = await db.getPendingReceives(receiverPubkey)
     return c.json({ ok: true, receipts: rows })
+  })
+
+  // Signed acknowledgement: delete exactly the receipts the client stored.
+  router.post("/wallet/receive/ack", async (c) => {
+    const body = await c.req.json().catch(() => null) as {
+      receiver_pubkey?: string
+      sig?: string
+      rowids?: number[]
+    } | null
+    if (!body?.receiver_pubkey || !body?.sig || !Array.isArray(body.rowids)) {
+      return c.json({ error: "missing fields" }, 400)
+    }
+    const receiverPubkey = canonicalPubkey(body.receiver_pubkey)
+    if (!verifySecretSignature(body.sig, `wallet-receive-ack:${receiverPubkey}`, receiverPubkey)) {
+      return c.json({ error: "INVALID_SIGNATURE" }, 400)
+    }
+    const rowids = body.rowids.filter((r): r is number => typeof r === "number" && Number.isFinite(r))
+    const deleted = await db.ackPendingReceives(receiverPubkey, rowids)
+    return c.json({ ok: true, deleted })
   })
 
   return router;

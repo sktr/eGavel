@@ -42,17 +42,93 @@ describe("NUT-18 wallet receive (POST /wallet/receive + GET /wallet/receive)", (
       `http://localhost/api/wallet/receive?receiver_pubkey=${receiver.pubkey}&sig=${sig}`,
     );
     expect(get.status).toBe(200);
-    const body = (await get.json()) as { receipts: Array<{ mint_url: string; proofs: string; amount: number }> };
+    const body = (await get.json()) as {
+      receipts: Array<{ rid: number; mint_url: string; proofs: string; amount: number }>;
+    };
     expect(body.receipts).toHaveLength(1);
+    const rid = body.receipts[0]!.rid;
+    expect(typeof rid).toBe("number");
     expect(body.receipts[0]!.mint_url).toBe(mint);
     expect(body.receipts[0]!.amount).toBe(30);
     expect(JSON.parse(body.receipts[0]!.proofs)).toHaveLength(2);
 
-    // Second collect returns nothing (receipts are cleared).
+    // Read-only: a second GET still returns the receipt until it is ACKed
+    // (the old clear-on-read semantics silently destroyed proofs when the
+    // client-side wallet.store failed after fetching).
     const get2 = await app.request(
       `http://localhost/api/wallet/receive?receiver_pubkey=${receiver.pubkey}&sig=${sig}`,
     );
-    expect((await get2.json()) as { receipts: unknown[] }).toEqual({ ok: true, receipts: [] });
+    const again = (await get2.json()) as { receipts: Array<{ rid: number }> };
+    expect(again.receipts).toHaveLength(1);
+
+    // Ack (signed) removes exactly the acknowledged rows.
+    const ackSig = signSecret(`wallet-receive-ack:${receiver.pubkey}`, receiver.skHex);
+    const ack = await app.request("http://localhost/api/wallet/receive/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        receiver_pubkey: receiver.pubkey,
+        sig: ackSig,
+        rowids: [rid],
+      }),
+    });
+    expect(ack.status).toBe(200);
+
+    // Third collect returns nothing (acked).
+    const get3 = await app.request(
+      `http://localhost/api/wallet/receive?receiver_pubkey=${receiver.pubkey}&sig=${sig}`,
+    );
+    expect((await get3.json()) as { receipts: unknown[] }).toEqual({ ok: true, receipts: [] });
+  });
+
+  it("ack only deletes rows owned by the signing receiver", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    const alice = sellerKey();
+    const bob = sellerKey();
+    await db.savePendingReceive(alice.pubkey, "https://mint.example", JSON.stringify([proof("a1", 5)]), 5);
+    await db.savePendingReceive(bob.pubkey, "https://mint.example", JSON.stringify([proof("b1", 7)]), 7);
+
+    // Bob's rowid discovered via his own signed read.
+    const bobSig = signSecret(`wallet-receive:${bob.pubkey}`, bob.skHex);
+    const bobGet = await app.request(
+      `http://localhost/api/wallet/receive?receiver_pubkey=${bob.pubkey}&sig=${bobSig}`,
+    );
+    const bobBody = (await bobGet.json()) as { receipts: Array<{ rid: number }> };
+    const bobRid = bobBody.receipts[0]!.rid;
+
+    // Alice tries to ack Bob's rowid — must be ignored.
+    const ackSig = signSecret(`wallet-receive-ack:${alice.pubkey}`, alice.skHex);
+    const ack = await app.request("http://localhost/api/wallet/receive/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ receiver_pubkey: alice.pubkey, sig: ackSig, rowids: [bobRid] }),
+    });
+    expect(ack.status).toBe(200);
+
+    // Bob's receipt survived; Alice can still see hers.
+    const bobAgain = await app.request(
+      `http://localhost/api/wallet/receive?receiver_pubkey=${bob.pubkey}&sig=${bobSig}`,
+    );
+    expect(((await bobAgain.json()) as { receipts: unknown[] }).receipts).toHaveLength(1);
+    const aliceSig = signSecret(`wallet-receive:${alice.pubkey}`, alice.skHex);
+    const aliceGet = await app.request(
+      `http://localhost/api/wallet/receive?receiver_pubkey=${alice.pubkey}&sig=${aliceSig}`,
+    );
+    expect(((await aliceGet.json()) as { receipts: unknown[] }).receipts).toHaveLength(1);
+  });
+
+  it("rejects a forged ACK signature", async () => {
+    const app = createApp(db, { serverKey: SERVER });
+    const receiver = sellerKey();
+    await db.savePendingReceive(receiver.pubkey, "https://mint.example", JSON.stringify([proof("s1", 5)]), 5);
+
+    const forged = signSecret(`wallet-receive-ack:${receiver.pubkey}`, "11".repeat(32));
+    const res = await app.request("http://localhost/api/wallet/receive/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ receiver_pubkey: receiver.pubkey, sig: forged, rowids: [1] }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it("rejects a forged collector signature", async () => {

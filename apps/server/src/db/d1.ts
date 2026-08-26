@@ -295,12 +295,23 @@ export function createD1Db(d1: D1Database): Db {
     },
 
     async getPendingReceives(receiverPubkey) {
+      // Read-only: rows stay until the client acks them.
       const { results } = await d1
-        .prepare("SELECT mint_url, proofs, amount FROM pending_receives WHERE receiver_pubkey = ? ORDER BY created_at")
+        .prepare("SELECT rowid AS rid, mint_url, proofs, amount FROM pending_receives WHERE receiver_pubkey = ? ORDER BY created_at")
         .bind(receiverPubkey)
-        .all<{ mint_url: string; proofs: string; amount: number }>()
-      await d1.prepare("DELETE FROM pending_receives WHERE receiver_pubkey = ?").bind(receiverPubkey).run()
+        .all<{ rid: number; mint_url: string; proofs: string; amount: number }>()
       return results
+    },
+    async ackPendingReceives(receiverPubkey, rowids) {
+      if (rowids.length === 0) return 0
+      const placeholders = rowids.map(() => "?").join(",")
+      const res = await d1
+        .prepare(
+          `DELETE FROM pending_receives WHERE receiver_pubkey = ? AND rowid IN (${placeholders})`,
+        )
+        .bind(receiverPubkey, ...rowids)
+        .run()
+      return (res as unknown as { meta?: { changes?: number } }).meta?.changes ?? 0
     },
 
     async saveEscrow(row: EscrowRow) {

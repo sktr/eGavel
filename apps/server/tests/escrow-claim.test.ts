@@ -131,7 +131,7 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
       const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
       const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
       const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
-      await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
+      await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:400, mint_url:"https://mint.example" } as Auction);
       await db.saveBid({ id:"a1-y", auction_id:"a1", max_amount:500, current_amount:500, bidder_npub:winnerPk, Y:"y", received_at:Date.now(), status:"verified", proof_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret, amount:500 }], mint_url:"https://mint.example", amount:500 }) } as Bid);
       const sig = signSecret(secret, sellerSk);
       const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
@@ -143,6 +143,63 @@ describe("POST /auctions/:id/claim — escrow protected mode", () => {
       expect(row!.shipped).toBe(0);
     } finally {
       feeState.mode = "zero";
+    }
+  });
+
+  it("recovers from a transient DB write failure post-swap (retries, still succeeds)", async () => {
+    const { sk: sellerSk, pk: sellerPk } = sellerKey();
+    const { sk: serverSk } = sellerKey();
+    const db = initDb();
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+    const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
+    const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
+    await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:400, mint_url:"https://mint.example" } as Auction);
+    await db.saveBid({ id:"a1-y", auction_id:"a1", max_amount:500, current_amount:500, bidder_npub:winnerPk, Y:"y", received_at:Date.now(), status:"verified", proof_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret, amount:500 }], mint_url:"https://mint.example", amount:500 }) } as Bid);
+    // First saveChange attempt flakes — the swap has ALREADY succeeded at the
+    // mint, so the route MUST retry rather than lose the outputs.
+    const original = db.saveChange.bind(db);
+    let calls = 0;
+    const spy = vi.spyOn(db, "saveChange").mockImplementation(async (...args: Parameters<typeof original>) => {
+      calls++;
+      if (calls === 1) throw new Error("transient d1 blip");
+      return original(...args);
+    });
+    try {
+      const sig = signSecret(secret, sellerSk);
+      const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
+      expect(res.status).toBe(200);
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(await db.getEscrow("a1")).not.toBeNull();
+      expect(await db.getChange("a1")).not.toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("dumps ALL payout proofs to the log when persistence keeps failing post-swap", async () => {
+    const { sk: sellerSk, pk: sellerPk } = sellerKey();
+    const { sk: serverSk } = sellerKey();
+    const db = initDb();
+    const app = new Hono(); app.route("/api", createAuctionRoutes(db, { serverKey: serverSk, feeBps: 0 }));
+    const winnerPk = bytesToHex(schnorr.getPublicKey(hexToBytes(bytesToHex(schnorr.utils.randomSecretKey()))));
+    const secret = JSON.stringify(["P2PK",{ nonce:"n1", data: sellerPk, tags:[["pubkeys", sellerPk],["n_sigs","1"],["locktime", String(Math.floor(Date.now()/1000)+3600)],["refund", winnerPk]]}]);
+    await db.saveAuction({ id:"a1", item:"t", description:"d", start_price:100, reserve_price:null, buy_now_price:null, end_time:Date.now()+3600_000, seller_pubkey:sellerPk, state:"SETTLED", start_time:Date.now(), last_extended_at:null, winner_npub:winnerPk, winning_amount:500, mint_url:"https://mint.example" } as Auction);
+    await db.saveBid({ id:"a1-y", auction_id:"a1", max_amount:500, current_amount:500, bidder_npub:winnerPk, Y:"y", received_at:Date.now(), status:"verified", proof_data: JSON.stringify({ proofs:[{ keyset_id:"ks1", C:"c", secret, amount:500 }], mint_url:"https://mint.example", amount:500 }) } as Bid);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(db, "saveEscrow").mockRejectedValue(new Error("db down"));
+    try {
+      const sig = signSecret(secret, sellerSk);
+      const res = await app.request("http://localhost/api/auctions/a1/claim",{ method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ secrets:[secret], seller_sigs:[sig] }) });
+      expect(res.status).toBe(500);
+      // The swap consumed the bid proofs — the ONLY recovery artifact is the
+      // CRITICAL dump containing every output proof set.
+      const dumped = errSpy.mock.calls.map((c) => c.join(" ")).find((t) => t.includes("CRITICAL"));
+      expect(dumped).toBeTruthy();
+      expect(dumped).toContain("escrowProofs");
+      expect(dumped).toContain("winnerProofs");
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
     }
   });
 });

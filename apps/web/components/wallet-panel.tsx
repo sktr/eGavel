@@ -10,7 +10,7 @@ import {
   PaymentRequestTransportType,
   type Proof,
 } from "@cashu/cashu-ts";
-import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret, savePendingWithdrawal, loadPendingWithdrawals, removePendingWithdrawal, splitPendingBySpent, type PendingWithdrawal } from "../lib/wallet";
+import { useWallet, useTotalBalance, loadStore, pickWithdrawMint, replaceMintProofs, walletPrivkeyHex, unspentWithoutP2PK, isP2PKSecret, savePendingWithdrawal, loadPendingWithdrawals, removePendingWithdrawal, splitPendingBySpent, collectPendingReceipts, type PendingWithdrawal } from "../lib/wallet";
 import { buildWallet, loadMintCached } from "../lib/deterministic-wallet";
 import { DEFAULT_MINT } from "../lib/config";
 import { useIdentity } from "../lib/identity";
@@ -180,33 +180,17 @@ export function WalletPanel() {
 
   // Collect pending NUT-18 payments into the wallet (signed GET).
   // `silent` suppresses the "No incoming payments" message during auto-poll.
-  // Shared sweep: POST /wallet/receive (server-held pending receives —
-  // escrow releases, NUT-18 payments) and claim every proof into the wallet.
-  // Returns the total collected; 0 when nothing is waiting.
+  // Shared sweep: server-held pending receipts (escrow releases, NUT-18)
+  // collected into the wallet — ack-based, so a failed store never orphans
+  // funds (they stay on the server and retry on the next poll).
   const fetchAndCollectReceipts = useCallback(async (): Promise<number> => {
     if (!identity) throw new Error("Identity not available");
-    const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey));
-    const res = await fetch(
-      apiUrl(`/wallet/receive?receiver_pubkey=${identity.pubkey}&sig=${sig}`),
-      { cache: "no-store" },
-    );
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? "collect failed");
-    }
-    const data = (await res.json()) as {
-      receipts: Array<{ mint_url: string; proofs: string; amount: number }>;
-    };
-    if (data.receipts.length === 0) return 0;
-    let total = 0;
-    for (const r of data.receipts) {
-      const proofs = deserializeProofs(r.proofs);
-      await wallet.receive(
-        getEncodedToken({ mint: r.mint_url, proofs }),
-      ).catch(() => {});
-      total += r.amount;
-    }
-    return total;
+    const r = await collectPendingReceipts({
+      pubkey: identity.pubkey,
+      skHex: bytesToHex(identity.secretKey),
+      store: wallet,
+    });
+    return r.collectedAmount;
   }, [identity, wallet]);
 
   const handleCheckPayments = useCallback(async (silent = false) => {
@@ -273,38 +257,20 @@ export function WalletPanel() {
   }, [reqCreq, handleCheckPayments]);
 
   // Auto-collect pending receives from server-side deposits (escrow
-  // confirm-receipt, NUT-18 payments). Runs every 30s when no deposit is active.
-  // Note: wallet.receive() stores proofs under the correct mint URL, and
-  // wallet.refresh() already handles all mints in the store. We must NOT
-  // call refresh() after receive() on a different mint, or it may overwrite
-  // the newly-stored proofs.
+  // releases, NUT-18 payments). Runs every 30s when no deposit is active.
+  // collectPendingReceipts is ack-based: receipts that fail to store stay
+  // on the server and are retried on the next pass.
   useEffect(() => {
     if (!identity || reqCreq) return;
     let cancelled = false;
-    let collected = new Set<string>(); // track which receipts we already collected
     const run = async () => {
       if (cancelled || !identity) return;
       try {
-        const sig = signSecretHex(`wallet-receive:${identity.pubkey}`, bytesToHex(identity.secretKey));
-        const res = await fetch(
-          apiUrl(`/wallet/receive?receiver_pubkey=${identity.pubkey}&sig=${sig}`),
-          { cache: "no-store" },
-        );
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as {
-          receipts: Array<{ mint_url: string; proofs: string; amount: number }>;
-        };
-        if (data.receipts.length === 0) return;
-        for (const r of data.receipts) {
-          const key = `${r.mint_url}:${r.amount}`;
-          if (collected.has(key)) continue; // already processed
-          collected.add(key);
-          const proofs = deserializeProofs(r.proofs);
-          // receive() stores proofs under the correct mint URL in the store.
-          // The wallet's own refresh() will handle all mints in the store
-          // on its next cycle, so we don't need to call refresh() here.
-          await wallet.receive(getEncodedToken({ mint: r.mint_url, proofs })).catch(() => {});
-        }
+        await collectPendingReceipts({
+          pubkey: identity.pubkey,
+          skHex: bytesToHex(identity.secretKey),
+          store: wallet,
+        });
       } catch {
         // transient — skip
       }
