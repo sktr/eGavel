@@ -36,11 +36,11 @@ unprotected baseline and is audit-visible.
    the lock structure, the mint (NUT-06/07/12) and records the proofs.
 2. **Instant refund (outbid)**: bidder signature + server co-signature over the
    proof secrets → the bidder swaps the proofs back to themselves. No locktime wait.
-3. **Claim → escrow**: seller signature + server co-signature → the server
-   runs a swap that splits the winner's proofs into `[seller net → fulfillment
-   escrow, operator fee, winner change]`. The escrow is
-   `{seller,winner,server} 2-of-3, refund winner @ claim+14d`, `shipped = 0`.
-   If `seller_net==0` no escrow is created (instant release).
+3. **Claim → direct pay (default)**: seller signature + server co-signature →
+   the server swaps the winner's proofs into `[seller net (1-of-1 P2PK,
+   delivered in the claim response → wallet), operator fee, winner change]`.
+   The winner-protected fulfillment escrow (§4–§6 of the v1 design) remains
+   implemented but DORMANT behind the `escrowEnabled` deployment flag.
 4. **Shipped**: seller clicks "Mark shipped" (Schnorr auth over `shipped:<id>`)
    — the server flips the boolean flag only; no funds move. Shipping details
    (address, tracking number) travel in private Nostr DMs, never through the

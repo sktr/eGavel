@@ -12,7 +12,7 @@ packages/shared shared types
 - **Images**: `BlossomClient` (`PUT /upload` with `kind 24242` auth) to `blossom.primal.net` (fallback `cdn.nostrcheck.me`); `auctions.images` is `string[]` of URLs (≤4, total ≤2 MB)
 - **Bid flow**: the client creates a 2-of-3 P2PK proof bundle (locking the full max) → `POST /api/bids` → the server validates (NUT-06/NUT-07) → computes the standing price from all bidders' maxes (second-highest max + minimum increment, `min-increment` table)
 - **Refunds**: outbid detection (polling) → bidder signature + server co-sign → mint swap
-- **Claim → escrow**: `POST /auctions/:id/claim` (seller per-secret sigs + server) → server splits into `[escrow, operator fee, winner change]`; `seller net → fulfillment_escrows` (`{seller,winner,server}` 2-of-3 P2PK, refund winner @ claim+14d, `shipped=0`; `seller_net=0` skips escrow). Escrow creation happens inside the claim call because bid proofs are seller-locked — the server cannot swap them alone (non-custodial).
+- **Claim → direct pay (default)**: `POST /auctions/:id/claim` (seller per-secret sigs + server) → server splits into `[seller net (1-of-1 P2PK returned in the response → wallet), operator fee, winner change]`. The fulfillment-escrow branch below is DORMANT unless `escrowEnabled` is set (`{seller,winner,server}` 2-of-3 P2PK, refund winner @ claim+14d, `shipped=0`; `seller_net=0` skips escrow). Escrow creation happens inside the claim call because bid proofs are seller-locked — the server cannot swap them alone (non-custodial).
 - **Shipped**: `POST /auctions/:id/shipped` (seller Schnorr over `shipped:<id>`) → flips the boolean `shipped` flag only; no funds move. Shipping details travel in private Nostr DMs, never through the platform.
 - **Confirm**: `POST /auctions/:id/confirm` (winner `confirm:<id>` + per-secret sigs) → server verifies + co-signs → `settleEscrowTo` swaps into 1-of-1 P2PK proofs for the seller → `pending_receives` → seller collects via `GET /wallet/receive`
 - **Release** (timeout-gated): `POST /auctions/:id/release` (seller `release:<id>` + per-secret sigs; requires `shipped && now ≥ created_at+14d`) → same swap as confirm but payee = seller
@@ -40,7 +40,7 @@ refund  = bidder
 - The server can never move funds alone — it only co-signs the claim (seller + server) or the refund (bidder + server).
 - If the server disappears, funds are locked until the locktime, then the bidder recovers via the `refund` key.
 
-### Fulfillment escrow (v1 rev 2)
+### Fulfillment escrow (v1 rev 2 — DORMANT, `escrowEnabled` opt-in)
 
 ```
 Escrow: {seller, winner, server} 2-of-3, locktime=claim+14d (ESCROW_TIMEOUT_MS), refund=winner
