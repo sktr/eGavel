@@ -564,8 +564,13 @@ export function createAuctionRoutes(db: Db, config: AuctionRoutesConfig = {}) {
         console.error(
           `CRITICAL: escrow ${auctionId} crashed post-swap before persistence. ` +
           `Manual recovery required — payee=${payeeXOnly} mint=${bundle.mint_url} amount=${releaseAmount} ` +
+          `keysetId=${(bundle.proofs[0] as { keyset_id?: string; id?: string }).keyset_id ?? (bundle.proofs[0] as { id?: string }).id ?? ""} ` +
           `signatures=${JSON.stringify(swapRes.signatures)} ` +
-          `blindedOutputs=${JSON.stringify(releaseOutputs.map((o) => ({ blindingFactor: String((o as { blindingFactor?: unknown }).blindingFactor), blindedMessage: (o as { blindedMessage?: unknown }).blindedMessage })))}`,
+          `blindedOutputs=${JSON.stringify(releaseOutputs.map((o) => ({
+            blindingFactor: String((o as unknown as { blindingFactor?: unknown }).blindingFactor),
+            blindedMessage: (o as unknown as { blindedMessage?: unknown }).blindedMessage,
+            secret: Buffer.from((o as unknown as { secret?: Uint8Array }).secret ?? new Uint8Array()).toString("utf8"),
+          })))}`,
           err,
         );
       }
