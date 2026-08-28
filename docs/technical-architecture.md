@@ -77,7 +77,9 @@ CREATE TABLE IF NOT EXISTS fulfillment_escrows (
 
 ```
 PENDING → ACTIVE → (EXTENDED)* → CLOSED/SETTLED
-                              ↘ claim → escrow (shipped → confirmed | release@timeout | refund@timeout)
+                              ↘ claim → direct pay (seller wallet)
+                                 ↘ escrow — DORMANT unless escrowEnabled
+                                   (shipped → confirmed | release@timeout | refund@timeout)
 ```
 
 - `ACTIVE`: open for bids.

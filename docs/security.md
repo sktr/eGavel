@@ -15,10 +15,11 @@ auditing this software.
 
 | Party  | Can do | Cannot do |
 | ------ | ------ | --------- |
-| Bidder | Lock a bid; instantly refund when outbid (with server co-sign); refund a won auction themselves after the 14-day timeout if the seller never shipped | Spend another party's funds |
-| Seller | Claim the winner's proofs after settlement (with server co-sign) → escrow; mark shipped (boolean flag); release the escrow to themselves after shipping + the 14-day timeout when the winner stays silent | Move funds alone; release before the timeout once shipped |
-| Winner | Confirm receipt (per-secret signatures + server co-sign) to pay seller; self-refund after an unshipped timeout | Spend seller's escrow alone |
-| Server | Verify bids, pick the winner, gate and co-sign confirm/release/refund swaps (`shipped` + elapsed-time gates) | Move funds alone (2-of-3 enforced cryptographically); unilaterally resolve a timeout |
+| Bidder | Lock a bid; instantly refund when outbid (with server co-sign) | Spend another party's funds |
+| Seller | Claim the winner's proofs after settlement (with server co-sign) → **direct 1-of-1 payout to seller wallet** (winner change returned automatically) | Move funds alone |
+| Winner | Receive change automatically; after locktime recover own proofs if seller never claims (local + refund key) | Spend seller's payout alone |
+| Server | Verify bids, pick the winner, co-sign claim and refunds; escrow `confirm`/`release`/`refund` are **dormant** (`escrowEnabled` flag) | Move funds alone (2-of-3 / 1-of-1 enforced cryptographically) |
+| *Escrow (dormant)* | *If re-enabled: seller marks shipped; winner confirms to release; timeout-gated release/refund* | *— currently not active —* |
 | Mint   | Hold and swap e-cash | Steal proofs (bearer instruments, but see "Mint dependency" below) |
 | Nostr relays / Blossom | Mirror listings (30402) and audit log (1021/1022); host images | Touch settlement — DB + mint remain canonical |
 
@@ -41,20 +42,20 @@ unprotected baseline and is audit-visible.
    delivered in the claim response → wallet), operator fee, winner change]`.
    The winner-protected fulfillment escrow (§4–§6 of the v1 design) remains
    implemented but DORMANT behind the `escrowEnabled` deployment flag.
-4. **Shipped**: seller clicks "Mark shipped" (Schnorr auth over `shipped:<id>`)
+4. **Shipped — dormant** *(enabled only when `escrowEnabled`)*: seller clicks "Mark shipped" (Schnorr auth over `shipped:<id>`)
    — the server flips the boolean flag only; no funds move. Shipping details
    (address, tracking number) travel in private Nostr DMs, never through the
    platform.
-5. **Winner confirm**: winner signs `confirm:<id>` plus every escrow proof
+5. **Winner confirm — dormant**: winner signs `confirm:<id>` plus every escrow proof
    secret → server verifies + co-signs → swap to 1-of-1 P2PK proofs for the
    seller (delivered via `pending_receives`, collected with
    `GET /wallet/receive`). Escrow row deleted only after the swap succeeds.
-6. **Timeout resolution (party-triggered)**: after `created_at + 14 days`
+6. **Timeout resolution — dormant** (party-triggered, `created_at + 14 days`):
      - shipped → seller may self-release (`release:<id>` + per-secret sigs)
        — the winner cannot prevent seller payment by staying silent;
      - not shipped → winner may self-refund (`refund:<id>` + per-secret sigs).
    Both swaps produce 1-of-1 P2PK outputs for the caller and delete the row.
-   The lazy timeout pass in `settleIfDue` is observe-only: the server cannot
+   The lazy timeout pass in `settleIfDue` is observe-only in any mode: the server cannot
    sign a 2-of-3 spend alone, so it never moves or deletes escrowed funds by
    itself.
 7. **Change return**: the excess (locked max − standing price) is a 1-of-1 P2PK

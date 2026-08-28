@@ -34,7 +34,7 @@ No single party can spend the token. Every unlock needs a co-signature:
 |------|---------|--------|
 | Bid | — (bidder locks) | proofs recorded as the bid |
 | Outbid → refund | bidder + server | losing bidder gets funds back **instantly** |
-| Win → claim → escrow | seller + server | seller's proceeds enter the fulfillment escrow (see below) |
+| Win → claim → direct pay | seller + server | seller's proceeds land **directly in seller's wallet** (see §3) |
 | Excess → change | (server swap) | winner gets back `max − standing price` |
 
 The server **never holds the funds**. It only co-signs unlocks that the
@@ -68,33 +68,39 @@ The engine raises the standing price when a higher max arrives. The losing
 bid's proofs are still unspent; the bidder signs them, the server co-signs,
 and the bidder swaps the proofs back to their own wallet. No locktime wait.
 
-### 3. Claim (seller) → fulfillment escrow + change (winner)
+### 3. Claim (seller) → direct pay + change (winner)
 
 After settlement the seller signs the winning proofs and the server co-signs.
 The server runs a **single swap** that splits the winner's locked bundle into:
 
 ```
-[seller net → escrow, operator fee (AUCTION_FEE_BPS, defaults to 0), winner change]
+[seller net (1-of-1 P2PK → seller wallet), operator fee (AUCTION_FEE_BPS, defaults to 0), winner change]
 ```
 
+`seller net` is delivered **directly** — the server mirrors the payout proofs
+into `pending_receives` (returned as `pending_rid`) and the client stores them
+in the wallet, then acks (`POST /wallet/receive/ack`); Fund Collection / the
+30s auto-poll re-delivers until acked so a lost response never strands funds.
 `change = locked max − standing price` — the winner only ever pays the
 standing price, and the excess comes back as a 1-of-1 P2PK output they sweep
-into their wallet.
+into their wallet (auto-collected). If `seller_net == 0` (e.g. 100% fee) the
+claim still completes but the seller receives no proofs (`degenerate: true`).
 
-`seller net` does **not** go directly to the seller. It enters the
-fulfillment escrow:
+> **Note:** a winner-protected fulfillment escrow (`{seller,winner,server}`
+> 2-of-3, refund winner @ claim+14d) is implemented behind the
+> `escrowEnabled` flag but **currently dormant** — see §4.
 
-```
-Escrow: {seller, winner, server} n_sigs=2, locktime=claim+14 days, refund=winner
-```
+### 4. Fulfillment — escrow is currently **dormant** (kept for a future opt-in mode)
 
-The seller cannot spend it alone. If `seller_net == 0` (e.g. 100% fee) no
-escrow is created and the settlement is instant.
+> **Current default:** direct pay (see §3). The simplified escrow below is
+> **not active** — `escrowEnabled` is `false` and the EscrowPanel is
+> unmounted. Code, migrations, and tests for it are retained.
 
-### 4. Fulfillment — simplified escrow (v1 rev 2)
+When enabled, the winner-protected escrow would work as follows
+(kept for reference, mirrors the implemented but dormant code):
 
 Shipping coordination (address, tracking number) stays in the user's own
-Nostr DMs — the platform stores only a boolean `shipped` flag.
+Nostr DMs — the platform would store only a boolean `shipped` flag.
 
 ```
 [claim]   seller+server → escrow lock {seller,winner,server} refund winner @ +14d
@@ -118,10 +124,10 @@ Nostr DMs — the platform stores only a boolean `shipped` flag.
   is deleted only after a successful swap; persistence retries and logs the
   payout proofs if the DB write fails post-swap.
 
-Quality disputes ("arrived but fake") are out of scope in v1 — handled via
-Nostr negotiation + permanent Nostr-link accountability.
-A future arbiter registry (opt-in premium, `seller+winner+server+arbiter`
-2-of-4) is designed but deferred.
+Quality disputes ("arrived but fake") would remain out of scope even in
+escrow mode — handled via Nostr negotiation + permanent Nostr-link
+accountability. A future arbiter registry (opt-in premium,
+`seller+winner+server+arbiter` 2-of-4) is designed but deferred.
 
 ### 5. NIP-99 marketplace mirror + Blossom images
 
@@ -171,12 +177,13 @@ server-side so nobody can snipe the leader with a `max+1` bid.
 ## Security properties
 
 - **Money safety is cryptographic**: no single party can move funds alone; the
-  server cannot run with the money. This holds for bids *and* escrow — every
-  escrow release needs a second signature; the server alone unlocks nothing.
-  Any two keys *can* collude (e.g. `server+winner` draining the escrow), which
-  degrades to the unprotected baseline and is audit-visible — money safety is
-  against single-party failure; multi-party collusion and process fairness rest
-  on OSS, self-hosting, and reputation (see `docs/security.md`).
+  server cannot run with the money. This holds for bids and for the (currently
+  dormant) escrow — every escrow release would need a second signature; the
+  server alone unlocks nothing. Any two keys *can* collude (e.g. `server+winner`
+  draining the escrow), which degrades to the unprotected baseline and is
+  audit-visible — money safety is against single-party failure; multi-party
+  collusion and process fairness rest on OSS, self-hosting, and reputation
+  (see `docs/security.md`).
 - **Auction fairness is NOT**: the server decides which bids to accept and how
   to settle. That rests on OSS code, self-hosting, and operator reputation.
   See [`docs/security.md`](./security.md) for the full threat model.
